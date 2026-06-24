@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getPrototypeBySlug } from "@/src/lib/prototypes";
+import { getPrototypeBySlug } from "@/lib/prototypes";
 
 const prototype = getPrototypeBySlug("design-system");
 

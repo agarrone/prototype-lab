@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { prototypes } from "@/src/lib/prototypes";
+import { prototypes } from "@/lib/prototypes";
 
 export const metadata: Metadata = {
   title: "Prototype Lab",
