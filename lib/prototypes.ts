@@ -36,6 +36,15 @@ export const prototypes: Prototype[] = [
     tags: ["ia", "automatisation", "workflow"],
     figmaUrl: "https://www.figma.com/file/placeholder/enrichissement-ia",
   },
+  {
+    slug: "carte-landing-page",
+    title: "Carte Landing Page",
+    description:
+      "Prototype de page de destination avec carte interactive pour découvrir les données géographiques.",
+    status: "brouillon",
+    tags: ["carte", "géographie", "visualisation"],
+    figmaUrl: "",
+  },
 ];
 
 export function getPrototypeBySlug(slug: string) {
