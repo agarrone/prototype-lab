@@ -56,7 +56,7 @@ function StatusBadge({ status }: { status: string }) {
 
   return (
     <span
-      className={`shrink-0 rounded px-2 py-0.5 text-xs font-medium ${className}`}
+      className={`shrink-0 rounded px-2 py-0.5 text-[12px] font-medium leading-4 ${className}`}
     >
       {status}
     </span>
@@ -65,55 +65,45 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function Home() {
   return (
-    <main className="min-h-dvh bg-[#f6f6f6] px-4 py-10 text-[#161616] [font-family:Marianne,Arial,sans-serif] sm:px-8 lg:px-12">
+    <main className="min-h-dvh bg-[#f6f6f6] px-4 py-10 text-[#161616] sm:px-8 lg:px-12">
       <section className="mx-auto flex min-h-[calc(100dvh-5rem)] w-full max-w-2xl flex-col justify-center gap-10">
         <header className="space-y-3">
-          <h1 className="text-5xl font-semibold leading-none tracking-tight sm:text-7xl">
+          <h1 className="text-[32px] font-semibold leading-10">
             Prototype Lab
           </h1>
-          <p className="max-w-xl text-lg leading-8 text-[#3a3a3a]">
+          <p className="max-w-xl text-[14px] leading-6 text-[#3a3a3a]">
             Un index minimal de prototypes haute fidélité pour data.gouv.fr.
           </p>
         </header>
 
         <nav
           aria-label="Navigation des prototypes"
-          className="text-base text-[#3a3a3a] [font-family:Inconsolata,ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace]"
+          className="font-mono text-[14px] leading-6 text-[#3a3a3a]"
         >
-          <details className="group" aria-label="prototype-lab">
+          <details className="group" aria-label="prototypes">
             <summary className="flex cursor-pointer list-none items-center gap-2 rounded px-2 py-1.5 outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-[#000091] [&::-webkit-details-marker]:hidden">
               <ChevronIcon />
               <FolderIcon />
-              <span>prototype-lab</span>
+              <span>prototypes</span>
             </summary>
 
-            <div className="ml-6 mt-1 border-l border-[#dddddd] pl-4">
-              <details className="group" aria-label="prototypes">
-                <summary className="flex cursor-pointer list-none items-center gap-2 rounded px-2 py-1.5 outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-[#000091] [&::-webkit-details-marker]:hidden">
-                  <ChevronIcon />
-                  <FolderIcon />
-                  <span>prototypes</span>
-                </summary>
-
-                <ul className="ml-6 mt-1 space-y-1 border-l border-[#dddddd] pl-4">
-                  {prototypes.map((prototype) => (
-                    <li key={prototype.slug}>
-                      <Link
-                        href={`/prototypes/${prototype.slug}`}
-                        className="flex items-center justify-between gap-4 rounded px-2 py-1.5 text-[#161616] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000091]"
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span aria-hidden="true" className="h-4 w-4" />
-                          <FileIcon />
-                          <span className="truncate">{prototype.title}</span>
-                        </span>
-                        <StatusBadge status={prototype.status} />
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              </details>
-            </div>
+            <ul className="ml-6 mt-1 space-y-1 border-l border-[#e5e5e5] pl-4">
+              {prototypes.map((prototype) => (
+                <li key={prototype.slug}>
+                  <Link
+                    href={`/prototypes/${prototype.slug}`}
+                    className="flex items-center justify-between gap-4 rounded px-2 py-1.5 text-[#161616] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000091]"
+                  >
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span aria-hidden="true" className="h-4 w-4" />
+                      <FileIcon />
+                      <span className="truncate">{prototype.title}</span>
+                    </span>
+                    <StatusBadge status={prototype.status} />
+                  </Link>
+                </li>
+              ))}
+            </ul>
           </details>
         </nav>
       </section>

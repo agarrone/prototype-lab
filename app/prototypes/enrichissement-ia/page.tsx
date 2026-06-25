@@ -14,10 +14,10 @@ export default function EnrichissementIaPage() {
         <p className="mb-4 font-mono text-sm text-zinc-500">
           /prototypes/{prototype.slug}
         </p>
-        <h1 className="text-4xl font-semibold tracking-tight sm:text-6xl">
+        <h1 className="text-[32px] font-semibold leading-10">
           {prototype.title}
         </h1>
-        <p className="mt-6 text-lg leading-8 text-zinc-400">
+        <p className="mt-6 text-[14px] leading-6 text-zinc-400">
           {prototype.description}
         </p>
         <p className="mt-8 font-mono text-sm uppercase tracking-[0.18em] text-zinc-500">
@@ -25,7 +25,7 @@ export default function EnrichissementIaPage() {
         </p>
         <Link
           href="/"
-          className="mt-10 inline-flex w-fit items-center rounded-md border border-zinc-700 px-4 py-2 font-mono text-sm text-zinc-100 transition-colors hover:border-zinc-400 hover:bg-zinc-900"
+          className="mt-10 inline-flex w-fit items-center rounded-md border border-[#e5e5e5] px-4 py-2 font-mono text-sm text-zinc-100 transition-colors hover:border-[#e5e5e5] hover:bg-zinc-900"
         >
           Retour vers /
         </Link>

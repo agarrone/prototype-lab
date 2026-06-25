@@ -1,11 +1,18 @@
 "use client";
 
 import Image from "next/image";
-import { useMemo, useState } from "react";
-import type { ComponentType, KeyboardEvent, ReactNode } from "react";
+import { Fragment, useMemo, useState } from "react";
+import type {
+  ComponentType,
+  KeyboardEvent,
+  MouseEvent as ReactMouseEvent,
+  ReactNode,
+  UIEvent,
+} from "react";
 import {
   RiArrowDownLine,
   RiArrowDropDownLine,
+  RiArrowRightSLine,
   RiArrowUpLine,
   RiBook2Line,
   RiCalendarLine,
@@ -20,6 +27,7 @@ import {
   RiFileLine,
   RiFilterLine,
   RiFingerprintLine,
+  RiFullscreenExitLine,
   RiFullscreenLine,
   RiHashtag,
   RiLayoutHorizontalLine,
@@ -43,6 +51,8 @@ type Resource = {
   name: string;
   size: string;
   format: string;
+  updatedAt: string;
+  downloads: number;
   type: ResourceType;
   tabs: ExplorerTab[];
 };
@@ -51,48 +61,60 @@ const resources: Resource[] = [
   {
     id: "ecoles",
     name: "Ecoles",
-    size: "134mo",
+    size: "134 Mo",
     format: "CSV",
+    updatedAt: "13 octobre 2022",
+    downloads: 234,
     type: "table",
     tabs: ["Aperçu", "Carte", "Description", "Structure des données", "Métadonnées", "API"],
   },
   {
     id: "resultats",
     name: "Résultats",
-    size: "134mo",
+    size: "87 Mo",
     format: "CSV",
+    updatedAt: "6 février 2024",
+    downloads: 128,
     type: "table",
     tabs: ["Aperçu", "Description", "Métadonnées"],
   },
   {
     id: "secteurs",
     name: "Secteurs",
-    size: "134mo",
+    size: "245,8 Mo",
     format: "GEOJSON",
+    updatedAt: "18 juin 2024",
+    downloads: 412,
     type: "geodata",
     tabs: ["Carte", "Métadonnées"],
   },
   {
     id: "schema",
     name: "Schéma",
-    size: "134mo",
+    size: "18 Ko",
     format: "JSON",
+    updatedAt: "4 avril 2024",
+    downloads: 76,
     type: "code",
     tabs: ["Aperçu", "Métadonnées"],
   },
   {
     id: "addition",
     name: "Addition",
-    size: "134mo",
+    size: "42 Ko",
     format: "XML",
+    updatedAt: "22 mai 2024",
+    downloads: 51,
     type: "code",
     tabs: ["Aperçu", "Métadonnées"],
   },
   {
     id: "guides",
     name: "Guides",
-    size: "134mo",
+    size: "3,2 Mo",
     format: "PDF",
+    updatedAt: "9 janvier 2024",
+    downloads: 305,
     type: "documentation",
     tabs: ["Aperçu", "Métadonnées"],
   },
@@ -425,10 +447,73 @@ type NumberRange = {
   max: string;
 };
 
+type DateFilterMode = "before" | "after" | "between";
+
+type DateFilterValue = {
+  mode: DateFilterMode;
+  value: string;
+  endValue: string;
+};
+
+const dateFilterModeLabels = {
+  before: "avant",
+  after: "après",
+  between: "entre",
+} satisfies Record<DateFilterMode, string>;
+
+const emptyDateFilter: DateFilterValue = {
+  mode: "before",
+  value: "",
+  endValue: "",
+};
+
 function parseNumber(value: string) {
   const parsed = Number(value.replace(/[^\d.-]/g, ""));
 
   return Number.isNaN(parsed) ? 0 : parsed;
+}
+
+function parseDateFilterValue(value: string) {
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return null;
+  }
+
+  const frenchDateMatch = trimmedValue.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+
+  if (frenchDateMatch) {
+    const [, day, month, year] = frenchDateMatch;
+    const timestamp = new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+    ).getTime();
+
+    return Number.isNaN(timestamp) ? null : timestamp;
+  }
+
+  const timestamp = new Date(trimmedValue).getTime();
+
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+function isDateFilterActive(filter?: DateFilterValue) {
+  if (!filter) {
+    return false;
+  }
+
+  return Boolean(filter.value.trim() || filter.endValue.trim());
+}
+
+function getDateFilterChipValue(filter: DateFilterValue) {
+  if (filter.mode === "between") {
+    return `${dateFilterModeLabels[filter.mode]} ${filter.value || "début"} et ${
+      filter.endValue || "fin"
+    }`;
+  }
+
+  return `${dateFilterModeLabels[filter.mode]} ${filter.value}`;
 }
 
 const categories = ["Transport", "Education", "Santé", "Budget", "Culture"];
@@ -541,7 +626,7 @@ function StructureMetricRow({
   tone?: "neutral" | "success" | "warning" | "error" | "purple";
 }) {
   const toneClassNames = {
-    neutral: "text-[#666666]",
+    neutral: "text-[#3a3a3a]",
     success: "text-[#18753c]",
     warning: "text-[#716043]",
     error: "text-[#b34000]",
@@ -549,7 +634,7 @@ function StructureMetricRow({
   };
 
   return (
-    <div className="flex h-6 items-center justify-between gap-4">
+    <div className="flex h-6 w-full items-center justify-between gap-4 text-[13px] leading-[1.4]">
       <div className="flex min-w-0 items-center gap-1">
         {icon ? (
           <Icon
@@ -558,13 +643,13 @@ function StructureMetricRow({
           />
         ) : null}
         <span
-          className={`truncate text-[12px] leading-[1.4] ${toneClassNames[tone]}`}
+          className={`truncate ${tone === "neutral" ? "text-[#3a3a3a]" : toneClassNames[tone]}`}
         >
           {label}
         </span>
       </div>
       <span
-        className={`shrink-0 text-[13px] leading-[1.4] ${toneClassNames[tone]}`}
+        className={`shrink-0 font-bold ${tone === "neutral" ? "text-[#161616]" : toneClassNames[tone]}`}
       >
         {value}
       </span>
@@ -581,119 +666,355 @@ function StructureSection({
 }) {
   return (
     <section className="min-w-0">
-      <h2 className="mb-2 text-[13px] font-medium leading-[1.4] text-[#161616]">
+      <h2 className="mb-2 text-[14px] font-bold leading-6 text-[#161616]">
         {title}
       </h2>
-      <div className="flex flex-col gap-1">{children}</div>
+      <div className="grid gap-1">{children}</div>
     </section>
   );
 }
 
-const frequentValues = Array.from({ length: 10 }, (_, index) => ({
-  label: `Option ${index + 1}`,
-  value: "2 (32%)",
-}));
-
 const distributionHeights = [88, 106, 138, 97, 37, 23, 18, 9, 37, 64, 97, 46];
 
-function StructureColumnDetail({
-  icon,
+function getColumnTypeLabel(type: ColumnType) {
+  if (type === "referenceData") {
+    return "Données de référence";
+  }
+
+  if (type === "reference") {
+    return "Référentiel";
+  }
+
+  if (type === "identifier") {
+    return "Identifiant";
+  }
+
+  if (type === "category") {
+    return "Catégoriel";
+  }
+
+  if (type === "number") {
+    return "Nombre";
+  }
+
+  if (type === "date") {
+    return "Date";
+  }
+
+  return "Texte";
+}
+
+function getColumnQuality(index: number) {
+  const valid = 74 + ((index * 7) % 21);
+  const nonConforming = 2 + (index % 5);
+  const missing = Math.max(0, 100 - valid - nonConforming);
+
+  return { valid, nonConforming, missing };
+}
+
+function getColumnFrequentValues(column: TableColumn) {
+  const counts = rows.reduce((accumulator, row) => {
+    const value = getRowValue(row, column.key);
+    accumulator.set(value, (accumulator.get(value) ?? 0) + 1);
+    return accumulator;
+  }, new Map<string, number>());
+
+  return Array.from(counts.entries())
+    .sort((first, second) => second[1] - first[1])
+    .slice(0, 10)
+    .map(([label, count]) => ({
+      label,
+      value: `${count} (${Math.round((count / rows.length) * 100)}%)`,
+    }));
+}
+
+function getColumnUniqueCount(column: TableColumn) {
+  return new Set(rows.map((row) => getRowValue(row, column.key))).size;
+}
+
+function getColumnExampleValues(column: TableColumn) {
+  return Array.from(new Set(rows.map((row) => getRowValue(row, column.key)))).slice(
+    0,
+    5,
+  );
+}
+
+function getNumberStats(column: TableColumn) {
+  const values = rows
+    .map((row) => parseNumber(getRowValue(row, column.key)))
+    .sort((first, second) => first - second);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const average = Math.round(
+    values.reduce((sum, value) => sum + value, 0) / values.length,
+  );
+  const middleIndex = Math.floor(values.length / 2);
+  const median =
+    values.length % 2 === 0
+      ? Math.round((values[middleIndex - 1] + values[middleIndex]) / 2)
+      : values[middleIndex];
+  const standardDeviation = Math.round(
+    Math.sqrt(
+      values.reduce((sum, value) => sum + (value - average) ** 2, 0) /
+        values.length,
+    ),
+  );
+
+  return { min, max, average, median, standardDeviation };
+}
+
+function getDateStats(column: TableColumn) {
+  const timestamps = rows
+    .map((row) => new Date(getRowValue(row, column.key)).getTime())
+    .filter((timestamp) => !Number.isNaN(timestamp));
+
+  const formatter = new Intl.DateTimeFormat("fr-FR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  });
+
+  return {
+    min: formatter.format(new Date(Math.min(...timestamps))),
+    max: formatter.format(new Date(Math.max(...timestamps))),
+  };
+}
+
+function StructureDetailStat({
   label,
-  expanded = false,
+  value,
 }: {
-  icon: keyof typeof icons;
   label: string;
-  expanded?: boolean;
+  value: string;
 }) {
   return (
-    <section className="px-1 py-1">
-      <div className="flex h-6 items-center justify-between">
-        <div className="flex items-center gap-1">
-          <Icon path={icons[icon]} className="h-4 w-4 text-[#666666]" />
-          <span className="text-[13px] font-medium leading-none text-[#666666]">
-            {label}
-          </span>
-        </div>
-        <div className="flex items-center gap-2 text-[13px] leading-[1.4]">
-          <span className="text-[#3a3a3a]">32 valeurs</span>
-          <span className="text-[#18753c]">20(80%)</span>
-          <span className="text-[#716043]">12(2%)</span>
-          <span className="text-[#b34000]">2(1%)</span>
-          <Icon
-            path={icons.arrowDown}
-            className={`h-4 w-4 text-[#666666] ${expanded ? "rotate-180" : ""}`}
-          />
+    <div className="flex flex-col gap-0.5 text-[14px] leading-6">
+      <span className="font-bold text-[#161616]">{label}</span>
+      <span className="text-[#3a3a3a]">{value}</span>
+    </div>
+  );
+}
+
+function StructureColumnExpandedContent({
+  column,
+  quality,
+}: {
+  column: TableColumn;
+  quality: ReturnType<typeof getColumnQuality>;
+}) {
+  const frequentColumnValues = getColumnFrequentValues(column);
+  const exampleValues = getColumnExampleValues(column);
+
+  if (column.type === "number") {
+    const stats = getNumberStats(column);
+
+    return (
+      <div className="grid grid-cols-5 gap-5">
+        <StructureDetailStat label="Minimum" value={String(stats.min)} />
+        <StructureDetailStat label="Maximum" value={String(stats.max)} />
+        <StructureDetailStat label="Moyenne" value={String(stats.average)} />
+        <StructureDetailStat label="Médiane" value={String(stats.median)} />
+        <StructureDetailStat
+          label="Écart-type"
+          value={String(stats.standardDeviation)}
+        />
+        <div className="col-span-5 flex h-[104px] items-end gap-[2px] border-b border-[#E5E5E5]">
+          {distributionHeights.map((height, index) => (
+            <div
+              key={`${height}-${index}`}
+              className="min-w-0 flex-1 rounded-t-[1px] bg-[#b6cffb]"
+              style={{ height: Math.max(10, height - 28) }}
+            />
+          ))}
         </div>
       </div>
+    );
+  }
 
-      {expanded ? (
-        <div className="mt-3 grid grid-cols-[204px_204px_1fr] gap-8">
-          <div className="flex flex-col gap-2">
-            <p className="text-[12px] leading-[1.4] text-[#666666]">
-              Valeurs fréquentes
-            </p>
-            <div className="flex flex-col gap-1">
-              {frequentValues.map((item) => (
-                <div
-                  key={item.label}
-                  className="grid h-5 grid-cols-[120px_1fr] items-center gap-2 text-[13px] leading-[1.4] text-[#3a3a3a]"
-                >
-                  <span className="w-fit rounded bg-[#f6f6f6] px-2 text-[#666666]">
-                    {item.label}
-                  </span>
-                  <span>{item.value}</span>
-                </div>
-              ))}
-            </div>
-          </div>
+  if (column.type === "date") {
+    const stats = getDateStats(column);
 
-          <div className="flex flex-col gap-2">
-            <h3 className="text-[13px] font-medium leading-[1.4] text-[#161616]">
-              Statistiques
-            </h3>
-            {[
-              ["Min", "1"],
-              ["Max", "6"],
-              ["Moyenne", "3"],
-              ["Médiane", "2"],
-              ["Écart-type", "2"],
-            ].map(([name, value]) => (
-              <div
-                key={name}
-                className="flex h-6 items-center justify-between text-[12px] leading-[1.4]"
+    return (
+      <div className="grid grid-cols-3 gap-5">
+        <StructureDetailStat label="Première date" value={stats.min} />
+        <StructureDetailStat label="Dernière date" value={stats.max} />
+        <StructureDetailStat label="Valeurs renseignées" value={`${quality.valid}%`} />
+      </div>
+    );
+  }
+
+  if (column.type === "identifier") {
+    return (
+      <div className="grid grid-cols-3 gap-5">
+        <StructureDetailStat
+          label="Unicité"
+          value={`${getColumnUniqueCount(column)} valeurs uniques`}
+        />
+        <StructureDetailStat label="Format" value="Identifiant stable" />
+        <div className="flex flex-col gap-2">
+          <p className="text-[14px] font-bold leading-6 text-[#161616]">
+            Exemples
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {exampleValues.map((value) => (
+              <span
+                key={value}
+                className="rounded-[2px] bg-[#f6f6f6] px-1 font-mono text-[14px] leading-6 text-[#3a3a3a]"
               >
-                <span className="text-[#666666]">{name}</span>
-                <span className="text-[13px] text-[#3a3a3a]">{value}</span>
-              </div>
+                {value}
+              </span>
             ))}
           </div>
+        </div>
+      </div>
+    );
+  }
 
-          <div className="flex max-w-[204px] flex-col gap-2">
-            <h3 className="text-[13px] font-medium leading-[1.4] text-[#161616]">
-              Distribution
-            </h3>
-            <div className="flex h-[146px] items-end gap-[2px] border-b border-[#666666]/40">
-              {distributionHeights.map((height, index) => (
-                <div
-                  key={`${height}-${index}`}
-                  className="min-w-0 flex-1 rounded-t-[1px] bg-[#b6cffb]"
-                  style={{ height }}
-                />
-              ))}
+  return (
+    <div className="grid grid-cols-3 gap-5">
+      <div className="flex flex-col gap-2">
+        <p className="text-[14px] font-bold leading-6 text-[#161616]">
+          Valeurs fréquentes
+        </p>
+        <div className="flex flex-col gap-1">
+          {frequentColumnValues.slice(0, 6).map((item) => (
+            <div
+              key={item.label}
+              className="grid grid-cols-[minmax(0,1fr)_72px] items-center gap-2 text-[14px] leading-6 text-[#3a3a3a]"
+            >
+              <span className="w-fit max-w-full truncate rounded-[2px] bg-[#f6f6f6] px-1 text-[#3a3a3a]">
+                {item.label}
+              </span>
+              <span>{item.value}</span>
             </div>
-            <div className="flex justify-between text-[8px] leading-none text-[#666666]">
-              <span>0</span>
-              <span>6</span>
-              <span>12</span>
-            </div>
-          </div>
+          ))}
+        </div>
+      </div>
+      <StructureDetailStat
+        label="Valeurs uniques"
+        value={String(getColumnUniqueCount(column))}
+      />
+      <StructureDetailStat
+        label="Usage"
+        value={
+          column.type === "reference" || column.type === "referenceData"
+            ? "Rapprochement avec un référentiel"
+            : "Recherche et regroupement"
+        }
+      />
+    </div>
+  );
+}
+
+function TableValuePreview({
+  value,
+  type,
+}: {
+  value: string;
+  type: ColumnType;
+}) {
+  if (type === "category" || type === "reference") {
+    return (
+      <span className="truncate rounded bg-[#eeeeee] px-2 py-1 text-[12px] leading-3 text-[#3a3a3a]">
+        {value}
+      </span>
+    );
+  }
+
+  if (type === "identifier") {
+    return <span className="truncate text-[12px] text-[#3a3a3a]">{value}</span>;
+  }
+
+  return <span className="truncate text-[12px] text-[#161616]">{value}</span>;
+}
+
+function StructureColumnRow({
+  column,
+  index,
+  expanded,
+  onToggle,
+}: {
+  column: TableColumn;
+  index: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const quality = getColumnQuality(index);
+  const uniqueCount = getColumnUniqueCount(column);
+  const previewValue = getColumnExampleValues(column)[0] ?? "—";
+  const validCount = Math.round((quality.valid / 100) * rows.length);
+  const nonConformingCount = Math.round(
+    (quality.nonConforming / 100) * rows.length,
+  );
+  const missingCount = Math.max(rows.length - validCount - nonConformingCount, 0);
+  const validPercent = Math.round((validCount / rows.length) * 100);
+  const nonConformingPercent = Math.round(
+    (nonConformingCount / rows.length) * 100,
+  );
+  const missingPercent = Math.round((missingCount / rows.length) * 100);
+  const uniquePercent = Math.round((uniqueCount / rows.length) * 100);
+
+  return (
+    <Fragment>
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="grid w-full grid-cols-[minmax(220px,1.2fr)_150px_150px_90px_120px_140px_130px_130px] text-left text-[12px] leading-4 hover:bg-[#f6f6f6]"
+      >
+        <div className="flex h-8 min-w-0 items-center gap-1 border-b border-r border-[#E5E5E5] px-2">
+          <span className="truncate font-medium text-[#161616]">
+            {column.label}
+          </span>
+        </div>
+        <span className="flex h-8 items-center border-b border-r border-[#E5E5E5] px-2 text-[#3a3a3a]">
+          <span className="flex min-w-0 items-center gap-1 rounded-[2px] bg-[#f6f6f6] px-1">
+            <Icon path={icons[column.icon]} className="h-4 w-4 shrink-0 text-[#3a3a3a]" />
+            <span className="truncate">
+            {getColumnTypeLabel(column.type)}
+            </span>
+          </span>
+        </span>
+        <span
+          className={`flex h-8 items-center border-b border-r border-[#E5E5E5] px-2 ${
+            column.type === "number" ? "justify-end" : ""
+          }`}
+        >
+          <TableValuePreview value={previewValue} type={column.type} />
+        </span>
+        <span className="flex h-8 items-center border-b border-r border-[#E5E5E5] px-2 text-[#3a3a3a]">
+          {rows.length}
+        </span>
+        <span className="flex h-8 items-center border-b border-r border-[#E5E5E5] px-2 text-[#3a3a3a]">
+          {validCount} ({validPercent} %)
+        </span>
+        <span className="flex h-8 items-center border-b border-r border-[#E5E5E5] px-2 text-[#3a3a3a]">
+          {nonConformingCount} ({nonConformingPercent} %)
+        </span>
+        <span className="flex h-8 items-center border-b border-r border-[#E5E5E5] px-2 text-[#3a3a3a]">
+          {missingCount} ({missingPercent} %)
+        </span>
+        <span className="flex h-8 items-center justify-between gap-2 border-b border-r border-[#E5E5E5] px-2 text-[#3a3a3a]">
+          <span>
+            {uniqueCount} ({uniquePercent} %)
+          </span>
+          <Icon
+            path={icons.arrowRightS}
+            className={`h-4 w-4 text-[#3a3a3a] ${expanded ? "rotate-90" : ""}`}
+          />
+        </span>
+      </button>
+      {expanded ? (
+        <div className="border-b border-r border-[#E5E5E5] bg-[#FFFFFF] px-2 py-4">
+          <StructureColumnExpandedContent column={column} quality={quality} />
         </div>
       ) : null}
-    </section>
+    </Fragment>
   );
 }
 
 function StructurePanel() {
+  const [openColumnKey, setOpenColumnKey] = useState<ColumnKey | null>(null);
   const columnTypeCounts = {
     number: tableColumns.filter((column) => column.type === "number").length,
     category: tableColumns.filter((column) => column.type === "category").length,
@@ -707,9 +1028,9 @@ function StructurePanel() {
   };
 
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-white p-4">
-      <div className="flex max-w-[1180px] flex-col gap-5 text-[#3a3a3a]">
-        <div className="grid grid-cols-2 gap-10">
+    <div className="min-h-0 flex-1 overflow-auto bg-[#FFFFFF] p-4">
+      <div className="flex w-full flex-col gap-5 text-[#3a3a3a]">
+        <div className="grid w-full grid-cols-2 gap-5">
           <StructureSection title="Résumé">
             <StructureMetricRow
               icon="columns"
@@ -722,27 +1043,9 @@ function StructurePanel() {
               value={String(rows.length)}
             />
             <StructureMetricRow icon="download" label="Poids" value="232Mo" />
-            <StructureMetricRow
-              icon="conform"
-              label="Valeurs valides"
-              value="5 (39%)"
-              tone="success"
-            />
-            <StructureMetricRow
-              icon="issue"
-              label="Valeurs non conformes"
-              value="5 (39%)"
-              tone="warning"
-            />
-            <StructureMetricRow
-              icon="missing"
-              label="Valeurs manquantes"
-              value="5 (39%)"
-              tone="error"
-            />
           </StructureSection>
 
-          <StructureSection title="Colonnes">
+          <StructureSection title="Types">
             <StructureMetricRow
               icon="number"
               label="Nombre"
@@ -775,16 +1078,55 @@ function StructurePanel() {
               tone="purple"
             />
           </StructureSection>
+
         </div>
 
-        <div className="flex flex-col gap-1">
-          <StructureColumnDetail icon="category" label="Catégorie" expanded />
-          <StructureColumnDetail icon="calendar" label="Date" />
-          <StructureColumnDetail
-            icon="referenceData"
-            label="Données de référence"
-          />
-        </div>
+        <section>
+          <h2 className="mb-3 text-[14px] font-bold leading-6 text-[#161616]">
+            Colonnes
+          </h2>
+          <div className="min-w-[1240px] overflow-hidden border-l border-t border-[#E5E5E5] bg-[#FFFFFF]">
+            <div className="grid grid-cols-[minmax(220px,1.2fr)_150px_150px_90px_120px_140px_130px_130px] bg-[#f6f6f6] text-[12px] font-bold leading-4 text-[#161616]">
+              <span className="flex h-12 items-center border-b border-r border-[#E5E5E5] px-3">
+                Nom de la colonne
+              </span>
+              <span className="flex h-12 items-center border-b border-r border-[#E5E5E5] px-3">
+                Type
+              </span>
+              <span className="flex h-12 items-center border-b border-r border-[#E5E5E5] px-3">
+                Aperçu
+              </span>
+              <span className="flex h-12 items-center border-b border-r border-[#E5E5E5] px-3">
+                Valeur
+              </span>
+              <span className="flex h-12 items-center border-b border-r border-[#E5E5E5] px-3">
+                Valides
+              </span>
+              <span className="flex h-12 items-center border-b border-r border-[#E5E5E5] px-3">
+                Non conformes
+              </span>
+              <span className="flex h-12 items-center border-b border-r border-[#E5E5E5] px-3">
+                Manquantes
+              </span>
+              <span className="flex h-12 items-center border-b border-r border-[#E5E5E5] px-3">
+                Distinctes
+              </span>
+            </div>
+            {tableColumns.map((column, index) => (
+              <StructureColumnRow
+                key={column.key}
+                column={column}
+                index={index}
+                expanded={openColumnKey === column.key}
+                onToggle={() =>
+                  setOpenColumnKey((current) =>
+                    current === column.key ? null : column.key,
+                  )
+                }
+              />
+            ))}
+          </div>
+        </section>
       </div>
     </div>
   );
@@ -851,7 +1193,8 @@ const icons = {
   category: RiPriceTag3Line,
   calendar: RiCalendarLine,
   download: RiDownloadLine,
-  expand: RiFullscreenLine,
+  fullscreen: RiFullscreenLine,
+  fullscreenExit: RiFullscreenExitLine,
   externalLink: RiExternalLinkLine,
   copy: RiFileCopyLine,
   filter: RiFilterLine,
@@ -861,6 +1204,7 @@ const icons = {
   conform: RiCheckboxCircleLine,
   arrowDown: RiArrowDownLine,
   arrowDropDown: RiArrowDropDownLine,
+  arrowRightS: RiArrowRightSLine,
   arrowUp: RiArrowUpLine,
   issue: RiQuestionLine,
   missing: RiErrorWarningLine,
@@ -878,7 +1222,7 @@ const icons = {
 
 function FormatTag({ children }: { children: string }) {
   return (
-    <span className="rounded bg-black/[0.04] px-2 py-0.5 text-[12px] leading-4 text-[#3a3a3a]">
+    <span className="rounded bg-[#eeeeee] px-2 py-0.5 text-[12px] leading-4 text-[#3a3a3a]">
       {children}
     </span>
   );
@@ -886,7 +1230,7 @@ function FormatTag({ children }: { children: string }) {
 
 const resourceIconStyles = {
   table: "bg-[#c3fad5] text-[#18753c]",
-  geodata: "bg-[#e9edfe] text-[#0000ff]",
+  geodata: "bg-[#e6eefe] text-[#0063cb]",
   code: "bg-[#fce164] text-[#716043]",
   documentation: "bg-[#fee7fc] text-[#6e445a]",
 } satisfies Record<ResourceType, string>;
@@ -904,8 +1248,8 @@ function ResourceItem({
     <button
       type="button"
       onClick={onSelect}
-      className={`flex h-7 items-center gap-1 rounded px-1 py-1 ${
-        active ? "bg-black/[0.04]" : "hover:bg-black/[0.02]"
+      className={`grid h-7 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 rounded px-1 py-1 text-left ${
+        active ? "bg-[#eeeeee]" : "hover:bg-[#f6f6f6]"
       }`}
     >
       <span
@@ -913,10 +1257,10 @@ function ResourceItem({
       >
         <Icon path={icons[resource.type]} className="h-4 w-4" />
       </span>
-      <div className="flex min-w-0 flex-1 items-center gap-0.5 whitespace-nowrap">
+      <div className="flex min-w-0 items-center gap-0.5 whitespace-nowrap">
         <span
           className={`truncate text-[13px] ${
-            active ? "font-extrabold text-[#161616]" : "font-medium text-[#5d5d5d]"
+            active ? "font-extrabold text-[#161616]" : "font-medium text-[#3a3a3a]"
           }`}
         >
           {resource.name}
@@ -931,20 +1275,59 @@ function ResourceItem({
   );
 }
 
+function DatasetContextHeader({
+  updatedAt,
+  actions,
+}: {
+  updatedAt: string;
+  actions: ReactNode;
+}) {
+  return (
+    <div className="flex h-[58px] shrink-0 items-center justify-between gap-4 border-b border-[#E5E5E5] bg-[#f6f6f6]/95 px-3 backdrop-blur-[5px]">
+      <div className="flex min-w-0 items-center gap-2">
+        <div className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[2px] border border-[#E5E5E5] bg-[#FFFFFF] p-1">
+          <div className="flex h-full w-full items-center justify-center rounded-[1px] border border-[#eeeeee] text-[8px] font-bold leading-3 text-[#000091]">
+            DG
+          </div>
+        </div>
+        <div className="flex min-w-0 items-center gap-1 text-[16px] leading-[1.4]">
+          <span className="shrink-0 text-[#161616]">
+            Direction interministérielle du numérique
+          </span>
+          <span className="shrink-0 text-[#161616]">/</span>
+          <span className="truncate font-bold text-[#161616]">
+            Annuaire de l’éducation
+          </span>
+          <span className="shrink-0 text-[#3a3a3a]">·</span>
+          <span className="truncate text-[#3a3a3a]">
+            mis à jour le {updatedAt}
+          </span>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">{actions}</div>
+    </div>
+  );
+}
+
 function HeaderCell({
   column,
+  width,
   isOpen,
   sortDirection,
   onOpen,
+  onResizeStart,
 }: {
   column: (typeof tableColumns)[number];
+  width: number;
   isOpen: boolean;
   sortDirection?: SortDirection;
   onOpen: () => void;
+  onResizeStart: (event: ReactMouseEvent<HTMLButtonElement>) => void;
 }) {
   return (
     <div
-      className={`flex h-8 shrink-0 items-center justify-between border-b border-r border-[#e5e5e5] px-2 ${column.width}`}
+      className="relative flex h-12 shrink-0 items-center justify-between border-r border-[#E5E5E5] px-3"
+      style={{ width }}
     >
       <div className="flex min-w-0 items-center gap-1">
         <Icon
@@ -953,7 +1336,7 @@ function HeaderCell({
             column.icon === "referenceData" ? "text-[#7b4fbf]" : "text-[#3a3a3a]"
           }`}
         />
-        <span className="truncate text-[12px] font-medium text-[#161616]">
+        <span className="truncate text-[12px] font-bold text-[#161616]">
           {column.label}
         </span>
         {sortDirection ? (
@@ -968,14 +1351,23 @@ function HeaderCell({
         onClick={onOpen}
         aria-label={`Filtrer ${column.label}`}
         title={`Filtrer ${column.label}`}
-        className={`flex h-5 w-5 cursor-pointer items-center justify-center rounded transition-colors hover:bg-black/[0.04] ${
+        className={`flex h-5 w-5 cursor-pointer items-center justify-center rounded transition-colors hover:bg-[#eeeeee] ${
           isOpen ? "bg-[#e8edff]" : ""
         }`}
       >
         <Icon
           path={icons.filter}
-          className={`h-4 w-4 ${isOpen ? "text-[#000091]" : "text-[#b4b4b4]"}`}
+          className={`h-4 w-4 ${isOpen ? "text-[#000091]" : "text-[#CECECE]"}`}
         />
+      </button>
+      <button
+        type="button"
+        aria-label={`Redimensionner ${column.label}`}
+        title={`Redimensionner ${column.label}`}
+        onMouseDown={onResizeStart}
+        className="absolute -right-1 top-0 z-10 h-full w-2 cursor-col-resize touch-none"
+      >
+        <span className="mx-auto block h-full w-px bg-transparent transition-colors hover:bg-[#000091]" />
       </button>
     </div>
   );
@@ -991,7 +1383,7 @@ function SortControls({
   onSort: (key: ColumnKey, direction: SortDirection) => void;
 }) {
   return (
-    <div className="flex h-9 items-center justify-between border-b border-[#e6e6e6] px-2 text-[12px]">
+    <div className="flex h-9 items-center justify-between border-b border-[#E5E5E5] px-2 text-[12px]">
       <span className="font-medium text-[#161616]">Trier</span>
       <div className="flex items-center gap-1">
         {(["asc", "desc"] as const).map((direction) => {
@@ -1006,13 +1398,13 @@ function SortControls({
               className={`flex h-6 items-center gap-1 rounded px-2 ${
                 isActive
                   ? "bg-[#e8edff] text-[#000091]"
-                  : "text-[#666666] hover:bg-black/[0.04]"
+                  : "text-[#3a3a3a] hover:bg-[#eeeeee]"
               }`}
             >
               <Icon
                 path={direction === "asc" ? icons.arrowUp : icons.arrowDown}
                 className={`h-3.5 w-3.5 ${
-                  isActive ? "text-[#000091]" : "text-[#666666]"
+                  isActive ? "text-[#000091]" : "text-[#3a3a3a]"
                 }`}
               />
               {direction === "asc" ? "Croissant" : "Décroissant"}
@@ -1028,11 +1420,11 @@ function CheckboxMark({ checked = false }: { checked?: boolean }) {
   return (
     <span
       className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[3px] border ${
-        checked ? "border-[#000091] bg-[#000091]" : "border-[#161616] bg-white"
+        checked ? "border-[#000091] bg-[#000091]" : "border-[#161616] bg-[#FFFFFF]"
       }`}
     >
       {checked ? (
-        <Icon path={icons.check} className="h-2.5 w-2.5 text-white" />
+        <Icon path={icons.check} className="h-2.5 w-2.5 text-[#FFFFFF]" />
       ) : null}
     </span>
   );
@@ -1053,15 +1445,15 @@ function FilterOption({
     <button
       type="button"
       onClick={onToggle}
-      className="flex h-8 w-full items-center gap-2 rounded px-1 text-left hover:bg-black/[0.04]"
+      className="flex h-8 w-full items-center gap-2 rounded px-1 text-left hover:bg-[#eeeeee]"
     >
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <CheckboxMark checked={checked} />
-        <span className="rounded bg-[#e6e6e6] px-2 py-1 text-[12px] leading-3 text-[#5d5d5d]">
+        <span className="rounded bg-[#eeeeee] px-2 py-1 text-[12px] leading-3 text-[#3a3a3a]">
           {label}
         </span>
       </div>
-      <span className="px-2 text-[12px] text-[#5d5d5d]">{count}</span>
+      <span className="px-2 text-[12px] text-[#3a3a3a]">{count}</span>
     </button>
   );
 }
@@ -1080,8 +1472,8 @@ function ColumnSelector({
   onClose: () => void;
 }) {
   return (
-    <div className="absolute right-0 top-7 z-30 flex w-60 flex-col overflow-hidden rounded border border-[#e6e6e6] bg-white shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]">
-      <div className="flex h-8 items-center gap-1 border-b border-[#e6e6e6] bg-[#fcfcfc] px-2">
+    <div className="absolute right-0 top-7 z-30 flex w-60 flex-col overflow-hidden rounded border border-[#E5E5E5] bg-[#FFFFFF] shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]">
+      <div className="flex h-8 items-center gap-1 border-b border-[#E5E5E5] bg-[#f6f6f6] px-2">
         <p className="min-w-0 flex-1 text-[12px] font-bold text-[#161616]">
           {selectedColumnKeys.length} sur {tableColumns.length} colonnes visibles
         </p>
@@ -1089,13 +1481,13 @@ function ColumnSelector({
           type="button"
           onClick={onClose}
           aria-label="Fermer la sélection des colonnes"
-          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded hover:bg-black/[0.04]"
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded hover:bg-[#eeeeee]"
         >
           <Icon path={icons.close} className="h-4 w-4 text-[#3a3a3a]" />
         </button>
       </div>
 
-      <div className="max-h-64 overflow-auto border-b border-[#e6e6e6] p-1">
+      <div className="max-h-64 overflow-auto border-b border-[#E5E5E5] p-1">
         {tableColumns.map((column) => {
           const checked = selectedColumnKeys.includes(column.key);
 
@@ -1104,10 +1496,10 @@ function ColumnSelector({
               key={column.key}
               type="button"
               onClick={() => onToggleColumn(column.key)}
-              className="flex h-8 w-full items-center gap-2 rounded px-1 text-left hover:bg-black/[0.04]"
+              className="flex h-8 w-full items-center gap-2 rounded px-1 text-left hover:bg-[#eeeeee]"
             >
               <CheckboxMark checked={checked} />
-              <span className="truncate text-[13px] font-medium leading-[19.5px] text-[#0a0a0a]">
+              <span className="truncate text-[13px] font-medium leading-5 text-[#161616]">
                 {column.label}
               </span>
             </button>
@@ -1119,14 +1511,14 @@ function ColumnSelector({
         <button
           type="button"
           onClick={onClearAll}
-          className="h-6 px-1 text-[11px] font-medium leading-6 text-[#161616] hover:underline"
+          className="h-6 px-1 text-[12px] font-medium leading-6 text-[#161616] hover:underline"
         >
           Décocher tout
         </button>
         <button
           type="button"
           onClick={onSelectAll}
-          className="h-6 px-1 text-[11px] font-medium leading-6 text-[#161616] hover:underline"
+          className="h-6 px-1 text-[12px] font-medium leading-6 text-[#161616] hover:underline"
         >
           Cocher tout
         </button>
@@ -1170,19 +1562,19 @@ function CategoryFilterMenu({
 
   return (
     <div
-      className={`filter-popover filter-popover-${id} absolute top-8 z-20 flex w-[260px] flex-col overflow-hidden rounded border border-[#e6e6e6] bg-white shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]`}
+      className={`filter-popover filter-popover-${id} absolute top-8 z-20 flex w-[260px] flex-col overflow-hidden rounded border border-[#E5E5E5] bg-[#FFFFFF] shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]`}
       style={{ left }}
     >
-      <div className="flex h-8 items-center gap-1 border-b border-[#e6e6e6] bg-[#fcfcfc] px-2">
+      <div className="flex h-8 items-center gap-1 border-b border-[#E5E5E5] bg-[#f6f6f6] px-2">
         <p className="min-w-0 flex-1 text-[12px] text-[#161616]">
-          <span className="font-bold">Filter : </span>
+          <span className="font-bold">Filtrer : </span>
           <span>{label}</span>
         </p>
         <button
           type="button"
           onClick={onClose}
           aria-label="Fermer le filtre"
-          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded hover:bg-black/[0.04]"
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded hover:bg-[#eeeeee]"
         >
           <Icon path={icons.close} className="h-4 w-4 text-[#3a3a3a]" />
         </button>
@@ -1190,18 +1582,18 @@ function CategoryFilterMenu({
 
       <SortControls column={column} sortState={sortState} onSort={onSort} />
 
-      <label className="flex h-9 items-center gap-1 border-b border-[#e6e6e6] px-2">
-        <Icon path={icons.search} className="h-3.5 w-3.5 text-[#5d5d5d]" />
+      <label className="flex h-9 items-center gap-1 border-b border-[#E5E5E5] px-2">
+        <Icon path={icons.search} className="h-3.5 w-3.5 text-[#3a3a3a]" />
         <input
           value={searchValue}
           onChange={(event) => onSearchChange(id, event.target.value)}
           aria-label={`Rechercher dans ${column.label}`}
           placeholder="Rechercher"
-          className="min-w-0 flex-1 bg-transparent text-[12px] font-medium text-[#5d5d5d] outline-none placeholder:text-[#5d5d5d]"
+          className="min-w-0 flex-1 bg-transparent text-[12px] font-medium text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
         />
       </label>
 
-      <div className="border-b border-[#e6e6e6] p-1">
+      <div className="border-b border-[#E5E5E5] p-1">
         {options.length > 0 ? (
           options.map((option) => (
             <FilterOption
@@ -1213,7 +1605,7 @@ function CategoryFilterMenu({
             />
           ))
         ) : (
-          <div className="flex h-8 items-center px-1 text-[12px] text-[#666666]">
+          <div className="flex h-8 items-center px-1 text-[12px] text-[#3a3a3a]">
             Aucun résultat
           </div>
         )}
@@ -1249,21 +1641,23 @@ function NumberFilterMenu({
     return null;
   }
 
+  const bounds = getNumberStats(column);
+
   return (
     <div
-      className={`filter-popover filter-popover-${id} absolute top-8 z-20 flex w-[260px] flex-col overflow-hidden rounded border border-[#e6e6e6] bg-white shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]`}
+      className={`filter-popover filter-popover-${id} absolute top-8 z-20 flex w-[260px] flex-col overflow-hidden rounded border border-[#E5E5E5] bg-[#FFFFFF] shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]`}
       style={{ left }}
     >
-      <div className="flex h-8 items-center gap-1 border-b border-[#e6e6e6] bg-[#fcfcfc] px-2">
+      <div className="flex h-8 items-center gap-1 border-b border-[#E5E5E5] bg-[#f6f6f6] px-2">
         <p className="min-w-0 flex-1 text-[12px] text-[#161616]">
-          <span className="font-bold">Filter : </span>
+          <span className="font-bold">Filtrer : </span>
           <span>{label}</span>
         </p>
         <button
           type="button"
           onClick={onClose}
           aria-label="Fermer le filtre"
-          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded hover:bg-black/[0.04]"
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded hover:bg-[#eeeeee]"
         >
           <Icon path={icons.close} className="h-4 w-4 text-[#3a3a3a]" />
         </button>
@@ -1271,16 +1665,16 @@ function NumberFilterMenu({
 
       <SortControls column={column} sortState={sortState} onSort={onSort} />
 
-      <div className="flex h-9 items-center border-b border-[#e6e6e6] px-2 text-[12px] font-medium text-[#5d5d5d]">
+      <div className="flex h-9 items-center border-b border-[#E5E5E5] px-2 text-[12px] font-medium text-[#3a3a3a]">
         Rechercher
       </div>
 
-      <div className="border-b border-[#e6e6e6] p-3">
-        <div className="mb-2 flex justify-between text-[11px] text-[#666666]">
+      <div className="border-b border-[#E5E5E5] p-3">
+        <div className="mb-2 flex justify-between text-[12px] text-[#3a3a3a]">
           <span>Valeurs manquantes</span>
           <span>1323(3%)</span>
         </div>
-        <div className="h-2 rounded bg-[#e6e6e6]">
+        <div className="h-2 rounded bg-[#eeeeee]">
           <div className="h-2 w-10 rounded bg-[#3a3a3a]" />
         </div>
         <div className="mt-3 flex justify-end gap-2 text-[12px] text-[#3a3a3a]">
@@ -1290,23 +1684,25 @@ function NumberFilterMenu({
       </div>
 
       <div className="p-3">
-        <div className="mb-1 flex justify-between text-[11px] text-[#666666]">
+        <div className="mb-1 flex justify-between text-[12px] text-[#3a3a3a]">
           <span>Min</span>
           <span>Max</span>
         </div>
         <div className="flex items-center gap-3">
           <input
             aria-label="Valeur minimale"
-            className="h-6 w-20 rounded border border-[#e6e6e6] px-2 text-[12px]"
+            placeholder={String(bounds.min)}
+            className="h-6 w-20 rounded border border-[#E5E5E5] px-2 text-[12px] placeholder:text-[#3a3a3a]"
             value={range.min}
             onChange={(event) =>
               onChangeRange(id, { ...range, min: event.target.value })
             }
           />
-          <span className="h-px w-10 bg-[#b4b4b4]" />
+          <span className="h-px w-10 bg-[#CECECE]" />
           <input
             aria-label="Valeur maximale"
-            className="h-6 w-20 rounded border border-[#e6e6e6] px-2 text-[12px]"
+            placeholder={String(bounds.max)}
+            className="h-6 w-20 rounded border border-[#E5E5E5] px-2 text-[12px] placeholder:text-[#3a3a3a]"
             value={range.max}
             onChange={(event) =>
               onChangeRange(id, { ...range, max: event.target.value })
@@ -1330,7 +1726,7 @@ function DateFilterMenu({
   id,
   label,
   left,
-  value,
+  filter,
   sortState,
   onChangeDate,
   onSort,
@@ -1340,21 +1736,52 @@ function DateFilterMenu({
   id: ColumnKey;
   label: string;
   left: number;
-  value: string;
+  filter: DateFilterValue;
   sortState: SortState;
-  onChangeDate: (key: ColumnKey, value: string) => void;
+  onChangeDate: (key: ColumnKey, value: DateFilterValue) => void;
   onSort: (key: ColumnKey, direction: SortDirection) => void;
   onClear: (key: ColumnKey) => void;
   onClose: () => void;
 }) {
+  const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
   const column = tableColumns.find((item) => item.key === id);
-  const days = [
-    ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"],
-    ["29", "30", "31", "1", "2", "3", "4"],
-    ["5", "6", "7", "8", "9", "10", "11"],
-    ["12", "13", "14", "15", "16", "17", "18"],
-    ["19", "20", "21", "22", "23", "24", "25"],
-    ["26", "27", "28", "29", "30", "1", "2"],
+  const weekDays = ["Lu", "Ma", "Me", "Je", "Ve", "Sa", "Di"];
+  const calendarDays = [
+    "29",
+    "30",
+    "31",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "10",
+    "11",
+    "12",
+    "13",
+    "14",
+    "15",
+    "16",
+    "17",
+    "18",
+    "19",
+    "20",
+    "21",
+    "22",
+    "23",
+    "24",
+    "25",
+    "26",
+    "27",
+    "28",
+    "29",
+    "30",
+    "1",
+    "2",
   ];
 
   if (!column) {
@@ -1363,19 +1790,19 @@ function DateFilterMenu({
 
   return (
     <div
-      className={`filter-popover filter-popover-${id} absolute top-8 z-20 flex w-[320px] flex-col overflow-hidden rounded border border-[#e6e6e6] bg-white shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]`}
+      className={`filter-popover filter-popover-${id} absolute top-8 z-20 flex w-[260px] flex-col overflow-hidden rounded border border-[#E5E5E5] bg-[#FFFFFF] shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]`}
       style={{ left }}
     >
-      <div className="flex h-8 items-center gap-1 border-b border-[#e6e6e6] bg-[#fcfcfc] px-2">
+      <div className="flex h-8 items-center gap-1 border-b border-[#E5E5E5] bg-[#f6f6f6] px-2">
         <p className="min-w-0 flex-1 text-[12px] text-[#161616]">
-          <span className="font-bold">Filter : </span>
+          <span className="font-bold">Filtrer : </span>
           <span>{label}</span>
         </p>
         <button
           type="button"
           onClick={onClose}
           aria-label="Fermer le filtre"
-          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded hover:bg-black/[0.04]"
+          className="flex h-6 w-6 cursor-pointer items-center justify-center rounded hover:bg-[#eeeeee]"
         >
           <Icon path={icons.close} className="h-4 w-4 text-[#3a3a3a]" />
         </button>
@@ -1383,43 +1810,130 @@ function DateFilterMenu({
 
       <SortControls column={column} sortState={sortState} onSort={onSort} />
 
-      <div className="flex h-9 items-center justify-between border-b border-[#e6e6e6] px-2 text-[12px] text-[#3a3a3a]">
-        <span>Est</span>
-        <span>⌄</span>
+      <div className="relative border-b border-[#E5E5E5]">
+        <button
+          type="button"
+          onClick={() => setIsModeMenuOpen((current) => !current)}
+          className="flex h-8 w-full items-center justify-between px-2 text-left text-[12px] text-[#3a3a3a] hover:bg-[#f6f6f6]"
+          aria-expanded={isModeMenuOpen}
+        >
+          <span className="font-medium">
+            {dateFilterModeLabels[filter.mode]}
+          </span>
+          <Icon
+            path={icons.arrowDown}
+            className={`h-3.5 w-3.5 ${isModeMenuOpen ? "rotate-180" : ""}`}
+          />
+        </button>
+        {isModeMenuOpen ? (
+          <div className="absolute left-1 right-1 top-8 z-40 overflow-hidden rounded border border-[#E5E5E5] bg-[#FFFFFF] shadow-[0_2px_8px_rgba(0,0,0,0.12)]">
+            {(["before", "after", "between"] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => {
+                  onChangeDate(id, { ...filter, mode });
+                  setIsModeMenuOpen(false);
+                }}
+                className={`flex h-8 w-full items-center justify-between px-2 text-left text-[12px] hover:bg-[#f6f6f6] ${
+                  filter.mode === mode
+                    ? "font-bold text-[#000091]"
+                    : "text-[#3a3a3a]"
+                }`}
+              >
+                <span>{dateFilterModeLabels[mode]}</span>
+                {filter.mode === mode ? (
+                  <Icon path={icons.check} className="h-3.5 w-3.5" />
+                ) : null}
+              </button>
+            ))}
+          </div>
+        ) : null}
       </div>
-      <label className="flex h-9 items-center border-b border-[#e6e6e6] px-2">
+      <label className="flex h-8 items-center border-b border-[#E5E5E5] px-2">
         <input
-          value={value}
-          onChange={(event) => onChangeDate(id, event.target.value)}
+          value={filter.value}
+          onChange={(event) =>
+            onChangeDate(id, { ...filter, value: event.target.value })
+          }
           aria-label="Entrer une date"
-          placeholder="Entrer une date"
-          className="w-full bg-transparent text-[12px] text-[#5d5d5d] outline-none placeholder:text-[#5d5d5d]"
+          placeholder={
+            filter.mode === "between" ? "Date de début" : "JJ/MM/AAAA"
+          }
+          className="w-full bg-transparent text-[12px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
         />
       </label>
+      {filter.mode === "between" ? (
+        <label className="flex h-8 items-center border-b border-[#E5E5E5] px-2">
+          <input
+            value={filter.endValue}
+            onChange={(event) =>
+              onChangeDate(id, { ...filter, endValue: event.target.value })
+            }
+            aria-label="Entrer une date de fin"
+            placeholder="Date de fin"
+            className="w-full bg-transparent text-[12px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
+          />
+        </label>
+      ) : null}
 
-      <div className="p-2">
-        <div className="mb-2 flex h-8 items-center justify-between text-[12px]">
-          <span className="rounded border border-[#e6e6e6] px-2 py-1">April</span>
-          <span className="rounded border border-[#e6e6e6] px-2 py-1">2024</span>
-          <span className="text-[#666666]">‹ ›</span>
+      <div className="p-2 pt-1.5">
+        <div className="mb-1.5 flex h-7 items-center justify-between text-[12px]">
+          <button
+            type="button"
+            className="rounded border border-[#E5E5E5] px-2 py-1 font-medium"
+          >
+            Avril 2024
+          </button>
+          <div className="flex items-center gap-1 text-[#3a3a3a]">
+            <button
+              type="button"
+              aria-label="Mois précédent"
+              className="flex h-6 w-6 items-center justify-center rounded hover:bg-[#eeeeee]"
+            >
+              ‹
+            </button>
+            <button
+              type="button"
+              aria-label="Mois suivant"
+              className="flex h-6 w-6 items-center justify-center rounded hover:bg-[#eeeeee]"
+            >
+              ›
+            </button>
+          </div>
         </div>
-        <div className="grid grid-cols-7 gap-1 text-center text-[11px] text-[#666666]">
-          {days.flat().map((day, index) => (
+        <div className="mb-1 grid grid-cols-7 gap-0.5 text-center text-[11px] font-medium text-[#3a3a3a]">
+          {weekDays.map((day) => (
+            <span key={day} className="flex h-5 items-center justify-center">
+              {day}
+            </span>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-0.5 text-center text-[12px] text-[#3a3a3a]">
+          {calendarDays.map((day, index) => (
             <span
               key={`${day}-${index}`}
               className={`flex h-6 items-center justify-center rounded ${
-                day === "7" ? "bg-[#000091] text-white" : ""
+                day === "7" ? "bg-[#000091] text-[#FFFFFF]" : ""
               }`}
             >
               {day}
             </span>
           ))}
         </div>
-        <div className="mt-2 flex justify-end gap-3 text-[12px] text-[#3a3a3a]">
-          <button type="button" onClick={() => onClear(id)}>
+        <div className="mt-2 flex justify-end gap-2 border-t border-[#E5E5E5] pt-2 text-[12px]">
+          <button
+            type="button"
+            onClick={() => onClear(id)}
+            className="h-6 rounded px-2 font-medium text-[#3a3a3a] hover:bg-[#eeeeee]"
+          >
             Effacer
           </button>
-          <button type="button" onClick={onClose}>
+          <button
+            type="button"
+            onClick={onClose}
+            className="h-6 rounded bg-[#000091] px-2 font-medium text-[#FFFFFF]"
+          >
             Appliquer
           </button>
         </div>
@@ -1451,13 +1965,13 @@ function FilterMenus({
   categoryFilters: Partial<Record<ColumnKey, string[]>>;
   filterSearches: Partial<Record<ColumnKey, string>>;
   numberRanges: Partial<Record<ColumnKey, NumberRange>>;
-  dateFilters: Partial<Record<ColumnKey, string>>;
+  dateFilters: Partial<Record<ColumnKey, DateFilterValue>>;
   onToggleCategory: (key: ColumnKey, value: string) => void;
   onSearchFilter: (key: ColumnKey, value: string) => void;
   onChangeRange: (key: ColumnKey, range: NumberRange) => void;
   onSort: (key: ColumnKey, direction: SortDirection) => void;
   onClearRange: (key: ColumnKey) => void;
-  onChangeDate: (key: ColumnKey, value: string) => void;
+  onChangeDate: (key: ColumnKey, value: DateFilterValue) => void;
   onClearDate: (key: ColumnKey) => void;
   onClose: () => void;
 }) {
@@ -1480,7 +1994,7 @@ function FilterMenus({
     return (
       <NumberFilterMenu
         id={column.key}
-        label="Nombre"
+        label={column.label}
         left={left}
         range={range}
         sortState={sortState}
@@ -1496,9 +2010,9 @@ function FilterMenus({
     return (
       <DateFilterMenu
         id={column.key}
-        label="Date"
+        label={column.label}
         left={left}
-        value={dateFilters[column.key] ?? ""}
+        filter={dateFilters[column.key] ?? emptyDateFilter}
         sortState={sortState}
         onChangeDate={onChangeDate}
         onSort={onSort}
@@ -1511,7 +2025,7 @@ function FilterMenus({
   return (
     <CategoryFilterMenu
       id={column.key}
-      label="Catégorie"
+      label={column.label}
       left={left}
       selectedValues={categoryFilters[column.key] ?? []}
       searchValue={filterSearches[column.key] ?? ""}
@@ -1553,7 +2067,7 @@ function CellActionMenu({
 
   return (
     <div
-      className={`absolute left-1 top-7 z-30 flex flex-col overflow-hidden rounded border border-[#e6e6e6] bg-white shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)] ${
+      className={`absolute left-1 top-7 z-30 flex flex-col overflow-hidden rounded border border-[#E5E5E5] bg-[#FFFFFF] shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)] ${
         isReferenceData ? "w-[238px]" : "w-[176px]"
       }`}
     >
@@ -1563,7 +2077,7 @@ function CellActionMenu({
           event.stopPropagation();
           onCopy();
         }}
-        className="flex h-9 w-full items-center gap-1 border-b border-[#e6e6e6] px-2 text-left text-[13px] leading-[1.4] text-[#3a3a3a] hover:bg-black/[0.04]"
+        className="flex h-9 w-full items-center gap-1 border-b border-[#E5E5E5] px-2 text-left text-[13px] leading-[1.4] text-[#3a3a3a] hover:bg-[#eeeeee]"
       >
         <Icon path={icons.copy} className="h-3.5 w-3.5 text-[#3a3a3a]" />
         Copier cette valeur
@@ -1574,13 +2088,13 @@ function CellActionMenu({
           event.stopPropagation();
           onFilter();
         }}
-        className="flex h-9 w-full items-center gap-1 px-2 text-left text-[13px] leading-[1.4] text-[#3a3a3a] hover:bg-black/[0.04]"
+        className="flex h-9 w-full items-center gap-1 px-2 text-left text-[13px] leading-[1.4] text-[#3a3a3a] hover:bg-[#eeeeee]"
       >
         <Icon path={icons.filter} className="h-3.5 w-3.5 text-[#3a3a3a]" />
         Filtrer par cette valeur
       </button>
       {isReferenceData ? (
-        <div className="flex flex-col gap-2 border-t border-[#e6e6e6] px-2 py-2">
+        <div className="flex flex-col gap-2 border-t border-[#E5E5E5] px-2 py-2">
           <div className="flex items-center gap-1 text-[13px] leading-[1.4] text-[#7b4fbf]">
             <Icon path={icons.referenceData} className="h-3.5 w-3.5 text-[#7b4fbf]" />
             Données de référence
@@ -1612,7 +2126,7 @@ function DataCell({
   id: string;
   value: string;
   type: ColumnType;
-  width: string;
+  width: number;
   isActive: boolean;
   onOpen: () => void;
   onCopy: () => void;
@@ -1625,9 +2139,10 @@ function DataCell({
     }
   }
 
-  const cellClassName = `relative flex h-8 shrink-0 cursor-pointer items-center border-b border-r border-[#e5e5e5] px-2 text-left hover:bg-[#f6f6f6] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091] ${width} ${
+  const cellClassName = `relative flex h-8 shrink-0 cursor-pointer items-center border-b border-r border-[#E5E5E5] px-2 text-left hover:bg-[#f6f6f6] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091] ${
     isActive ? "bg-[#e8edff]" : ""
   }`;
+  const cellStyle = { width };
 
   if (type === "category" || type === "reference") {
     return (
@@ -1637,9 +2152,10 @@ function DataCell({
         onClick={onOpen}
         onKeyDown={handleKeyDown}
         className={cellClassName}
+        style={cellStyle}
         aria-label={`Actions pour ${id} : ${value}`}
       >
-        <span className="truncate rounded bg-black/[0.04] px-2 py-1 text-[12px] leading-3 text-[#6a6a6a]">
+        <span className="truncate rounded bg-[#eeeeee] px-2 py-1 text-[12px] leading-3 text-[#3a3a3a]">
           {value}
         </span>
         {isActive ? (
@@ -1662,6 +2178,7 @@ function DataCell({
         onClick={onOpen}
         onKeyDown={handleKeyDown}
         className={`${cellClassName} text-[12px] text-[#3a3a3a]`}
+        style={cellStyle}
         aria-label={`Actions pour ${id} : ${value}`}
       >
         <span className="truncate">{value}</span>
@@ -1686,6 +2203,7 @@ function DataCell({
       className={`${cellClassName} text-[12px] text-[#161616] ${
         type === "number" ? "justify-end" : "justify-start"
       }`}
+      style={cellStyle}
       aria-label={`Actions pour ${id} : ${value}`}
     >
       <span className="truncate">{value}</span>
@@ -1716,14 +2234,14 @@ function ActiveFilterChip({
 }) {
   return (
     <div
-      className="flex h-6 cursor-pointer items-center gap-0.5 rounded border border-[#c2d1ff] bg-[#e8edff] py-0.5 pl-1 pr-0.5 text-[12px] leading-4 text-[#0063cb]"
+      className="flex h-6 cursor-pointer items-center gap-0.5 rounded border border-[#c2d1ff] bg-[#e8edff] py-0.5 pl-1 pr-0.5 text-[12px] leading-4 text-[#000091]"
     >
       <button
         type="button"
         onClick={onOpen}
         className="flex items-center gap-0.5"
       >
-        <Icon path={icons[icon]} className="h-4 w-4 text-[#0063cb]" />
+        <Icon path={icons[icon]} className="h-4 w-4 text-[#000091]" />
         <span className="font-medium">{label}</span>
         {value ? <span>{value}</span> : null}
       </button>
@@ -1733,7 +2251,7 @@ function ActiveFilterChip({
         aria-label={`Retirer ${label}`}
         className="flex h-5 w-5 items-center justify-center rounded hover:bg-[#dbe5ff]"
       >
-        <Icon path={icons.close} className="h-3.5 w-3.5 text-[#0063cb]" />
+        <Icon path={icons.close} className="h-3.5 w-3.5 text-[#000091]" />
       </button>
     </div>
   );
@@ -1757,7 +2275,7 @@ function ActiveFiltersBar({
   sortState: SortState;
   categoryFilters: Partial<Record<ColumnKey, string[]>>;
   numberRanges: Partial<Record<ColumnKey, NumberRange>>;
-  dateFilters: Partial<Record<ColumnKey, string>>;
+  dateFilters: Partial<Record<ColumnKey, DateFilterValue>>;
   onOpenFilter: (key: ColumnKey) => void;
   onClearSearch: () => void;
   onClearCategory: (key: ColumnKey) => void;
@@ -1781,9 +2299,9 @@ function ActiveFiltersBar({
   const activeDateEntries = tableColumns
     .map((column) => ({
       column,
-      value: dateFilters[column.key],
+      filter: dateFilters[column.key],
     }))
-    .filter((entry) => entry.value?.trim());
+    .filter((entry) => isDateFilterActive(entry.filter));
   const sortedColumn = sortState
     ? tableColumns.find((column) => column.key === sortState.key)
     : null;
@@ -1799,7 +2317,7 @@ function ActiveFiltersBar({
   }
 
   return (
-    <div className="flex h-10 items-center justify-between border-b border-[#f1f1f1] bg-white px-2">
+    <div className="flex h-10 items-center justify-between border-b border-[#E5E5E5] bg-[#FFFFFF] px-2">
       <div className="flex min-w-0 items-center gap-1">
         {sortState && sortedColumn ? (
           <ActiveFilterChip
@@ -1842,12 +2360,12 @@ function ActiveFiltersBar({
             onRemove={() => onClearNumber(column.key)}
           />
         ))}
-        {activeDateEntries.map(({ column, value }) => (
+        {activeDateEntries.map(({ column, filter }) => (
           <ActiveFilterChip
             key={column.key}
             icon="calendar"
             label={`${column.label}:`}
-            value={value}
+            value={getDateFilterChipValue(filter ?? emptyDateFilter)}
             onOpen={() => onOpenFilter(column.key)}
             onRemove={() => onClearDate(column.key)}
           />
@@ -1858,7 +2376,7 @@ function ActiveFiltersBar({
         type="button"
         onClick={onClearAll}
         disabled={!hasFilters}
-        className="flex h-6 items-center gap-1 rounded px-2 text-[13px] leading-4 text-[#3a3a3a] hover:bg-black/[0.04] disabled:opacity-40"
+        className="flex h-6 items-center gap-1 rounded px-2 text-[13px] leading-4 text-[#3a3a3a] hover:bg-[#eeeeee] disabled:opacity-40"
       >
         <Icon path={icons.close} className="h-4 w-4 text-[#3a3a3a]" />
         Tout effacer
@@ -1869,9 +2387,9 @@ function ActiveFiltersBar({
 
 function DescriptionPanel() {
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-white">
+    <div className="min-h-0 flex-1 overflow-auto bg-[#FFFFFF]">
       <article className="max-w-[792px] px-3 py-4 text-[14px] leading-6 text-[#3a3a3a]">
-        <h1 className="mb-2 text-[24px] font-bold leading-8 text-[#3a3a3a]">
+        <h1 className="mb-2 text-[20px] font-bold leading-7 text-[#3a3a3a]">
           Analyse des données scolaires 2023
         </h1>
 
@@ -1955,20 +2473,24 @@ function MetadataValue({
             type="button"
             onClick={() => navigator.clipboard?.writeText(value)}
             aria-label={`Copier ${label}`}
-            className="flex h-5 w-5 items-center justify-center rounded hover:bg-black/[0.04]"
+            className="flex h-5 w-5 items-center justify-center rounded hover:bg-[#eeeeee]"
           >
             <Icon path={icons.copy} className="h-4 w-4 text-[#3a3a3a]" />
           </button>
         ) : null}
       </div>
       {chip ? (
-        <span className="w-fit rounded-[2px] bg-[#f6f6f6] px-1 text-[14px] leading-6 tracking-[0.28px] text-[#666666]">
+        <span
+          className={`w-fit rounded-[2px] bg-[#f6f6f6] px-1 text-[14px] leading-6 text-[#3a3a3a] ${
+            technical ? "font-mono" : ""
+          }`}
+        >
           {value}
         </span>
       ) : (
         <p
           className={`truncate text-[#3a3a3a] ${
-            technical ? "tracking-[0.28px]" : ""
+            technical ? "font-mono" : ""
           }`}
         >
           {value}
@@ -1980,7 +2502,7 @@ function MetadataValue({
 
 function MetadataPanel() {
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-white p-4">
+    <div className="min-h-0 flex-1 overflow-auto bg-[#FFFFFF] p-4">
       <div className="grid w-full grid-cols-3 gap-5">
         <div className="flex min-w-0 flex-col gap-3">
           <MetadataValue label="Créé le" value="13 octobre 2022" />
@@ -2047,20 +2569,20 @@ function ApiEndpointRow({
   description: string;
 }) {
   return (
-    <div className="flex min-h-[72px] items-start gap-3 border-b border-[#e5e5e5] px-1 py-3">
-      <span className="mt-1 flex w-16 shrink-0 items-center justify-center rounded bg-[#e6eefe] px-1.5 py-0.5 text-[12px] font-bold leading-3 text-[#0063cb]">
+    <div className="flex min-h-[72px] items-start gap-3 border-b border-[#E5E5E5] px-1 py-3">
+      <span className="mt-1 flex w-16 shrink-0 items-center justify-center rounded bg-[#e6eefe] px-1.5 py-0.5 font-mono text-[12px] font-bold leading-3 text-[#0063cb]">
         GET
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex min-w-0 items-center gap-2">
-          <span className="truncate text-[14px] font-light leading-5 text-[#161616]">
+          <span className="truncate font-mono text-[14px] leading-5 text-[#161616]">
             {path}
           </span>
           <button
             type="button"
             onClick={() => navigator.clipboard?.writeText(path)}
             aria-label="Copier le lien"
-            className="flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-black/[0.04]"
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-[#eeeeee]"
           >
             <Icon path={icons.copy} className="h-4 w-4 text-[#3a3a3a]" />
           </button>
@@ -2076,9 +2598,9 @@ function ApiEndpointRow({
 
 function ApiModelRow({ name }: { name: string }) {
   return (
-    <div className="flex items-center gap-2 border-b border-[#e5e5e5] px-1 py-3 last:border-b-0">
+    <div className="flex items-center gap-2 border-b border-[#E5E5E5] px-1 py-3 last:border-b-0">
       <Icon path={icons.code} className="h-4 w-4 text-[#3a3a3a]" />
-      <span className="text-[14px] leading-5 text-[#161616]">
+      <span className="font-mono text-[14px] leading-5 text-[#161616]">
         {name}
       </span>
     </div>
@@ -2087,7 +2609,7 @@ function ApiModelRow({ name }: { name: string }) {
 
 function ApiPanel() {
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-white px-3 py-4">
+    <div className="min-h-0 flex-1 overflow-auto bg-[#FFFFFF] px-3 py-4">
       <div className="max-w-none text-[14px] leading-6 text-[#3a3a3a]">
         <div className="space-y-2">
           <p>
@@ -2103,14 +2625,15 @@ function ApiPanel() {
             Pour des usages pérennes, prévoyez que cette API dépend directement du fichier source.
           </p>
           <p>
-            L’URL de base de l’API est https://tabular-api.data.gouv.fr
+            L’URL de base de l’API est{" "}
+            <span className="font-mono">https://tabular-api.data.gouv.fr</span>
           </p>
         </div>
 
         <div className="mt-4 flex items-center justify-between">
           <p>
             Version{" "}
-            <span>
+            <span className="font-mono">
               1.0.0
             </span>
           </p>
@@ -2124,7 +2647,7 @@ function ApiPanel() {
         </div>
 
         <section className="mt-3">
-          <div className="flex items-center justify-between border-b border-[#e5e5e5] py-2">
+          <div className="flex items-center justify-between border-b border-[#E5E5E5] py-2">
             <h2 className="text-[16px] leading-6 text-[#161616]">
               Endpoints <span className="text-[12px] text-[#3a3a3a]">3</span>
             </h2>
@@ -2142,7 +2665,7 @@ function ApiPanel() {
         </section>
 
         <section className="mt-4">
-          <div className="flex items-center justify-between border-b border-[#e5e5e5] py-2">
+          <div className="flex items-center justify-between border-b border-[#E5E5E5] py-2">
             <h2 className="text-[16px] leading-6 text-[#161616]">
               Modèles <span className="text-[12px] text-[#3a3a3a]">2</span>
             </h2>
@@ -2158,13 +2681,13 @@ function ApiPanel() {
 
 function MapPanel() {
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-white">
-      <div className="flex h-10 items-center border-b border-[#f1f1f1] px-2">
+    <div className="flex min-h-0 flex-1 flex-col bg-[#FFFFFF]">
+      <div className="flex h-10 items-center border-b border-[#E5E5E5] px-2">
         <p className="text-[13px] leading-[1.4] text-[#3a3a3a]">
           Dernière mise à jour de l’aperçu : 13/06/2024 17:51
         </p>
       </div>
-      <div className="relative min-h-0 flex-1 overflow-hidden bg-[#fcfcfc]">
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-[#f6f6f6]">
         <Image
           src="/prototypes/explorateur/map-preview.png"
           alt="Aperçu cartographique des données"
@@ -2179,8 +2702,8 @@ function MapPanel() {
 
 function PdfPreviewPanel() {
   return (
-    <div className="min-h-0 flex-1 overflow-auto bg-[#f6f6f6] p-4">
-      <div className="mx-auto w-full max-w-[760px] border border-[#e5e5e5] bg-white">
+    <div className="min-h-0 flex-1 overflow-auto bg-[#f6f6f6]">
+      <div className="w-full bg-[#FFFFFF]">
         <Image
           src="/prototypes/explorateur/pdf-preview.png"
           alt="Aperçu PDF du guide"
@@ -2204,7 +2727,7 @@ const codePreviewRows = [
 
 function CodePreviewPanel() {
   return (
-    <div className="min-h-0 flex-1 overflow-auto border-t border-[#e5e5e5] bg-white p-4 text-[14px] leading-[18.67px]">
+    <div className="min-h-0 flex-1 overflow-auto border-t border-[#E5E5E5] bg-[#FFFFFF] p-4 font-mono text-[14px] leading-5">
       <div className="flex flex-col gap-3 whitespace-nowrap text-[#161616]">
         {codePreviewRows.map((row) => (
           <div key={row.code} className="relative pl-5">
@@ -2239,7 +2762,7 @@ function CodePreviewPanel() {
 
 function PreviewUnavailablePanel() {
   return (
-    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 bg-white py-[30px] text-center">
+    <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 bg-[#FFFFFF] py-[30px] text-center">
       <Image
         src="/prototypes/explorateur/microscope.svg"
         alt=""
@@ -2263,9 +2786,9 @@ function PreviewUnavailablePanel() {
           </button>
           <button
             type="button"
-            className="flex h-8 items-center gap-2 bg-[#000091] pl-2 pr-3 text-[14px] font-medium leading-6 text-[#f5f5fe]"
+            className="flex h-8 items-center gap-2 bg-[#000091] pl-2 pr-3 text-[14px] font-medium leading-6 text-[#FFFFFF]"
           >
-            <Icon path={icons.download} className="h-4 w-4 text-[#f5f5fe]" />
+            <Icon path={icons.download} className="h-4 w-4 text-[#FFFFFF]" />
             Télécharger
           </button>
         </div>
@@ -2276,10 +2799,10 @@ function PreviewUnavailablePanel() {
 
 function DownloadMenu({ onClose }: { onClose: () => void }) {
   return (
-    <div className="absolute right-0 top-10 z-30 w-[270px] overflow-hidden rounded border border-[#e6e6e6] bg-white shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]">
+    <div className="absolute right-0 top-10 z-30 w-[270px] overflow-hidden rounded border border-[#E5E5E5] bg-[#FFFFFF] shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]">
       {downloadGroups.map((group, groupIndex) => (
         <div key={group.title}>
-          <div className="flex h-8 items-center gap-1 border-b border-[#e6e6e6] bg-[#fcfcfc] px-2">
+          <div className="flex h-8 items-center gap-1 border-b border-[#E5E5E5] bg-[#f6f6f6] px-2">
             <p className="min-w-0 flex-1 truncate text-[12px] font-bold uppercase leading-[1.4] text-[#161616]">
               {group.title}
             </p>
@@ -2288,7 +2811,7 @@ function DownloadMenu({ onClose }: { onClose: () => void }) {
                 type="button"
                 aria-label="Fermer le menu de téléchargement"
                 onClick={onClose}
-                className="flex h-6 w-6 items-center justify-center rounded text-[#666666] hover:bg-[#eeeeee]"
+                className="flex h-6 w-6 items-center justify-center rounded text-[#3a3a3a] hover:bg-[#eeeeee]"
               >
                 <Icon path={icons.close} className="h-4 w-4" />
               </button>
@@ -2307,13 +2830,13 @@ function DownloadMenu({ onClose }: { onClose: () => void }) {
                   type="button"
                   onClick={onClose}
                   className={`flex w-full items-center gap-2 px-2 py-2 text-left hover:bg-[#f6f6f6] ${
-                    isLastItem ? "" : "border-b border-[#e5e5e5]"
+                    isLastItem ? "" : "border-b border-[#E5E5E5]"
                   }`}
                 >
                   <span className="whitespace-nowrap text-[14px] leading-[1.5] text-[#161616]">
                     {item.label}
                   </span>
-                  <span className="rounded bg-[#f6f6f6] px-1 text-[14px] leading-[1.5] text-[#666666]">
+                  <span className="rounded bg-[#f6f6f6] px-1 text-[14px] leading-[1.5] text-[#3a3a3a]">
                     {item.size}
                   </span>
                 </button>
@@ -2335,8 +2858,15 @@ export default function ExplorateurPage() {
   const [activeTab, setActiveTab] = useState<ExplorerTab>("Aperçu");
   const [isColumnSelectorOpen, setIsColumnSelectorOpen] = useState(false);
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
+  const [isExplorerMinimized, setIsExplorerMinimized] = useState(false);
   const [visibleColumnKeys, setVisibleColumnKeys] = useState<ColumnKey[]>(
     tableColumns.map((column) => column.key),
+  );
+  const [columnWidths, setColumnWidths] = useState<Record<ColumnKey, number>>(
+    () =>
+      Object.fromEntries(
+        tableColumns.map((column) => [column.key, column.widthPx]),
+      ) as Record<ColumnKey, number>,
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [sortState, setSortState] = useState<SortState>(null);
@@ -2350,14 +2880,49 @@ export default function ExplorateurPage() {
     Partial<Record<ColumnKey, NumberRange>>
   >({});
   const [dateFilters, setDateFilters] = useState<
-    Partial<Record<ColumnKey, string>>
+    Partial<Record<ColumnKey, DateFilterValue>>
   >({});
+  const [hasTableScrolled, setHasTableScrolled] = useState(false);
 
   const visibleColumns = useMemo(
     () =>
       tableColumns.filter((column) => visibleColumnKeys.includes(column.key)),
     [visibleColumnKeys],
   );
+
+  function startColumnResize(
+    key: ColumnKey,
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startX = event.clientX;
+    const startWidth =
+      columnWidths[key] ?? tableColumns.find((column) => column.key === key)?.widthPx ?? 120;
+    const minWidth = 72;
+    const maxWidth = 360;
+
+    function handleMouseMove(moveEvent: MouseEvent) {
+      const nextWidth = Math.min(
+        maxWidth,
+        Math.max(minWidth, startWidth + moveEvent.clientX - startX),
+      );
+
+      setColumnWidths((current) => ({
+        ...current,
+        [key]: nextWidth,
+      }));
+    }
+
+    function handleMouseUp() {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    }
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  }
 
   const activeResource =
     resources.find((resource) => resource.id === activeResourceId) ??
@@ -2411,19 +2976,42 @@ export default function ExplorateurPage() {
         return false;
       }
 
-      const matchesDates = Object.entries(dateFilters).every(
-        ([key, value]) => {
-          const normalizedValue = value?.trim().toLowerCase();
+      const matchesDates = Object.entries(dateFilters).every(([key, filter]) => {
+        if (!isDateFilterActive(filter)) {
+          return true;
+        }
 
-          if (!normalizedValue) {
-            return true;
-          }
+        const rowTimestamp = parseDateFilterValue(getRowValue(row, key as ColumnKey));
+        const startTimestamp = parseDateFilterValue(filter.value);
+        const endTimestamp = parseDateFilterValue(filter.endValue);
 
-          return getRowValue(row, key as ColumnKey)
-            .toLowerCase()
-            .includes(normalizedValue);
-        },
-      );
+        if (rowTimestamp === null) {
+          return false;
+        }
+
+        if (filter.mode === "before") {
+          return startTimestamp === null ? true : rowTimestamp < startTimestamp;
+        }
+
+        if (filter.mode === "after") {
+          return startTimestamp === null ? true : rowTimestamp > startTimestamp;
+        }
+
+        if (filter.mode === "between") {
+          const isAfterStart =
+            startTimestamp === null ? true : rowTimestamp >= startTimestamp;
+          const isBeforeEnd =
+            endTimestamp === null ? true : rowTimestamp <= endTimestamp;
+
+          return isAfterStart && isBeforeEnd;
+        }
+
+        if (startTimestamp === null) {
+          return true;
+        }
+
+        return rowTimestamp === startTimestamp;
+      });
 
       if (!matchesDates) {
         return false;
@@ -2556,7 +3144,7 @@ export default function ExplorateurPage() {
     }));
   }
 
-  function updateDateFilter(key: ColumnKey, value: string) {
+  function updateDateFilter(key: ColumnKey, value: DateFilterValue) {
     setDateFilters((current) => ({
       ...current,
       [key]: value,
@@ -2566,7 +3154,7 @@ export default function ExplorateurPage() {
   function clearDateFilter(key: ColumnKey) {
     setDateFilters((current) => ({
       ...current,
-      [key]: "",
+      [key]: emptyDateFilter,
     }));
   }
 
@@ -2583,15 +3171,84 @@ export default function ExplorateurPage() {
   }
 
   return (
-    <main className="min-h-dvh overflow-hidden bg-white p-0 text-[#161616] [font-family:Marianne,Arial,sans-serif]">
-      <div className="h-dvh min-h-[698px] w-full overflow-auto bg-white">
-        <div className="explorer-shell flex h-[698px] min-w-[1481px] border border-[#e5e5e5] bg-white">
+    <main
+      className={`h-dvh overflow-hidden text-[#161616] ${
+        isExplorerMinimized
+          ? "flex items-center justify-center bg-[#f6f6f6] p-6"
+          : "bg-[#FFFFFF] p-0"
+      }`}
+    >
+      <div
+        className={`explorer-shell flex flex-col bg-[#FFFFFF] transition-[height,width,box-shadow] duration-200 ${
+          isExplorerMinimized
+            ? "h-[78dvh] w-[82vw] overflow-hidden rounded-lg border border-[#E5E5E5] shadow-[0_8px_24px_rgba(0,0,0,0.10)]"
+            : "h-full w-full"
+        }`}
+      >
+        {!isExplorerMinimized ? (
+          <DatasetContextHeader
+            updatedAt={activeResource.updatedAt}
+            actions={
+              <>
+                <div className="relative">
+                  {isDownloadMenuOpen ? (
+                    <button
+                      type="button"
+                      aria-label="Fermer le menu de téléchargement"
+                      className="fixed inset-0 z-20 cursor-default bg-transparent"
+                      onClick={() => setIsDownloadMenuOpen(false)}
+                    />
+                  ) : null}
+                  <button
+                    type="button"
+                    aria-expanded={isDownloadMenuOpen}
+                    aria-haspopup="menu"
+                    onClick={() => {
+                      setIsDownloadMenuOpen((isOpen) => !isOpen);
+                      setActiveFilter(null);
+                      setActiveCell(null);
+                      setIsColumnSelectorOpen(false);
+                    }}
+                    className="relative z-30 flex h-8 items-center gap-2 bg-[#000091] px-3 text-[13px] font-medium text-[#FFFFFF]"
+                  >
+                    <Icon
+                      path={icons.download}
+                      className="h-4 w-4 text-[#FFFFFF]"
+                    />
+                    Télécharger
+                  </button>
+                  {isDownloadMenuOpen ? (
+                    <DownloadMenu onClose={() => setIsDownloadMenuOpen(false)} />
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  aria-label="Réduire l’explorateur"
+                  onClick={() => {
+                    setIsExplorerMinimized(true);
+                    setIsDownloadMenuOpen(false);
+                    setIsColumnSelectorOpen(false);
+                    setActiveFilter(null);
+                    setActiveCell(null);
+                  }}
+                  className="flex h-8 w-8 items-center justify-center border border-[#E5E5E5] bg-[#FFFFFF] text-[#161616] hover:bg-[#f6f6f6]"
+                >
+                  <Icon
+                    path={icons.fullscreenExit}
+                    className="h-4 w-4 text-[#3a3a3a]"
+                  />
+                </button>
+              </>
+            }
+          />
+        ) : null}
+        <div className="flex min-h-0 flex-1">
           <aside
-            className={`resource-sidebar flex shrink-0 flex-col rounded border-r border-[#e5e5e5] bg-white transition-[width] duration-200 ${
+            className={`resource-sidebar flex shrink-0 flex-col rounded border-r border-[#E5E5E5] bg-[#FFFFFF] transition-[width] duration-200 ${
               isSidebarCollapsed ? "w-12" : "w-[246px]"
             }`}
           >
-            <div className="flex h-14 items-center justify-between border-b border-[#f1f1f1] bg-[#fcfcfc] px-3">
+            <div className="flex h-14 items-center justify-between border-b border-[#E5E5E5] bg-[#f6f6f6] px-3">
               {isSidebarCollapsed ? null : (
                 <span className="resource-sidebar-title text-[13px] font-medium text-[#161616]">
                   Ressources
@@ -2602,7 +3259,7 @@ export default function ExplorateurPage() {
                 onClick={() => setIsSidebarCollapsed((current) => !current)}
                 aria-label="Afficher ou masquer la navigation des ressources"
                 title="Afficher ou masquer la navigation des ressources"
-                className="flex h-6 w-6 cursor-pointer items-center justify-center rounded transition-colors hover:bg-black/[0.04]"
+                className="flex h-6 w-6 cursor-pointer items-center justify-center rounded transition-colors hover:bg-[#eeeeee]"
               >
                 <Icon
                   path={
@@ -2619,7 +3276,7 @@ export default function ExplorateurPage() {
                 isSidebarCollapsed ? "hidden" : ""
               }`}
             >
-              <label className="flex h-8 items-center gap-1 rounded border border-[#ebebeb] bg-black/[0.02] px-2">
+              <label className="flex h-8 items-center gap-1 rounded border border-[#E5E5E5] bg-[#f6f6f6] px-2">
                 <Icon path={icons.search} className="h-3.5 w-3.5 text-[#3a3a3a]" />
                 <input
                   value={resourceSearchQuery}
@@ -2660,14 +3317,14 @@ export default function ExplorateurPage() {
             </div>
           </aside>
 
-          <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-white">
-            <header className="flex h-14 items-center justify-between border-b border-[#f1f1f1] bg-[#fcfcfc] px-3">
+          <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#FFFFFF]">
+            <header className="flex h-14 items-center justify-between border-b border-[#E5E5E5] bg-[#f6f6f6] px-3">
               <div className="flex items-center gap-1 text-[13px]">
                 <Icon path={icons[activeResource.type]} />
                 <span className="font-medium">{activeResource.name}</span>
                 <span className="text-[#3a3a3a]">·</span>
                 <span className="text-[#3a3a3a]">
-                  Mis à jour le 13 octobre 2022
+                  Mis à jour le {activeResource.updatedAt}
                 </span>
                 <span className="text-[#3a3a3a]">·</span>
                 <span className="text-[#3a3a3a]">{activeResource.size}</span>
@@ -2675,49 +3332,65 @@ export default function ExplorateurPage() {
                 <FormatTag>{activeResource.format}</FormatTag>
                 <span className="text-[#3a3a3a]">·</span>
                 <Icon path={icons.download} className="h-3 w-3 text-[#3a3a3a]" />
-                <span className="text-[#3a3a3a]">234</span>
+                <span className="text-[#3a3a3a]">{activeResource.downloads}</span>
               </div>
 
-              <div className="flex items-center gap-2">
-                <div className="relative">
-                  {isDownloadMenuOpen ? (
+              {isExplorerMinimized ? (
+                <div className="flex items-center gap-2">
+                  <div className="relative">
+                    {isDownloadMenuOpen ? (
+                      <button
+                        type="button"
+                        aria-label="Fermer le menu de téléchargement"
+                        className="fixed inset-0 z-20 cursor-default bg-transparent"
+                        onClick={() => setIsDownloadMenuOpen(false)}
+                      />
+                    ) : null}
                     <button
                       type="button"
-                      aria-label="Fermer le menu de téléchargement"
-                      className="fixed inset-0 z-20 cursor-default bg-transparent"
-                      onClick={() => setIsDownloadMenuOpen(false)}
-                    />
-                  ) : null}
+                      aria-expanded={isDownloadMenuOpen}
+                      aria-haspopup="menu"
+                      onClick={() => {
+                        setIsDownloadMenuOpen((isOpen) => !isOpen);
+                        setActiveFilter(null);
+                        setActiveCell(null);
+                        setIsColumnSelectorOpen(false);
+                      }}
+                      className="relative z-30 flex h-8 items-center gap-2 bg-[#000091] px-3 text-[13px] font-medium text-[#FFFFFF]"
+                    >
+                      <Icon
+                        path={icons.download}
+                        className="h-4 w-4 text-[#FFFFFF]"
+                      />
+                      Télécharger
+                    </button>
+                    {isDownloadMenuOpen ? (
+                      <DownloadMenu onClose={() => setIsDownloadMenuOpen(false)} />
+                    ) : null}
+                  </div>
                   <button
                     type="button"
-                    aria-expanded={isDownloadMenuOpen}
-                    aria-haspopup="menu"
+                    aria-label="Afficher l’explorateur en plein écran"
                     onClick={() => {
-                      setIsDownloadMenuOpen((isOpen) => !isOpen);
+                      setIsExplorerMinimized(false);
+                      setIsDownloadMenuOpen(false);
+                      setIsColumnSelectorOpen(false);
                       setActiveFilter(null);
                       setActiveCell(null);
-                      setIsColumnSelectorOpen(false);
                     }}
-                    className="relative z-30 flex h-8 items-center gap-2 bg-[#000091] px-3 text-[13px] font-medium text-white"
+                    className="flex h-8 w-8 items-center justify-center border border-[#E5E5E5] bg-[#FFFFFF] text-[#161616] hover:bg-[#f6f6f6]"
                   >
-                    <Icon path={icons.download} className="h-4 w-4 text-white" />
-                    Télécharger
+                    <Icon
+                      path={icons.fullscreen}
+                      className="h-4 w-4 text-[#3a3a3a]"
+                    />
                   </button>
-                  {isDownloadMenuOpen ? (
-                    <DownloadMenu onClose={() => setIsDownloadMenuOpen(false)} />
-                  ) : null}
                 </div>
-                <button
-                  aria-label="Agrandir"
-                  className="flex h-8 w-8 items-center justify-center border border-[#dddddd] bg-white"
-                >
-                  <Icon path={icons.expand} />
-                </button>
-              </div>
+              ) : null}
             </header>
 
-            <div className="flex h-12 items-center border-b border-[#f1f1f1] bg-white px-2">
-              <div className="flex flex-wrap items-center rounded border border-[#e5e5e5]">
+            <div className="flex h-12 items-center border-b border-[#E5E5E5] bg-[#FFFFFF] px-2">
+              <div className="flex flex-wrap items-center rounded border border-[#E5E5E5]">
                 {activeResource.tabs.map((tab) => (
                   <button
                     key={tab}
@@ -2760,9 +3433,9 @@ export default function ExplorateurPage() {
               <PreviewUnavailablePanel />
             ) : (
               <>
-            <div className="flex h-12 items-center justify-between border-b border-[#f1f1f1] bg-white px-2">
+            <div className="flex h-12 items-center justify-between border-b border-[#E5E5E5] bg-[#FFFFFF] px-2">
               <div className="flex items-center gap-2">
-                <label className="flex h-8 w-[200px] items-center gap-1 rounded border border-[#ebebeb] bg-black/[0.02] px-2">
+                <label className="flex h-8 w-[200px] items-center gap-1 rounded border border-[#E5E5E5] bg-[#f6f6f6] px-2">
                   <Icon path={icons.search} className="h-3.5 w-3.5 text-[#3a3a3a]" />
                   <input
                     value={searchQuery}
@@ -2793,7 +3466,7 @@ export default function ExplorateurPage() {
                       setActiveFilter(null);
                       setActiveCell(null);
                     }}
-                    className="flex h-6 cursor-pointer items-center gap-1 rounded px-1 hover:bg-black/[0.04]"
+                    className="flex h-6 cursor-pointer items-center gap-1 rounded px-1 hover:bg-[#eeeeee]"
                   >
                     <Icon path={icons.columns} className="h-3.5 w-3.5 text-[#3a3a3a]" />
                     Colonnes {visibleColumns.length} sur {tableColumns.length}
@@ -2863,12 +3536,28 @@ export default function ExplorateurPage() {
                 onClose={() => setActiveFilter(null)}
               />
 
-              <div className="h-full overflow-auto">
-                <div className="flex h-8 w-max min-w-full bg-[#fcfcfc]">
+              <div
+                className="h-full overflow-auto"
+                onScroll={(event: UIEvent<HTMLDivElement>) => {
+                  const isScrolled = event.currentTarget.scrollTop > 0;
+
+                  setHasTableScrolled((current) =>
+                    current === isScrolled ? current : isScrolled,
+                  );
+                }}
+              >
+                <div
+                  className={`sticky top-0 z-10 flex h-12 w-max min-w-full border-b transition-[background-color,border-color,box-shadow,backdrop-filter] duration-150 ${
+                    hasTableScrolled
+                      ? "border-[#c2d1ff] bg-[#FFFFFF]/72 shadow-[0_8px_16px_rgba(0,0,0,0.10)] backdrop-blur-md"
+                      : "border-[#E5E5E5] bg-[#f6f6f6] shadow-none backdrop-blur-0"
+                  }`}
+                >
                   {visibleColumns.map((column) => (
                     <HeaderCell
                       key={column.key}
                       column={column}
+                      width={columnWidths[column.key] ?? column.widthPx}
                       isOpen={activeFilter === column.key}
                       sortDirection={
                         sortState?.key === column.key
@@ -2882,12 +3571,15 @@ export default function ExplorateurPage() {
                           current === column.key ? null : column.key,
                         );
                       }}
+                      onResizeStart={(event) =>
+                        startColumnResize(column.key, event)
+                      }
                     />
                   ))}
                 </div>
 
                 {visibleColumns.length === 0 ? (
-                  <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-2 bg-[#fcfcfc] p-4 text-center text-[16px] leading-6">
+                  <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-2 bg-[#f6f6f6] p-4 text-center text-[16px] leading-6">
                     <p className="text-[#3a3a3a]">
                       Aucune colonne n’est visible
                     </p>
@@ -2905,7 +3597,7 @@ export default function ExplorateurPage() {
                   filteredRows.map((row) => (
                     <div
                       key={row.id}
-                      className="flex h-8 w-max min-w-full bg-white"
+                      className="flex h-8 w-max min-w-full bg-[#FFFFFF]"
                     >
                       {visibleColumns.map((column) => (
                         <DataCell
@@ -2913,7 +3605,7 @@ export default function ExplorateurPage() {
                           id={`${row.id}-${column.key}`}
                           value={getRowValue(row, column.key)}
                           type={column.type}
-                          width={column.width}
+                          width={columnWidths[column.key] ?? column.widthPx}
                           isActive={
                             activeCell?.id === `${row.id}-${column.key}`
                           }
@@ -2941,7 +3633,7 @@ export default function ExplorateurPage() {
                     </div>
                   ))
                 ) : (
-                  <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-2 bg-[#fcfcfc] p-4 text-center text-[16px] leading-6">
+                  <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-2 bg-[#f6f6f6] p-4 text-center text-[16px] leading-6">
                     <p className="text-[#3a3a3a]">
                       Il n’y a pas de résultats pour ces critères
                     </p>
