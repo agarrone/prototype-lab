@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { Fragment, useMemo, useState } from "react";
 import type {
   ComponentType,
@@ -12,6 +13,7 @@ import type {
 import {
   RiArrowDownLine,
   RiArrowDropDownLine,
+  RiArrowLeftLine,
   RiArrowRightSLine,
   RiArrowUpLine,
   RiBook2Line,
@@ -634,7 +636,7 @@ function StructureMetricRow({
   };
 
   return (
-    <div className="flex h-6 w-full items-center justify-between gap-4 text-[13px] leading-[1.4]">
+    <div className="flex h-6 min-w-[128px] items-center gap-2 text-[13px] leading-[1.4]">
       <div className="flex min-w-0 items-center gap-1">
         {icon ? (
           <Icon
@@ -669,7 +671,7 @@ function StructureSection({
       <h2 className="mb-2 text-[14px] font-bold leading-6 text-[#161616]">
         {title}
       </h2>
-      <div className="grid gap-1">{children}</div>
+      <div className="flex flex-wrap gap-x-5 gap-y-1">{children}</div>
     </section>
   );
 }
@@ -815,7 +817,7 @@ function StructureColumnExpandedContent({
         <StructureDetailStat label="Moyenne" value={String(stats.average)} />
         <StructureDetailStat label="Médiane" value={String(stats.median)} />
         <StructureDetailStat
-          label="Écart-type"
+          label="Écart type"
           value={String(stats.standardDeviation)}
         />
         <div className="col-span-5 flex h-[104px] items-end gap-[2px] border-b border-[#E5E5E5]">
@@ -871,13 +873,13 @@ function StructureColumnExpandedContent({
   }
 
   return (
-    <div className="grid grid-cols-3 gap-5">
+    <div className="grid grid-cols-2 gap-5">
       <div className="flex flex-col gap-2">
         <p className="text-[14px] font-bold leading-6 text-[#161616]">
-          Valeurs fréquentes
+          Valeurs les plus fréquentes
         </p>
         <div className="flex flex-col gap-1">
-          {frequentColumnValues.slice(0, 6).map((item) => (
+          {frequentColumnValues.slice(0, 10).map((item) => (
             <div
               key={item.label}
               className="grid grid-cols-[minmax(0,1fr)_72px] items-center gap-2 text-[14px] leading-6 text-[#3a3a3a]"
@@ -893,14 +895,6 @@ function StructureColumnExpandedContent({
       <StructureDetailStat
         label="Valeurs uniques"
         value={String(getColumnUniqueCount(column))}
-      />
-      <StructureDetailStat
-        label="Usage"
-        value={
-          column.type === "reference" || column.type === "referenceData"
-            ? "Rapprochement avec un référentiel"
-            : "Recherche et regroupement"
-        }
       />
     </div>
   );
@@ -960,7 +954,7 @@ function StructureColumnRow({
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className="grid w-full grid-cols-[minmax(220px,1.2fr)_150px_150px_90px_120px_140px_130px_130px] text-left text-[12px] leading-4 hover:bg-[#f6f6f6]"
+        className="grid w-full grid-cols-[minmax(220px,1.2fr)_150px_90px_120px_140px_130px_130px_150px] text-left text-[12px] leading-4 hover:bg-[#f6f6f6]"
       >
         <div className="flex h-8 min-w-0 items-center gap-1 border-b border-r border-[#E5E5E5] px-2">
           <span className="truncate font-medium text-[#161616]">
@@ -968,19 +962,25 @@ function StructureColumnRow({
           </span>
         </div>
         <span className="flex h-8 items-center border-b border-r border-[#E5E5E5] px-2 text-[#3a3a3a]">
-          <span className="flex min-w-0 items-center gap-1 rounded-[2px] bg-[#f6f6f6] px-1">
-            <Icon path={icons[column.icon]} className="h-4 w-4 shrink-0 text-[#3a3a3a]" />
-            <span className="truncate">
-            {getColumnTypeLabel(column.type)}
+          <span
+            className={`flex min-w-0 items-center gap-1 rounded-[2px] px-1 ${
+              column.type === "referenceData" ? "bg-[#f4efff]" : "bg-[#f6f6f6]"
+            }`}
+          >
+            <Icon
+              path={icons[column.icon]}
+              className={`h-4 w-4 shrink-0 ${
+                column.type === "referenceData" ? "text-[#7b4fbf]" : "text-[#3a3a3a]"
+              }`}
+            />
+            <span
+              className={`truncate ${
+                column.type === "referenceData" ? "text-[#7b4fbf]" : ""
+              }`}
+            >
+              {getColumnTypeLabel(column.type)}
             </span>
           </span>
-        </span>
-        <span
-          className={`flex h-8 items-center border-b border-r border-[#E5E5E5] px-2 ${
-            column.type === "number" ? "justify-end" : ""
-          }`}
-        >
-          <TableValuePreview value={previewValue} type={column.type} />
         </span>
         <span className="flex h-8 items-center border-b border-r border-[#E5E5E5] px-2 text-[#3a3a3a]">
           {rows.length}
@@ -994,9 +994,18 @@ function StructureColumnRow({
         <span className="flex h-8 items-center border-b border-r border-[#E5E5E5] px-2 text-[#3a3a3a]">
           {missingCount} ({missingPercent} %)
         </span>
-        <span className="flex h-8 items-center justify-between gap-2 border-b border-r border-[#E5E5E5] px-2 text-[#3a3a3a]">
+        <span className="flex h-8 items-center border-b border-r border-[#E5E5E5] px-2 text-[#3a3a3a]">
           <span>
             {uniqueCount} ({uniquePercent} %)
+          </span>
+        </span>
+        <span
+          className={`flex h-8 items-center justify-between gap-2 border-b border-r border-[#E5E5E5] px-2 ${
+            column.type === "number" ? "text-right" : ""
+          }`}
+        >
+          <span className={column.type === "number" ? "flex-1" : "min-w-0"}>
+            <TableValuePreview value={previewValue} type={column.type} />
           </span>
           <Icon
             path={icons.arrowRightS}
@@ -1030,7 +1039,7 @@ function StructurePanel() {
   return (
     <div className="min-h-0 flex-1 overflow-auto bg-[#FFFFFF] p-4">
       <div className="flex w-full flex-col gap-5 text-[#3a3a3a]">
-        <div className="grid w-full grid-cols-2 gap-5">
+        <div className="flex w-full flex-col gap-4">
           <StructureSection title="Résumé">
             <StructureMetricRow
               icon="columns"
@@ -1042,10 +1051,6 @@ function StructurePanel() {
               label="Lignes"
               value={String(rows.length)}
             />
-            <StructureMetricRow icon="download" label="Poids" value="232Mo" />
-          </StructureSection>
-
-          <StructureSection title="Types">
             <StructureMetricRow
               icon="number"
               label="Nombre"
@@ -1086,15 +1091,12 @@ function StructurePanel() {
             Colonnes
           </h2>
           <div className="min-w-[1240px] overflow-hidden border-l border-t border-[#E5E5E5] bg-[#FFFFFF]">
-            <div className="grid grid-cols-[minmax(220px,1.2fr)_150px_150px_90px_120px_140px_130px_130px] bg-[#f6f6f6] text-[12px] font-bold leading-4 text-[#161616]">
+            <div className="grid grid-cols-[minmax(220px,1.2fr)_150px_90px_120px_140px_130px_130px_150px] bg-[#f6f6f6] text-[12px] font-bold leading-4 text-[#161616]">
               <span className="flex h-12 items-center border-b border-r border-[#E5E5E5] px-3">
                 Nom de la colonne
               </span>
               <span className="flex h-12 items-center border-b border-r border-[#E5E5E5] px-3">
                 Type
-              </span>
-              <span className="flex h-12 items-center border-b border-r border-[#E5E5E5] px-3">
-                Aperçu
               </span>
               <span className="flex h-12 items-center border-b border-r border-[#E5E5E5] px-3">
                 Valeur
@@ -1110,6 +1112,9 @@ function StructurePanel() {
               </span>
               <span className="flex h-12 items-center border-b border-r border-[#E5E5E5] px-3">
                 Distinctes
+              </span>
+              <span className="flex h-12 items-center border-b border-r border-[#E5E5E5] px-3">
+                Aperçu
               </span>
             </div>
             {tableColumns.map((column, index) => (
@@ -3172,12 +3177,21 @@ export default function ExplorateurPage() {
 
   return (
     <main
-      className={`h-dvh overflow-hidden text-[#161616] ${
+      className={`relative h-dvh overflow-hidden text-[#161616] ${
         isExplorerMinimized
           ? "flex items-center justify-center bg-[#f6f6f6] p-6"
           : "bg-[#FFFFFF] p-0"
       }`}
     >
+      {isExplorerMinimized ? (
+        <Link
+          href="/"
+          className="absolute left-4 top-4 z-50 inline-flex h-8 items-center gap-2 px-2 text-[13px] font-normal leading-6 text-[#161616] underline-offset-4 hover:underline"
+        >
+          <RiArrowLeftLine aria-hidden className="h-4 w-4" />
+          Retour
+        </Link>
+      ) : null}
       <div
         className={`explorer-shell flex flex-col bg-[#FFFFFF] transition-[height,width,box-shadow] duration-200 ${
           isExplorerMinimized

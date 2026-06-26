@@ -13,10 +13,20 @@ export const prototypes: Prototype[] = [
     title: "Explorateur de données",
     description:
       "Prototype d'interface pour parcourir, filtrer et comprendre les ressources d'un jeu de données.",
-    status: "prototype",
+    status: "almost there",
     tags: ["data", "ressources", "tableaux"],
     figmaUrl:
       "https://www.figma.com/design/IyyYD8UbvPyTo7E1rKkiCF/%F0%9F%A6%B7-Nouvelle-navigation-dans-les-ressources?node-id=160-4820&m=dev",
+  },
+  {
+    slug: "enrichissement-donnees",
+    title: "Enrichissement de données",
+    description:
+      "Prototype de parcours d'analyse et d'enrichissement d'une ressource tabulaire.",
+    status: "exploration",
+    tags: ["données", "analyse", "enrichissement"],
+    figmaUrl:
+      "https://www.figma.com/design/eYZGImREXHxoGaD3yn9iNz/%E2%9E%95-Enrichissement-de-donn%C3%A9es?node-id=68-6926&m=dev",
   },
   {
     slug: "design-system",
@@ -28,17 +38,8 @@ export const prototypes: Prototype[] = [
     figmaUrl: "https://www.figma.com/file/placeholder/design-system",
   },
   {
-    slug: "enrichissement-ia",
-    title: "Enrichissement IA",
-    description:
-      "Prototype de parcours d'enrichissement assisté par intelligence artificielle.",
-    status: "exploration",
-    tags: ["ia", "automatisation", "workflow"],
-    figmaUrl: "https://www.figma.com/file/placeholder/enrichissement-ia",
-  },
-  {
     slug: "carte-landing-page",
-    title: "Carte Landing Page",
+    title: "Cartes landing page",
     description:
       "Prototype de page de destination avec carte interactive pour découvrir les données géographiques.",
     status: "brouillon",
