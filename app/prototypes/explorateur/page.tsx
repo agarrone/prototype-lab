@@ -12,6 +12,7 @@ import type {
 } from "react";
 import {
   RiArrowDownLine,
+  RiArrowDownSLine,
   RiArrowDropDownLine,
   RiArrowLeftLine,
   RiArrowRightSLine,
@@ -954,8 +955,14 @@ function StructureColumnRow({
         type="button"
         onClick={onToggle}
         aria-expanded={expanded}
-        className="grid w-full grid-cols-[minmax(220px,1.2fr)_150px_90px_120px_140px_130px_130px_150px] text-left text-[12px] leading-4 hover:bg-[#f6f6f6]"
+        className="grid w-full grid-cols-[40px_minmax(220px,1.2fr)_150px_90px_120px_140px_130px_130px_minmax(0,150px)] text-left text-[12px] leading-4 hover:bg-[#f6f6f6]"
       >
+        <span className="flex h-8 items-center justify-center border-b border-r border-[#E5E5E5]">
+          <Icon
+            path={icons.arrowRightS}
+            className={`h-4 w-4 text-[#3a3a3a] ${expanded ? "rotate-90" : ""}`}
+          />
+        </span>
         <div className="flex h-8 min-w-0 items-center gap-1 border-b border-r border-[#E5E5E5] px-2">
           <span className="truncate font-medium text-[#161616]">
             {column.label}
@@ -1000,17 +1007,13 @@ function StructureColumnRow({
           </span>
         </span>
         <span
-          className={`flex h-8 items-center justify-between gap-2 border-b border-r border-[#E5E5E5] px-2 ${
+          className={`flex h-8 min-w-0 items-center border-b border-r border-[#E5E5E5] px-2 ${
             column.type === "number" ? "text-right" : ""
           }`}
         >
-          <span className={column.type === "number" ? "flex-1" : "min-w-0"}>
+          <span className="min-w-0 max-w-full truncate">
             <TableValuePreview value={previewValue} type={column.type} />
           </span>
-          <Icon
-            path={icons.arrowRightS}
-            className={`h-4 w-4 text-[#3a3a3a] ${expanded ? "rotate-90" : ""}`}
-          />
         </span>
       </button>
       {expanded ? (
@@ -1019,6 +1022,120 @@ function StructureColumnRow({
         </div>
       ) : null}
     </Fragment>
+  );
+}
+
+function StructureColumnCard({
+  column,
+  index,
+  expanded,
+  onToggle,
+}: {
+  column: TableColumn;
+  index: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const quality = getColumnQuality(index);
+  const uniqueCount = getColumnUniqueCount(column);
+  const previewValue = getColumnExampleValues(column)[0] ?? "—";
+  const validCount = Math.round((quality.valid / 100) * rows.length);
+  const nonConformingCount = Math.round(
+    (quality.nonConforming / 100) * rows.length,
+  );
+  const missingCount = Math.max(rows.length - validCount - nonConformingCount, 0);
+  const validPercent = Math.round((validCount / rows.length) * 100);
+  const nonConformingPercent = Math.round(
+    (nonConformingCount / rows.length) * 100,
+  );
+  const missingPercent = Math.round((missingCount / rows.length) * 100);
+  const uniquePercent = Math.round((uniqueCount / rows.length) * 100);
+
+  return (
+    <article className="rounded border border-[#E5E5E5] bg-[#FFFFFF]">
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        className="flex w-full items-start gap-2 p-3 text-left"
+      >
+        <Icon
+          path={icons.arrowRightS}
+          className={`mt-0.5 h-4 w-4 shrink-0 text-[#3a3a3a] ${
+            expanded ? "rotate-90" : ""
+          }`}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 flex min-w-0 items-center gap-2">
+            <span className="min-w-0 truncate text-[13px] font-bold leading-5 text-[#161616]">
+              {column.label}
+            </span>
+            <span
+              className={`flex min-w-0 shrink-0 items-center gap-1 rounded-[2px] px-1 text-[12px] ${
+                column.type === "referenceData" ? "bg-[#f4efff]" : "bg-[#f6f6f6]"
+              }`}
+            >
+              <Icon
+                path={icons[column.icon]}
+                className={`h-3.5 w-3.5 shrink-0 ${
+                  column.type === "referenceData"
+                    ? "text-[#7b4fbf]"
+                    : "text-[#3a3a3a]"
+                }`}
+              />
+              <span
+                className={`truncate ${
+                  column.type === "referenceData" ? "text-[#7b4fbf]" : "text-[#3a3a3a]"
+                }`}
+              >
+                {getColumnTypeLabel(column.type)}
+              </span>
+            </span>
+          </div>
+          <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-[12px] leading-4 text-[#3a3a3a]">
+            <div>
+              <dt className="text-[#666666]">Valeurs</dt>
+              <dd className="font-medium text-[#161616]">{rows.length}</dd>
+            </div>
+            <div>
+              <dt className="text-[#666666]">Distinctes</dt>
+              <dd className="font-medium text-[#161616]">
+                {uniqueCount} ({uniquePercent} %)
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[#666666]">Valides</dt>
+              <dd className="font-medium text-[#161616]">
+                {validCount} ({validPercent} %)
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[#666666]">Manquantes</dt>
+              <dd className="font-medium text-[#161616]">
+                {missingCount} ({missingPercent} %)
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[#666666]">Non conformes</dt>
+              <dd className="font-medium text-[#161616]">
+                {nonConformingCount} ({nonConformingPercent} %)
+              </dd>
+            </div>
+            <div className="col-span-2 min-w-0">
+              <dt className="text-[#666666]">Aperçu</dt>
+              <dd className="min-w-0 truncate">
+                <TableValuePreview value={previewValue} type={column.type} />
+              </dd>
+            </div>
+          </dl>
+        </div>
+      </button>
+      {expanded ? (
+        <div className="border-t border-[#E5E5E5] px-3 py-4">
+          <StructureColumnExpandedContent column={column} quality={quality} />
+        </div>
+      ) : null}
+    </article>
   );
 }
 
@@ -1090,8 +1207,26 @@ function StructurePanel() {
           <h2 className="mb-3 text-[14px] font-bold leading-6 text-[#161616]">
             Colonnes
           </h2>
-          <div className="min-w-[1240px] overflow-hidden border-l border-t border-[#E5E5E5] bg-[#FFFFFF]">
-            <div className="grid grid-cols-[minmax(220px,1.2fr)_150px_90px_120px_140px_130px_130px_150px] bg-[#f6f6f6] text-[12px] font-bold leading-4 text-[#161616]">
+          <div className="mobile-structure-cards flex-col gap-2">
+            {tableColumns.map((column, index) => (
+              <StructureColumnCard
+                key={column.key}
+                column={column}
+                index={index}
+                expanded={openColumnKey === column.key}
+                onToggle={() =>
+                  setOpenColumnKey((current) =>
+                    current === column.key ? null : column.key,
+                  )
+                }
+              />
+            ))}
+          </div>
+          <div className="desktop-structure-table min-w-[1280px] overflow-hidden border-l border-t border-[#E5E5E5] bg-[#FFFFFF]">
+            <div className="grid grid-cols-[40px_minmax(220px,1.2fr)_150px_90px_120px_140px_130px_130px_minmax(0,150px)] bg-[#f6f6f6] text-[12px] font-bold leading-4 text-[#161616]">
+              <span className="flex h-12 items-center justify-center border-b border-r border-[#E5E5E5] px-2">
+                <span className="sr-only">Déplier</span>
+              </span>
               <span className="flex h-12 items-center border-b border-r border-[#E5E5E5] px-3">
                 Nom de la colonne
               </span>
@@ -1208,6 +1343,7 @@ const icons = {
   close: RiCloseLine,
   conform: RiCheckboxCircleLine,
   arrowDown: RiArrowDownLine,
+  arrowDownS: RiArrowDownSLine,
   arrowDropDown: RiArrowDropDownLine,
   arrowRightS: RiArrowRightSLine,
   arrowUp: RiArrowUpLine,
@@ -1288,23 +1424,23 @@ function DatasetContextHeader({
   actions: ReactNode;
 }) {
   return (
-    <div className="flex h-[58px] shrink-0 items-center justify-between gap-4 border-b border-[#E5E5E5] bg-[#f6f6f6]/95 px-3 backdrop-blur-[5px]">
+    <div className="flex h-[58px] shrink-0 items-center justify-between gap-2 border-b border-[#E5E5E5] bg-[#f6f6f6]/95 px-3 backdrop-blur-[5px] sm:gap-4">
       <div className="flex min-w-0 items-center gap-2">
         <div className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[2px] border border-[#E5E5E5] bg-[#FFFFFF] p-1">
           <div className="flex h-full w-full items-center justify-center rounded-[1px] border border-[#eeeeee] text-[8px] font-bold leading-3 text-[#000091]">
             DG
           </div>
         </div>
-        <div className="flex min-w-0 items-center gap-1 text-[16px] leading-[1.4]">
-          <span className="shrink-0 text-[#161616]">
+        <div className="flex min-w-0 items-center gap-1 text-[13px] leading-[1.4] sm:text-[16px]">
+          <span className="min-w-0 truncate text-[#161616]">
             Direction interministérielle du numérique
           </span>
           <span className="shrink-0 text-[#161616]">/</span>
-          <span className="truncate font-bold text-[#161616]">
+          <span className="min-w-0 truncate font-bold text-[#161616]">
             Annuaire de l’éducation
           </span>
-          <span className="shrink-0 text-[#3a3a3a]">·</span>
-          <span className="truncate text-[#3a3a3a]">
+          <span className="hidden shrink-0 text-[#3a3a3a] sm:inline">·</span>
+          <span className="hidden truncate text-[#3a3a3a] sm:inline">
             mis à jour le {updatedAt}
           </span>
         </div>
@@ -1826,7 +1962,7 @@ function DateFilterMenu({
             {dateFilterModeLabels[filter.mode]}
           </span>
           <Icon
-            path={icons.arrowDown}
+            path={icons.arrowDownS}
             className={`h-3.5 w-3.5 ${isModeMenuOpen ? "rotate-180" : ""}`}
           />
         </button>
@@ -2220,6 +2356,444 @@ function DataCell({
           onFilter={onFilter}
         />
       ) : null}
+    </div>
+  );
+}
+
+function MobileFieldValue({
+  value,
+  type,
+}: {
+  value: string;
+  type: ColumnType;
+}) {
+  if (type === "category" || type === "reference") {
+    return (
+      <span className="inline-flex w-fit rounded bg-[#eeeeee] px-2 py-1 text-[12px] leading-3 text-[#3a3a3a]">
+        {value}
+      </span>
+    );
+  }
+
+  if (type === "identifier") {
+    return <span className="text-[12px] leading-5 text-[#3a3a3a]">{value}</span>;
+  }
+
+  if (type === "number") {
+    return <span className="text-[12px] leading-5 text-[#161616]">{value}</span>;
+  }
+
+  return <span className="text-[12px] leading-5 text-[#161616]">{value}</span>;
+}
+
+function MobileDataCard({
+  row,
+  columns,
+  activeCell,
+  onOpenCell,
+  onCopyCell,
+  onFilterCell,
+}: {
+  row: Row;
+  columns: TableColumn[];
+  activeCell: ActiveCell;
+  onOpenCell: (cell: NonNullable<ActiveCell>) => void;
+  onCopyCell: (value: string) => void;
+  onFilterCell: (cell: NonNullable<ActiveCell>) => void;
+}) {
+  const [isExpanded, setIsExpanded] = useState(false);
+  const primaryColumns = isExpanded ? columns : columns.slice(0, 4);
+  const hiddenColumnCount = Math.max(columns.length - 4, 0);
+
+  return (
+    <article className="rounded border border-[#E5E5E5] bg-[#FFFFFF] p-3">
+      <dl className="space-y-3">
+        {primaryColumns.map((column) => {
+          const value = getRowValue(row, column.key);
+
+          return (
+            <div key={column.key} className="relative space-y-1">
+              <dt className="flex items-center gap-1 text-[12px] leading-4 text-[#666666]">
+                <Icon
+                  path={icons[column.icon]}
+                  className={`h-3.5 w-3.5 ${
+                    column.icon === "referenceData"
+                      ? "text-[#7b4fbf]"
+                      : "text-[#666666]"
+                  }`}
+                />
+                <span className="truncate">{column.label}</span>
+              </dt>
+              <dd className="pl-5">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onOpenCell({
+                      id: `${row.id}-${column.key}`,
+                      key: column.key,
+                      value,
+                      type: column.type,
+                    })
+                  }
+                  className="block max-w-full text-left"
+                  aria-label={`Actions pour ${column.label} : ${value}`}
+                >
+                  <MobileFieldValue value={value} type={column.type} />
+                </button>
+                {activeCell?.id === `${row.id}-${column.key}` ? (
+                  <CellActionMenu
+                    value={value}
+                    type={column.type}
+                    onCopy={() => onCopyCell(value)}
+                    onFilter={() =>
+                      onFilterCell({
+                        id: `${row.id}-${column.key}`,
+                        key: column.key,
+                        value,
+                        type: column.type,
+                      })
+                    }
+                  />
+                ) : null}
+              </dd>
+            </div>
+          );
+        })}
+      </dl>
+
+      {hiddenColumnCount > 0 ? (
+        <button
+          type="button"
+          onClick={() => setIsExpanded((current) => !current)}
+          className="mt-3 flex items-center gap-1 text-[13px] font-bold leading-5 text-[#161616]"
+          aria-expanded={isExpanded}
+        >
+          <Icon
+            path={icons.arrowDownS}
+            className={`h-3.5 w-3.5 text-[#3a3a3a] ${
+              isExpanded ? "rotate-180" : ""
+            }`}
+          />
+          {isExpanded ? "Réduire" : `+ ${hiddenColumnCount} champs`}
+        </button>
+      ) : null}
+    </article>
+  );
+}
+
+function MobileFilterColumn({
+  column,
+  isOpen,
+  sortState,
+  categoryFilters,
+  filterSearches,
+  numberRanges,
+  dateFilters,
+  onToggleOpen,
+  onToggleCategory,
+  onSearchFilter,
+  onChangeRange,
+  onSort,
+  onClearRange,
+  onChangeDate,
+  onClearDate,
+}: {
+  column: TableColumn;
+  isOpen: boolean;
+  sortState: SortState;
+  categoryFilters: Partial<Record<ColumnKey, string[]>>;
+  filterSearches: Partial<Record<ColumnKey, string>>;
+  numberRanges: Partial<Record<ColumnKey, NumberRange>>;
+  dateFilters: Partial<Record<ColumnKey, DateFilterValue>>;
+  onToggleOpen: () => void;
+  onToggleCategory: (key: ColumnKey, value: string) => void;
+  onSearchFilter: (key: ColumnKey, value: string) => void;
+  onChangeRange: (key: ColumnKey, range: NumberRange) => void;
+  onSort: (key: ColumnKey, direction: SortDirection) => void;
+  onClearRange: (key: ColumnKey) => void;
+  onChangeDate: (key: ColumnKey, value: DateFilterValue) => void;
+  onClearDate: (key: ColumnKey) => void;
+}) {
+  const selectedValues = categoryFilters[column.key] ?? [];
+  const normalizedSearch = (filterSearches[column.key] ?? "")
+    .trim()
+    .toLowerCase();
+  const categoryOptions = getCategoryOptions(column.key).filter((option) =>
+    option.label.toLowerCase().includes(normalizedSearch),
+  );
+  const range = numberRanges[column.key] ?? { min: "", max: "" };
+  const bounds =
+    column.filter === "number" ? getNumberStats(column) : { min: 0, max: 0 };
+  const dateFilter = dateFilters[column.key] ?? emptyDateFilter;
+
+  return (
+    <section className="border-b border-[#E5E5E5]">
+      <button
+        type="button"
+        onClick={onToggleOpen}
+        className="flex h-11 w-full items-center gap-2 px-3 text-left"
+        aria-expanded={isOpen}
+      >
+        <Icon
+          path={icons[column.icon]}
+          className={`h-4 w-4 ${
+            column.icon === "referenceData" ? "text-[#7b4fbf]" : "text-[#3a3a3a]"
+          }`}
+        />
+        <span className="min-w-0 flex-1 truncate text-[13px] font-bold text-[#161616]">
+          {column.label}
+        </span>
+        <Icon
+          path={icons.arrowDownS}
+          className={`h-4 w-4 text-[#3a3a3a] ${isOpen ? "rotate-180" : ""}`}
+        />
+      </button>
+
+      {isOpen ? (
+        <div className="border-t border-[#E5E5E5] bg-[#FFFFFF]">
+          <SortControls column={column} sortState={sortState} onSort={onSort} />
+
+          {column.filter === "number" ? (
+            <div className="p-3">
+              <div className="mb-1 flex justify-between text-[12px] text-[#3a3a3a]">
+                <span>Min</span>
+                <span>Max</span>
+              </div>
+              <div className="flex items-center gap-3">
+                <input
+                  aria-label={`Valeur minimale pour ${column.label}`}
+                  placeholder={String(bounds.min)}
+                  className="h-8 min-w-0 flex-1 rounded border border-[#E5E5E5] px-2 text-[12px] placeholder:text-[#3a3a3a]"
+                  value={range.min}
+                  onChange={(event) =>
+                    onChangeRange(column.key, {
+                      ...range,
+                      min: event.target.value,
+                    })
+                  }
+                />
+                <span className="h-px w-6 bg-[#CECECE]" />
+                <input
+                  aria-label={`Valeur maximale pour ${column.label}`}
+                  placeholder={String(bounds.max)}
+                  className="h-8 min-w-0 flex-1 rounded border border-[#E5E5E5] px-2 text-[12px] placeholder:text-[#3a3a3a]"
+                  value={range.max}
+                  onChange={(event) =>
+                    onChangeRange(column.key, {
+                      ...range,
+                      max: event.target.value,
+                    })
+                  }
+                />
+              </div>
+              <div className="mt-2 flex justify-end text-[12px]">
+                <button
+                  type="button"
+                  onClick={() => onClearRange(column.key)}
+                  className="h-7 px-2 text-[#3a3a3a] hover:underline"
+                >
+                  Effacer
+                </button>
+              </div>
+            </div>
+          ) : column.filter === "date" ? (
+            <div className="space-y-2 p-3">
+              <select
+                value={dateFilter.mode}
+                onChange={(event) =>
+                  onChangeDate(column.key, {
+                    ...dateFilter,
+                    mode: event.target.value as DateFilterMode,
+                  })
+                }
+                aria-label={`Mode de filtre pour ${column.label}`}
+                className="h-8 w-full rounded border border-[#E5E5E5] bg-[#FFFFFF] px-2 text-[12px] text-[#3a3a3a]"
+              >
+                {(["before", "after", "between"] as const).map((mode) => (
+                  <option key={mode} value={mode}>
+                    {dateFilterModeLabels[mode]}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={dateFilter.value}
+                onChange={(event) =>
+                  onChangeDate(column.key, {
+                    ...dateFilter,
+                    value: event.target.value,
+                  })
+                }
+                aria-label={`Date pour ${column.label}`}
+                placeholder="JJ/MM/AAAA"
+                className="h-8 w-full rounded border border-[#E5E5E5] px-2 text-[12px] text-[#3a3a3a] placeholder:text-[#3a3a3a]"
+              />
+              {dateFilter.mode === "between" ? (
+                <input
+                  value={dateFilter.endValue}
+                  onChange={(event) =>
+                    onChangeDate(column.key, {
+                      ...dateFilter,
+                      endValue: event.target.value,
+                    })
+                  }
+                  aria-label={`Date de fin pour ${column.label}`}
+                  placeholder="Date de fin"
+                  className="h-8 w-full rounded border border-[#E5E5E5] px-2 text-[12px] text-[#3a3a3a] placeholder:text-[#3a3a3a]"
+                />
+              ) : null}
+              <div className="flex justify-end text-[12px]">
+                <button
+                  type="button"
+                  onClick={() => onClearDate(column.key)}
+                  className="h-7 px-2 text-[#3a3a3a] hover:underline"
+                >
+                  Effacer
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <label className="flex h-9 items-center gap-1 border-b border-[#E5E5E5] px-3">
+                <Icon path={icons.search} className="h-3.5 w-3.5 text-[#3a3a3a]" />
+                <input
+                  value={filterSearches[column.key] ?? ""}
+                  onChange={(event) =>
+                    onSearchFilter(column.key, event.target.value)
+                  }
+                  aria-label={`Rechercher dans ${column.label}`}
+                  placeholder="Rechercher"
+                  className="min-w-0 flex-1 bg-transparent text-[12px] font-medium text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
+                />
+              </label>
+              <div className="max-h-48 overflow-auto p-2">
+                {categoryOptions.length > 0 ? (
+                  categoryOptions.map((option) => (
+                    <FilterOption
+                      key={option.label}
+                      label={option.label}
+                      count={option.count}
+                      checked={selectedValues.includes(option.label)}
+                      onToggle={() => onToggleCategory(column.key, option.label)}
+                    />
+                  ))
+                ) : (
+                  <div className="flex h-8 items-center px-1 text-[12px] text-[#3a3a3a]">
+                    Aucun résultat
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function MobileFiltersPanel({
+  isOpen,
+  visibleColumns,
+  sortState,
+  categoryFilters,
+  filterSearches,
+  numberRanges,
+  dateFilters,
+  onToggleCategory,
+  onSearchFilter,
+  onChangeRange,
+  onSort,
+  onClearRange,
+  onChangeDate,
+  onClearDate,
+  onClearAll,
+  onClose,
+}: {
+  isOpen: boolean;
+  visibleColumns: readonly TableColumn[];
+  sortState: SortState;
+  categoryFilters: Partial<Record<ColumnKey, string[]>>;
+  filterSearches: Partial<Record<ColumnKey, string>>;
+  numberRanges: Partial<Record<ColumnKey, NumberRange>>;
+  dateFilters: Partial<Record<ColumnKey, DateFilterValue>>;
+  onToggleCategory: (key: ColumnKey, value: string) => void;
+  onSearchFilter: (key: ColumnKey, value: string) => void;
+  onChangeRange: (key: ColumnKey, range: NumberRange) => void;
+  onSort: (key: ColumnKey, direction: SortDirection) => void;
+  onClearRange: (key: ColumnKey) => void;
+  onChangeDate: (key: ColumnKey, value: DateFilterValue) => void;
+  onClearDate: (key: ColumnKey) => void;
+  onClearAll: () => void;
+  onClose: () => void;
+}) {
+  const [openColumnKey, setOpenColumnKey] = useState<ColumnKey | null>(null);
+
+  if (!isOpen) {
+    return null;
+  }
+
+  return (
+    <div className="mobile-explorer-only fixed inset-0 z-50 items-end bg-[rgba(0,0,0,0.32)]">
+      <button
+        type="button"
+        aria-label="Fermer les filtres"
+        className="absolute inset-0 cursor-default"
+        onClick={onClose}
+      />
+      <div className="relative z-10 flex max-h-[82dvh] w-full flex-col overflow-hidden rounded-t-lg border border-[#E5E5E5] bg-[#FFFFFF] shadow-[0_-8px_24px_rgba(0,0,0,0.16)]">
+        <header className="flex h-12 items-center gap-2 border-b border-[#E5E5E5] bg-[#f6f6f6] px-3">
+          <Icon path={icons.filter} className="h-4 w-4 text-[#3a3a3a]" />
+          <h2 className="min-w-0 flex-1 text-[14px] font-bold text-[#161616]">
+            Filtres
+          </h2>
+          <button
+            type="button"
+            onClick={onClearAll}
+            className="h-7 px-2 text-[12px] font-medium text-[#3a3a3a] hover:underline"
+          >
+            Réinitialiser
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Fermer les filtres"
+            className="flex h-7 w-7 items-center justify-center rounded hover:bg-[#eeeeee]"
+          >
+            <Icon path={icons.close} className="h-4 w-4 text-[#3a3a3a]" />
+          </button>
+        </header>
+        <div className="min-h-0 flex-1 overflow-auto">
+          {visibleColumns.length > 0 ? (
+            visibleColumns.map((column) => (
+              <MobileFilterColumn
+                key={column.key}
+                column={column}
+                isOpen={openColumnKey === column.key}
+                sortState={sortState}
+                categoryFilters={categoryFilters}
+                filterSearches={filterSearches}
+                numberRanges={numberRanges}
+                dateFilters={dateFilters}
+                onToggleOpen={() =>
+                  setOpenColumnKey((current) =>
+                    current === column.key ? null : column.key,
+                  )
+                }
+                onToggleCategory={onToggleCategory}
+                onSearchFilter={onSearchFilter}
+                onChangeRange={onChangeRange}
+                onSort={onSort}
+                onClearRange={onClearRange}
+                onChangeDate={onChangeDate}
+                onClearDate={onClearDate}
+              />
+            ))
+          ) : (
+            <div className="p-4 text-[13px] text-[#3a3a3a]">
+              Aucune colonne visible.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -2862,6 +3436,8 @@ export default function ExplorateurPage() {
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
   const [activeTab, setActiveTab] = useState<ExplorerTab>("Aperçu");
   const [isColumnSelectorOpen, setIsColumnSelectorOpen] = useState(false);
+  const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
+  const [isMobileResourceMenuOpen, setIsMobileResourceMenuOpen] = useState(false);
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
   const [isExplorerMinimized, setIsExplorerMinimized] = useState(false);
   const [visibleColumnKeys, setVisibleColumnKeys] = useState<ColumnKey[]>(
@@ -3068,6 +3644,8 @@ export default function ExplorateurPage() {
     setActiveFilter(null);
     setActiveCell(null);
     setIsColumnSelectorOpen(false);
+    setIsMobileFiltersOpen(false);
+    setIsMobileResourceMenuOpen(false);
     setIsDownloadMenuOpen(false);
   }
 
@@ -3075,6 +3653,8 @@ export default function ExplorateurPage() {
     setActiveCell((current) => (current?.id === cell.id ? null : cell));
     setActiveFilter(null);
     setIsColumnSelectorOpen(false);
+    setIsMobileFiltersOpen(false);
+    setIsMobileResourceMenuOpen(false);
   }
 
   async function copyCellValue(value: string) {
@@ -3095,7 +3675,7 @@ export default function ExplorateurPage() {
     } else if (cell.type === "date") {
       setDateFilters((current) => ({
         ...current,
-        [cell.key]: cell.value,
+        [cell.key]: { ...emptyDateFilter, value: cell.value },
       }));
     } else {
       setCategoryFilters((current) => ({
@@ -3173,6 +3753,8 @@ export default function ExplorateurPage() {
     setActiveFilter(null);
     setActiveCell(null);
     setIsColumnSelectorOpen(false);
+    setIsMobileFiltersOpen(false);
+    setIsMobileResourceMenuOpen(false);
   }
 
   return (
@@ -3258,7 +3840,7 @@ export default function ExplorateurPage() {
         ) : null}
         <div className="flex min-h-0 flex-1">
           <aside
-            className={`resource-sidebar flex shrink-0 flex-col rounded border-r border-[#E5E5E5] bg-[#FFFFFF] transition-[width] duration-200 ${
+            className={`resource-sidebar desktop-resource-sidebar shrink-0 flex-col rounded border-r border-[#E5E5E5] bg-[#FFFFFF] transition-[width] duration-200 ${
               isSidebarCollapsed ? "w-12" : "w-[246px]"
             }`}
           >
@@ -3332,21 +3914,126 @@ export default function ExplorateurPage() {
           </aside>
 
           <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#FFFFFF]">
-            <header className="flex h-14 items-center justify-between border-b border-[#E5E5E5] bg-[#f6f6f6] px-3">
-              <div className="flex items-center gap-1 text-[13px]">
-                <Icon path={icons[activeResource.type]} />
-                <span className="font-medium">{activeResource.name}</span>
-                <span className="text-[#3a3a3a]">·</span>
-                <span className="text-[#3a3a3a]">
+            <header className="flex h-14 items-center justify-between gap-2 border-b border-[#E5E5E5] bg-[#f6f6f6] px-3">
+              <div className="flex min-w-0 flex-1 items-center gap-1 text-[13px]">
+                <div className="mobile-explorer-only relative min-w-0 flex-1 items-center">
+                  {isMobileResourceMenuOpen ? (
+                    <button
+                      type="button"
+                      aria-label="Fermer le menu des ressources"
+                      className="fixed inset-0 z-20 cursor-default bg-transparent"
+                      onClick={() => setIsMobileResourceMenuOpen(false)}
+                    />
+                  ) : null}
+                  <button
+                    type="button"
+                    aria-expanded={isMobileResourceMenuOpen}
+                    aria-haspopup="menu"
+                    onClick={() => {
+                      setIsMobileResourceMenuOpen((current) => !current);
+                      setIsDownloadMenuOpen(false);
+                      setIsColumnSelectorOpen(false);
+                      setActiveFilter(null);
+                      setActiveCell(null);
+                    }}
+                    className="relative z-30 flex h-9 w-full min-w-0 items-center gap-1 text-left"
+                  >
+                    <Icon
+                      path={icons[activeResource.type]}
+                      className="h-4 w-4 shrink-0"
+                    />
+                    <span className="min-w-0 flex-1 truncate font-medium text-[#161616]">
+                      {activeResource.name}
+                    </span>
+                    <span className="shrink-0 text-[#3a3a3a]">·</span>
+                    <span className="shrink-0 text-[#3a3a3a]">
+                      {activeResource.size}
+                    </span>
+                    <span className="shrink-0 text-[#3a3a3a]">·</span>
+                    <FormatTag>{activeResource.format}</FormatTag>
+                    <Icon
+                      path={icons.arrowDownS}
+                      className={`h-4 w-4 shrink-0 text-[#3a3a3a] ${
+                        isMobileResourceMenuOpen ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                  {isMobileResourceMenuOpen ? (
+                    <div className="absolute left-0 right-0 top-11 z-30 max-h-[70dvh] overflow-hidden rounded border border-[#E5E5E5] bg-[#FFFFFF] shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]">
+                      <div className="flex h-8 items-center gap-1 border-b border-[#E5E5E5] bg-[#f6f6f6] px-2">
+                        <p className="min-w-0 flex-1 truncate text-[12px] font-bold uppercase leading-[1.4] text-[#161616]">
+                          Ressources
+                        </p>
+                        <button
+                          type="button"
+                          aria-label="Fermer le menu des ressources"
+                          onClick={() => setIsMobileResourceMenuOpen(false)}
+                          className="flex h-6 w-6 items-center justify-center rounded text-[#3a3a3a] hover:bg-[#eeeeee]"
+                        >
+                          <Icon path={icons.close} className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div className="max-h-[calc(70dvh-2rem)] overflow-auto p-2">
+                        <section className="space-y-0.5">
+                          <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
+                            {mainResources.length} Fichiers principaux
+                          </p>
+                          {mainResources.map((resource) => (
+                            <ResourceItem
+                              key={resource.id}
+                              resource={resource}
+                              active={resource.id === activeResource.id}
+                              onSelect={() => {
+                                selectResource(resource);
+                                setIsMobileResourceMenuOpen(false);
+                              }}
+                            />
+                          ))}
+                        </section>
+                        <section className="mt-3 space-y-0.5">
+                          <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
+                            {documentationResources.length} Documentation
+                          </p>
+                          {documentationResources.map((resource) => (
+                            <ResourceItem
+                              key={resource.id}
+                              resource={resource}
+                              active={resource.id === activeResource.id}
+                              onSelect={() => {
+                                selectResource(resource);
+                                setIsMobileResourceMenuOpen(false);
+                              }}
+                            />
+                          ))}
+                        </section>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+                <Icon
+                  path={icons[activeResource.type]}
+                  className="desktop-explorer-only h-4 w-4 shrink-0"
+                />
+                <span className="desktop-explorer-only min-w-0 truncate font-medium">
+                  {activeResource.name}
+                </span>
+                <span className="desktop-explorer-only shrink-0 text-[#3a3a3a]">·</span>
+                <span className="desktop-explorer-only shrink-0 text-[#3a3a3a]">
                   Mis à jour le {activeResource.updatedAt}
                 </span>
-                <span className="text-[#3a3a3a]">·</span>
-                <span className="text-[#3a3a3a]">{activeResource.size}</span>
-                <span className="text-[#3a3a3a]">·</span>
-                <FormatTag>{activeResource.format}</FormatTag>
-                <span className="text-[#3a3a3a]">·</span>
-                <Icon path={icons.download} className="h-3 w-3 text-[#3a3a3a]" />
-                <span className="text-[#3a3a3a]">{activeResource.downloads}</span>
+                <span className="desktop-explorer-only shrink-0 text-[#3a3a3a]">·</span>
+                <span className="desktop-explorer-only shrink-0 text-[#3a3a3a]">
+                  {activeResource.size}
+                </span>
+                <span className="desktop-explorer-only shrink-0 text-[#3a3a3a]">·</span>
+                <span className="desktop-explorer-only shrink-0">
+                  <FormatTag>{activeResource.format}</FormatTag>
+                </span>
+                <span className="desktop-explorer-only shrink-0 text-[#3a3a3a]">·</span>
+                <Icon path={icons.download} className="desktop-explorer-only h-3 w-3 shrink-0 text-[#3a3a3a]" />
+                <span className="desktop-explorer-only shrink-0 text-[#3a3a3a]">
+                  {activeResource.downloads}
+                </span>
               </div>
 
               {isExplorerMinimized ? (
@@ -3403,7 +4090,32 @@ export default function ExplorateurPage() {
               ) : null}
             </header>
 
-            <div className="flex h-12 items-center border-b border-[#E5E5E5] bg-[#FFFFFF] px-2">
+            <div className="mobile-explorer-only h-12 items-center border-b border-[#E5E5E5] bg-[#FFFFFF] px-2">
+              <label className="flex h-9 w-full items-center gap-2 rounded border border-[#E5E5E5] bg-[#FFFFFF] px-2">
+                <select
+                  value={activeTab}
+                  onChange={(event) => {
+                    setActiveTab(event.target.value as ExplorerTab);
+                    setActiveFilter(null);
+                    setActiveCell(null);
+                    setIsColumnSelectorOpen(false);
+                    setIsMobileFiltersOpen(false);
+                    setIsDownloadMenuOpen(false);
+                  }}
+                  aria-label="Choisir une vue"
+                  className="min-w-0 flex-1 appearance-none bg-transparent text-[13px] font-medium text-[#161616] outline-none"
+                >
+                  {activeResource.tabs.map((tab) => (
+                    <option key={tab} value={tab}>
+                      {tab}
+                    </option>
+                  ))}
+                </select>
+                <Icon path={icons.arrowDownS} className="h-4 w-4 shrink-0 text-[#3a3a3a]" />
+              </label>
+            </div>
+
+            <div className="desktop-explorer-only h-12 items-center border-b border-[#E5E5E5] bg-[#FFFFFF] px-2">
               <div className="flex flex-wrap items-center rounded border border-[#E5E5E5]">
                 {activeResource.tabs.map((tab) => (
                   <button
@@ -3414,6 +4126,7 @@ export default function ExplorateurPage() {
                       setActiveFilter(null);
                       setActiveCell(null);
                       setIsColumnSelectorOpen(false);
+                      setIsMobileFiltersOpen(false);
                       setIsDownloadMenuOpen(false);
                     }}
                     className={`h-7 rounded px-2.5 text-[12px] font-medium leading-6 ${
@@ -3447,9 +4160,9 @@ export default function ExplorateurPage() {
               <PreviewUnavailablePanel />
             ) : (
               <>
-            <div className="flex h-12 items-center justify-between border-b border-[#E5E5E5] bg-[#FFFFFF] px-2">
-              <div className="flex items-center gap-2">
-                <label className="flex h-8 w-[200px] items-center gap-1 rounded border border-[#E5E5E5] bg-[#f6f6f6] px-2">
+            <div className="flex min-h-12 flex-wrap items-center gap-2 border-b border-[#E5E5E5] bg-[#FFFFFF] px-2 py-2 lg:flex-nowrap lg:py-0">
+              <div className="flex shrink-0 items-center gap-2">
+                <label className="flex h-8 w-[220px] min-w-0 items-center gap-1 rounded border border-[#E5E5E5] bg-[#f6f6f6] px-2">
                   <Icon path={icons.search} className="h-3.5 w-3.5 text-[#3a3a3a]" />
                   <input
                     value={searchQuery}
@@ -3459,12 +4172,25 @@ export default function ExplorateurPage() {
                     className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
                   />
                 </label>
-                <span className="text-[13px] text-[#3a3a3a]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileFiltersOpen(true);
+                    setActiveFilter(null);
+                    setActiveCell(null);
+                    setIsColumnSelectorOpen(false);
+                  }}
+                  className="mobile-explorer-only h-8 items-center gap-1 rounded bg-[#FFFFFF] px-3 text-[13px] font-medium text-[#161616] hover:bg-[#f6f6f6]"
+                >
+                  <Icon path={icons.filter} className="h-3.5 w-3.5 text-[#3a3a3a]" />
+                  Filtres
+                </button>
+                <span className="hidden text-[13px] text-[#3a3a3a] lg:inline">
                   Dernière mise à jour de l’aperçu : 13/06/2024 17:51
                 </span>
               </div>
-              <div className="flex items-center gap-4 text-[13px] text-[#3a3a3a]">
-                <span className="relative flex items-center gap-1">
+              <div className="ml-auto flex min-w-0 shrink-0 items-center gap-3 text-[12px] text-[#3a3a3a] lg:gap-4 lg:text-[13px]">
+                <span className="relative flex shrink-0 items-center gap-1">
                   {isColumnSelectorOpen ? (
                     <button
                       type="button"
@@ -3479,12 +4205,18 @@ export default function ExplorateurPage() {
                       setIsColumnSelectorOpen((current) => !current);
                       setActiveFilter(null);
                       setActiveCell(null);
+                      setIsMobileFiltersOpen(false);
                     }}
                     className="flex h-6 cursor-pointer items-center gap-1 rounded px-1 hover:bg-[#eeeeee]"
                   >
                     <Icon path={icons.columns} className="h-3.5 w-3.5 text-[#3a3a3a]" />
-                    Colonnes {visibleColumns.length} sur {tableColumns.length}
-                    <Icon path={icons.arrowDropDown} className="h-4 w-4 text-[#3a3a3a]" />
+                    <span className="hidden whitespace-nowrap sm:inline">
+                      Colonnes {visibleColumns.length} sur {tableColumns.length}
+                    </span>
+                    <span className="whitespace-nowrap sm:hidden">
+                      {visibleColumns.length}/{tableColumns.length}
+                    </span>
+                    <Icon path={icons.arrowDownS} className="h-4 w-4 text-[#3a3a3a]" />
                   </button>
                   {isColumnSelectorOpen ? (
                     <ColumnSelector
@@ -3500,7 +4232,12 @@ export default function ExplorateurPage() {
                 </span>
                 <span className="flex items-center gap-1">
                   <Icon path={icons.rows} className="h-3.5 w-3.5 text-[#3a3a3a]" />
-                  Lignes {filteredRows.length} sur {rows.length}
+                  <span className="hidden whitespace-nowrap lg:inline">
+                    Lignes {filteredRows.length} sur {rows.length}
+                  </span>
+                  <span className="whitespace-nowrap lg:hidden">
+                    {filteredRows.length}/{rows.length}
+                  </span>
                 </span>
               </div>
             </div>
@@ -3514,6 +4251,7 @@ export default function ExplorateurPage() {
               onOpenFilter={(key) => {
                 setActiveCell(null);
                 setActiveFilter(key);
+                setIsMobileFiltersOpen(true);
               }}
               onClearSearch={() => setSearchQuery("")}
               onClearCategory={clearCategoryFilter}
@@ -3532,6 +4270,29 @@ export default function ExplorateurPage() {
                   }}
                 />
               ) : null}
+              {isMobileFiltersOpen ? (
+                <MobileFiltersPanel
+                  isOpen={isMobileFiltersOpen}
+                  visibleColumns={visibleColumns}
+                  sortState={sortState}
+                  categoryFilters={categoryFilters}
+                  filterSearches={filterSearches}
+                  numberRanges={numberRanges}
+                  dateFilters={dateFilters}
+                  onToggleCategory={toggleCategoryFilter}
+                  onSearchFilter={updateFilterSearch}
+                  onChangeRange={updateNumberRange}
+                  onSort={updateSort}
+                  onClearRange={clearNumberRange}
+                  onChangeDate={updateDateFilter}
+                  onClearDate={clearDateFilter}
+                  onClearAll={clearAllFilters}
+                  onClose={() => {
+                    setIsMobileFiltersOpen(false);
+                    setActiveFilter(null);
+                  }}
+                />
+              ) : null}
               <FilterMenus
                 activeFilter={activeFilter}
                 visibleColumns={visibleColumns}
@@ -3547,7 +4308,10 @@ export default function ExplorateurPage() {
                 onClearRange={clearNumberRange}
                 onChangeDate={updateDateFilter}
                 onClearDate={clearDateFilter}
-                onClose={() => setActiveFilter(null)}
+                onClose={() => {
+                  setActiveFilter(null);
+                  setIsMobileFiltersOpen(false);
+                }}
               />
 
               <div
@@ -3560,8 +4324,24 @@ export default function ExplorateurPage() {
                   );
                 }}
               >
+                {visibleColumns.length > 0 && filteredRows.length > 0 ? (
+                  <div className="mobile-data-cards space-y-2 p-2">
+                    {filteredRows.map((row) => (
+                      <MobileDataCard
+                        key={row.id}
+                        row={row}
+                        columns={visibleColumns}
+                        activeCell={activeCell}
+                        onOpenCell={openCell}
+                        onCopyCell={copyCellValue}
+                        onFilterCell={filterByCellValue}
+                      />
+                    ))}
+                  </div>
+                ) : null}
+
                 <div
-                  className={`sticky top-0 z-10 flex h-12 w-max min-w-full border-b transition-[background-color,border-color,box-shadow,backdrop-filter] duration-150 ${
+                  className={`desktop-data-table sticky top-0 z-10 h-12 w-max min-w-full border-b transition-[background-color,border-color,box-shadow,backdrop-filter] duration-150 ${
                     hasTableScrolled
                       ? "border-[#c2d1ff] bg-[#FFFFFF]/72 shadow-[0_8px_16px_rgba(0,0,0,0.10)] backdrop-blur-md"
                       : "border-[#E5E5E5] bg-[#f6f6f6] shadow-none backdrop-blur-0"
@@ -3611,7 +4391,7 @@ export default function ExplorateurPage() {
                   filteredRows.map((row) => (
                     <div
                       key={row.id}
-                      className="flex h-8 w-max min-w-full bg-[#FFFFFF]"
+                      className="desktop-data-table h-8 w-max min-w-full bg-[#FFFFFF]"
                     >
                       {visibleColumns.map((column) => (
                         <DataCell

@@ -1,24 +1,23 @@
-# Carte Landing Page
+# Cartes landing page
 
 ## Objectif
 
-Créer une page de destination avec une carte interactive pour présenter et naviguer dans les données géographiques de data.gouv.fr.
+Explorer des cartes responsives utilisées dans les landing pages de data.gouv.fr pour présenter des fonctionnalités.
 
 ## Hypothèse testée
 
-Une page d'accueil visuelle avec une carte interactive permet aux utilisateurs de découvrir et d'accéder plus intuitivement aux jeux de données géolocalisés.
+Une carte courte, illustrée et interactive permet de présenter une fonctionnalité de manière plus concrète et plus engageante.
 
 ## État d'avancement
 
-Prototype en construction - structure de base mise en place.
+Premier canvas minimal : une carte d'exemple centrée, responsive, prête pour itérations.
 
 ## Inspirations
 
-- data.gouv.fr
-- DSFR
-- Cartes interactives (Leaflet, MapLibre)
-- Interfaces de découverte de données géospatiales
+- Rebrand IA
+- Shape of AI
+- Landing pages data.gouv.fr
 
 ## Lien Figma
 
-À ajouter lorsque disponible.
+https://www.figma.com/design/Mhq9frdgbvizAOnt10W76R/%F0%9F%94%AE-Rebrand-IA?node-id=27-8264&m=dev

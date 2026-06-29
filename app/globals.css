@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "@datagouv/components-next/dist/components.css";
 
 :root {
   --background: #ffffff;
@@ -19,4 +20,60 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-marianne);
+}
+
+.mobile-data-cards {
+  display: none !important;
+}
+
+.desktop-data-table,
+.desktop-resource-sidebar {
+  display: flex !important;
+}
+
+.mobile-explorer-only {
+  display: none !important;
+}
+
+.desktop-explorer-only {
+  display: flex !important;
+}
+
+.mobile-structure-cards {
+  display: none !important;
+}
+
+.desktop-structure-table {
+  display: block !important;
+}
+
+@media (max-width: 1023.98px) {
+  .mobile-data-cards {
+    display: block !important;
+  }
+
+  .desktop-data-table,
+  .desktop-resource-sidebar {
+    display: none !important;
+  }
+
+  .mobile-explorer-only {
+    display: flex !important;
+  }
+
+  .desktop-explorer-only {
+    display: none !important;
+  }
+
+  .mobile-structure-cards {
+    display: flex !important;
+  }
+
+  .desktop-structure-table {
+    display: none !important;
+  }
+
+  .filter-popover {
+    display: none !important;
+  }
 }

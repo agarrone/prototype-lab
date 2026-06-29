@@ -3,6 +3,7 @@ import Link from "next/link";
 import {
   RiArrowRightSLine,
   RiFolder3Line,
+  RiInformationLine,
   RiMicroscopeLine,
   RiPagesLine,
   RiPaletteLine,
@@ -12,7 +13,7 @@ import { prototypes } from "@/lib/prototypes";
 
 export const metadata: Metadata = {
   title: "Prototype Lab",
-  description: "Experimental design prototypes for data.gouv.fr.",
+  description: "Prototypes de design pour tester des idées et des interactions pour data.gouv.fr.",
 };
 
 function FolderIcon() {
@@ -41,7 +42,6 @@ const prototypeIcons = {
 };
 
 function StatusBadge({ status }: { status: string }) {
-  const Icon = status === "almost there" ? RiMicroscopeLine : null;
   const className =
     {
       "almost there": "bg-[#e8edff] text-[#000091]",
@@ -52,9 +52,8 @@ function StatusBadge({ status }: { status: string }) {
 
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1 rounded px-2 py-0.5 text-[12px] font-medium leading-4 ${className}`}
+      className={`inline-flex shrink-0 items-center rounded px-2 py-0.5 text-[12px] font-medium leading-4 ${className}`}
     >
-      {Icon ? <Icon aria-hidden="true" className="h-3.5 w-3.5" /> : null}
       {status}
     </span>
   );
@@ -69,49 +68,63 @@ export default function Home() {
             Prototype Lab
           </h1>
           <p className="max-w-xl text-[14px] leading-6 text-[#3a3a3a]">
-            Experimental design prototypes to test product ideas and interface
-            patterns for data.gouv.fr.
+            Prototypes de design pour tester des idées et des interactions pour
+            data.gouv.fr, en conditions proches du réel.
           </p>
         </header>
 
         <nav
           aria-label="Prototype navigation"
-          className="font-mono text-[14px] leading-6 text-[#3a3a3a]"
+          className="text-[14px] leading-6 text-[#3a3a3a]"
         >
-          <details className="group" aria-label="prototypes">
-            <summary className="flex cursor-pointer list-none items-center gap-2 rounded px-2 py-1.5 outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-[#000091] [&::-webkit-details-marker]:hidden">
-              <ChevronIcon />
-              <FolderIcon />
-              <span>prototypes</span>
-            </summary>
+          <div className="space-y-1">
+            <Link
+              href="/a-propos"
+              className="flex items-center gap-2 rounded px-2 py-1.5 text-[#161616] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000091]"
+            >
+              <span aria-hidden="true" className="h-4 w-4" />
+              <RiInformationLine
+                aria-hidden="true"
+                className="h-5 w-5 shrink-0 text-[#666666]"
+              />
+              <span>à propos</span>
+            </Link>
 
-            <ul className="ml-6 mt-1 space-y-1 border-l border-[#e5e5e5] pl-4">
-              {prototypes.map((prototype) => {
-                const PrototypeIcon =
-                  prototypeIcons[prototype.slug as keyof typeof prototypeIcons] ??
-                  RiPagesLine;
+            <details className="group" aria-label="prototypes">
+              <summary className="flex cursor-pointer list-none items-center gap-2 rounded px-2 py-1.5 outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-[#000091] [&::-webkit-details-marker]:hidden">
+                <ChevronIcon />
+                <FolderIcon />
+                <span>prototypes</span>
+              </summary>
 
-                return (
-                  <li key={prototype.slug}>
-                    <Link
-                      href={`/prototypes/${prototype.slug}`}
-                      className="flex items-center justify-between gap-4 rounded px-2 py-1.5 text-[#161616] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000091]"
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span aria-hidden="true" className="h-4 w-4" />
-                        <PrototypeIcon
-                          aria-hidden="true"
-                          className="h-5 w-5 shrink-0 text-[#666666]"
-                        />
-                        <span className="truncate">{prototype.title}</span>
-                      </span>
-                      <StatusBadge status={prototype.status} />
-                    </Link>
-                  </li>
-                );
-              })}
-            </ul>
-          </details>
+              <ul className="ml-6 mt-1 space-y-1 border-l border-[#e5e5e5] pl-4">
+                {prototypes.map((prototype) => {
+                  const PrototypeIcon =
+                    prototypeIcons[prototype.slug as keyof typeof prototypeIcons] ??
+                    RiPagesLine;
+
+                  return (
+                    <li key={prototype.slug}>
+                      <Link
+                        href={`/prototypes/${prototype.slug}`}
+                        className="flex items-center justify-between gap-4 rounded px-2 py-1.5 text-[#161616] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000091]"
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span aria-hidden="true" className="h-4 w-4" />
+                          <PrototypeIcon
+                            aria-hidden="true"
+                            className="h-5 w-5 shrink-0 text-[#666666]"
+                          />
+                          <span className="truncate">{prototype.title}</span>
+                        </span>
+                        <StatusBadge status={prototype.status} />
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </details>
+          </div>
         </nav>
       </section>
     </main>
