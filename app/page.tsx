@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   RiArrowRightSLine,
+  RiBarChartBoxLine,
   RiFolder3Line,
   RiInformationLine,
   RiMicroscopeLine,
@@ -39,6 +40,7 @@ const prototypeIcons = {
   "enrichissement-donnees": RiSparklingLine,
   "design-system": RiPaletteLine,
   "carte-landing-page": RiPagesLine,
+  "preview-dashboard": RiBarChartBoxLine,
 };
 
 function StatusBadge({ status }: { status: string }) {

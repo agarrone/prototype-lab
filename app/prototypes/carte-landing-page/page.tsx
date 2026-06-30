@@ -1,109 +1,128 @@
 import Link from "next/link";
 import {
+  RiAlertLine,
   RiArrowLeftLine,
-  RiBellLine,
+  RiCheckDoubleLine,
   RiCheckLine,
-  RiCodeSSlashLine,
-  RiDatabase2Line,
-  RiDownloadCloud2Line,
-  RiLineChartLine,
+  RiCheckboxCircleLine,
+  RiMessage3Line,
 } from "@remixicon/react";
 
 type FeatureCard = {
   title: string;
   description: string;
-  illustration: "opening" | "subscriptions" | "api";
+  illustration: "discussion" | "schema" | "stats" | "quality";
 };
 
 const featureCards: FeatureCard[] = [
   {
-    title: "Suivi de l’ouverture",
+    title: "Discussions",
     description:
-      "L’Explorateur permet de visualiser et contrôler vos données directement en ligne. Il facilite leur compréhension et contribue à mieux les valoriser auprès des réutilisateurs.",
-    illustration: "opening",
+      "Échangez directement autour d’un jeu de données pour signaler un problème, demander une précision ou suivre la réponse du producteur.",
+    illustration: "discussion",
   },
   {
-    title: "Abonnements",
+    title: "Schémas de données",
     description:
-      "L’Explorateur permet de visualiser et contrôler vos données directement en ligne. Il facilite leur compréhension et contribue à mieux les valoriser auprès des réutilisateurs.",
-    illustration: "subscriptions",
+      "Affichez la structure attendue des fichiers, identifiez les champs clés et facilitez la validation avant publication.",
+    illustration: "schema",
   },
   {
-    title: "API",
+    title: "Statistiques",
     description:
-      "L’Explorateur permet de visualiser et contrôler vos données directement en ligne. Il facilite leur compréhension et contribue à mieux les valoriser auprès des réutilisateurs.",
-    illustration: "api",
+      "Suivez les visites, les téléchargements et les tendances d’usage pour mieux comprendre la circulation des données.",
+    illustration: "stats",
+  },
+  {
+    title: "Qualité des métadonnées",
+    description:
+      "Repérez les informations complètes ou manquantes et améliorez progressivement la qualité de description des jeux de données.",
+    illustration: "quality",
   },
 ];
 
-function OpeningIllustration() {
+function DiscussionIllustration() {
   return (
-    <div className="flex h-full w-full items-center justify-center">
-      <div className="w-full max-w-[330px] rounded-md border border-[#dddddd] bg-white p-3 shadow-[0_12px_28px_rgba(0,0,0,0.10)]">
-        <div className="mb-3 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="flex h-7 w-7 items-center justify-center rounded bg-[#e8edff]">
-              <RiLineChartLine aria-hidden className="h-4 w-4 text-[#000091]" />
-            </span>
-            <div>
-              <div className="h-2.5 w-28 rounded bg-[#161616]" />
-              <div className="mt-1.5 h-2 w-20 rounded bg-[#cecece]" />
-            </div>
-          </div>
-          <span className="rounded bg-[#c3fad5] px-2 py-1 text-[11px] font-bold text-[#18753c]">
-            92 %
+    <div className="h-full w-full overflow-hidden bg-white p-3 text-[10px] leading-[1.5] text-[#3a3a3a]">
+      <div className="flex items-center gap-2 text-[#161616]">
+        <RiMessage3Line aria-hidden className="h-3.5 w-3.5 text-[#000091]" />
+        <p className="font-bold">Colonne code_commune manquante</p>
+      </div>
+      <div className="mt-0.5 flex items-center gap-1 whitespace-nowrap">
+        <span className="text-[#000091]">Jena Dalerti</span>
+        <span className="text-[#666666]">-</span>
+        <span className="text-[#666666]">il y a 2 heures</span>
+      </div>
+      <div className="mt-3 space-y-1 overflow-hidden">
+        <p>Bonjour,</p>
+        <p>
+          Merci pour la mise à jour du jeu de données ! J’ai remarqué que la
+          colonne code_commune est désormais vide pour plusieurs lignes.
+        </p>
+        <p className="truncate">
+          Pouvez-vous confirmer si c’est une évolution du modèle ?
+        </p>
+      </div>
+
+      <div className="mt-3 border-l-2 border-[#000091] pl-3">
+        <div className="flex items-center gap-1 whitespace-nowrap">
+          <RiCheckboxCircleLine
+            aria-hidden
+            className="h-3 w-3 text-[#000091]"
+          />
+          <span className="text-[#000091]">Ministère de la Culture</span>
+          <span className="text-[#666666]">-</span>
+          <span className="text-[#666666]">il y a 2 heures</span>
+          <span className="rounded-[2px] bg-[#e8edff] px-1 text-[8px] font-bold uppercase tracking-[0.16px] text-[#0063cb]">
+            Producteur
           </span>
         </div>
-        <div className="grid grid-cols-4 items-end gap-2">
-          {[42, 72, 54, 86].map((height, index) => (
-            <div
-              key={height}
-              className="flex h-24 items-end rounded bg-[#f6f6f6] px-2 pb-2"
-            >
-              <div
-                className={`w-full rounded-t ${
-                  index === 3 ? "bg-[#000091]" : "bg-[#c2d1ff]"
-                }`}
-                style={{ height }}
-              />
-            </div>
-          ))}
-        </div>
+        <p className="mt-2 line-clamp-3">
+          Il s’agit effectivement d’un problème lors de l’export. Nous venons de
+          corriger le fichier source et une nouvelle version vient d’être publiée.
+        </p>
       </div>
     </div>
   );
 }
 
-function SubscriptionsIllustration() {
+function SchemaIllustration() {
+  const rows = [
+    ["1", "nom_aménageur", "string", true],
+    ["2", "siren_amenageur", "string", true],
+    ["3", "contact_amenageur", "email", true],
+    ["4", "coordonneesXY", "point_geo", true],
+    ["5", "nbre_pdc", "integer", false],
+    ["6", "id_pdc_itinerance", "string", false],
+  ] as const;
+
   return (
-    <div className="flex h-full w-full items-center justify-center">
-      <div className="w-full max-w-[330px] space-y-2 rounded-md border border-[#dddddd] bg-white p-3 shadow-[0_12px_28px_rgba(0,0,0,0.10)]">
-        {[
-          ["Nouveau fichier disponible", "CSV · il y a 2 min"],
-          ["Mise à jour détectée", "API · ce matin"],
-          ["Schéma validé", "JSON · hier"],
-        ].map(([title, meta], index) => (
+    <div className="h-full w-full overflow-hidden bg-white p-3">
+      <div className="mb-2 inline-flex rounded-xl bg-[#eeeeee] px-2 py-1 text-[10px] text-[#161616]">
+        <span>etalab/</span>
+        <span className="font-bold">schema-irve-statique</span>
+      </div>
+      <div className="overflow-hidden rounded-[2px] border border-[#dddddd]">
+        {rows.map(([index, name, type, valid]) => (
           <div
-            key={title}
-            className="flex items-center gap-2 rounded border border-[#E5E5E5] bg-[#FFFFFF] p-2"
+            key={name}
+            className="flex h-[30px] items-center gap-1 border-b border-[#E5E5E5] bg-white px-2 text-[10px] tracking-[0.5px] last:border-b-0"
           >
-            <span
-              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded ${
-                index === 2 ? "bg-[#c3fad5]" : "bg-[#e8edff]"
-              }`}
-            >
-              {index === 2 ? (
-                <RiCheckLine aria-hidden className="h-4 w-4 text-[#18753c]" />
-              ) : (
-                <RiBellLine aria-hidden className="h-4 w-4 text-[#000091]" />
-              )}
+            <span className="w-3 font-mono font-bold text-[#E5E5E5]">
+              {index}
             </span>
-            <div className="min-w-0 flex-1">
-              <div className="truncate text-[12px] font-bold text-[#161616]">
-                {title}
-              </div>
-              <div className="truncate text-[11px] text-[#666666]">{meta}</div>
-            </div>
+            <span className="w-[150px] truncate font-mono font-bold text-[#000091] underline">
+              {name}
+            </span>
+            <span className="min-w-0 flex-1 truncate font-mono text-[#3a3a3a]">
+              {type}
+            </span>
+            {valid ? (
+              <RiCheckDoubleLine
+                aria-hidden
+                className="h-[18px] w-[18px] shrink-0 text-[#18753c]"
+              />
+            ) : null}
           </div>
         ))}
       </div>
@@ -111,46 +130,112 @@ function SubscriptionsIllustration() {
   );
 }
 
-function ApiIllustration() {
+function Sparkline({ variant }: { variant: "visits" | "downloads" }) {
+  const points =
+    variant === "visits"
+      ? "0,24 12,18 24,23 36,12 48,14 60,9 72,2 84,11 96,8 108,15"
+      : "0,26 12,21 24,24 36,17 48,10 60,14 72,9 84,6 96,11 108,10";
+
   return (
-    <div className="flex h-full w-full items-center justify-center">
-      <div className="grid w-full max-w-[340px] grid-cols-[112px_1fr] overflow-hidden rounded-md border border-[#dddddd] bg-white shadow-[0_12px_28px_rgba(0,0,0,0.10)]">
-        <div className="border-r border-[#E5E5E5] bg-[#f6f6f6] p-3">
-          <div className="mb-3 flex h-7 w-7 items-center justify-center rounded bg-[#fee7fc]">
-            <RiCodeSSlashLine aria-hidden className="h-4 w-4 text-[#6e445a]" />
+    <svg
+      aria-hidden
+      className="h-7 w-[90px]"
+      viewBox="0 0 108 28"
+      fill="none"
+    >
+      <polyline
+        points={points}
+        stroke="#000091"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function StatsIllustration() {
+  return (
+    <div className="h-full w-full overflow-hidden bg-white p-3">
+      <div>
+        <p className="text-[12px] font-bold leading-[1.5] text-[#161616]">
+          Visites
+        </p>
+        <div className="flex items-end gap-2">
+          <p className="text-[30px] font-extrabold leading-[1.05] text-[#161616]">
+            629k
+          </p>
+          <div>
+            <Sparkline variant="visits" />
+            <div className="mt-0.5 flex justify-between text-[6px] text-[#929292]">
+              <span>11/24</span>
+              <span>11/25</span>
+            </div>
           </div>
-          {["GET", "POST", "CSV"].map((label) => (
-            <div
-              key={label}
-              className="mb-2 rounded border border-[#E5E5E5] bg-white px-2 py-1 text-[11px] font-bold text-[#3a3a3a]"
+        </div>
+        <span className="mt-1 inline-flex rounded bg-[#e8edff] px-1 text-[10px] font-bold leading-[18px] text-[#0063cb]">
+          + 62k en Novembre 2025
+        </span>
+      </div>
+
+      <div className="ml-[80px] mt-5">
+        <p className="text-[12px] font-bold leading-[1.5] text-[#161616]">
+          Téléchargements
+        </p>
+        <div className="flex items-end gap-2">
+          <p className="text-[30px] font-extrabold leading-[1.05] text-[#161616]">
+            65,9k
+          </p>
+          <div>
+            <Sparkline variant="downloads" />
+            <div className="mt-0.5 flex justify-between text-[6px] text-[#929292]">
+              <span>11/24</span>
+              <span>11/25</span>
+            </div>
+          </div>
+        </div>
+        <span className="mt-1 inline-flex rounded bg-[#e8edff] px-1 text-[10px] font-bold leading-[18px] text-[#0063cb]">
+          + 54k en Novembre 2025
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function QualityIllustration() {
+  const items = [
+    ["ok", "Description des données renseignée"],
+    ["ok", "Fichiers documentés"],
+    ["ok", "Licence renseignée"],
+    ["warning", "Fréquence de mise à jour non renseignée"],
+    ["warning", "Formats de fichiers non standards"],
+  ] as const;
+
+  return (
+    <div className="h-full w-full overflow-hidden bg-white p-3">
+      <p className="text-[12px] font-bold leading-[1.5] text-[#161616]">
+        Qualité des métadonnées
+      </p>
+      <div className="mt-1 rounded-full border border-[#27a658] bg-white p-0.5">
+        <div className="h-2 w-[60%] rounded-full bg-[#27a658]" />
+      </div>
+      <div className="mt-4 space-y-2 text-[10px] text-[#161616]">
+        {items.map(([status, label]) => (
+          <div key={label} className="flex items-center gap-1">
+            {status === "ok" ? (
+              <RiCheckLine aria-hidden className="h-3 w-3 text-[#161616]" />
+            ) : (
+              <RiAlertLine aria-hidden className="h-3 w-3 text-[#b34000]" />
+            )}
+            <span
+              className={
+                status === "warning" ? "text-[#b34000]" : "text-[#161616]"
+              }
             >
               {label}
-            </div>
-          ))}
-        </div>
-        <div className="p-3">
-          <div className="mb-3 flex items-center gap-2">
-            <RiDatabase2Line aria-hidden className="h-4 w-4 text-[#18753c]" />
-            <div className="h-2.5 w-28 rounded bg-[#161616]" />
+            </span>
           </div>
-          <div className="space-y-2">
-            {[88, 132, 104, 148].map((width) => (
-              <div key={width} className="flex items-center gap-2">
-                <RiDownloadCloud2Line
-                  aria-hidden
-                  className="h-3.5 w-3.5 shrink-0 text-[#3a3a3a]"
-                />
-                <div
-                  className="h-2 rounded bg-[#cecece]"
-                  style={{ width }}
-                />
-              </div>
-            ))}
-          </div>
-          <div className="mt-4 rounded border border-dashed border-[#CECECE] px-2 py-2 text-[11px] text-[#666666]">
-            Illustration à préciser
-          </div>
-        </div>
+        ))}
       </div>
     </div>
   );
@@ -159,10 +244,11 @@ function ApiIllustration() {
 function CardIllustration({ type }: { type: FeatureCard["illustration"] }) {
   return (
     <div className="flex h-[239px] shrink-0 items-center justify-center overflow-hidden rounded-[3px] border border-[#E5E5E5] bg-gradient-to-b from-[#d5f2ff] from-[40%] to-white p-5">
-      <div className="flex h-full w-full items-center justify-center overflow-hidden rounded border border-[#E5E5E5] p-0.5 shadow-[0_4px_4px_rgba(255,255,255,0.5)]">
-        {type === "opening" ? <OpeningIllustration /> : null}
-        {type === "subscriptions" ? <SubscriptionsIllustration /> : null}
-        {type === "api" ? <ApiIllustration /> : null}
+      <div className="h-full w-full overflow-hidden rounded-[2px] border border-[#E5E5E5] bg-white shadow-[0_4px_4px_rgba(255,255,255,0.5)]">
+        {type === "discussion" ? <DiscussionIllustration /> : null}
+        {type === "schema" ? <SchemaIllustration /> : null}
+        {type === "stats" ? <StatsIllustration /> : null}
+        {type === "quality" ? <QualityIllustration /> : null}
       </div>
     </div>
   );
@@ -191,7 +277,7 @@ export default function CarteLandingPage() {
         Retour
       </Link>
 
-      <section className="mx-auto grid w-full max-w-[1600px] place-items-center gap-4 md:grid-cols-2 xl:grid-cols-3">
+      <section className="mx-auto grid w-full max-w-[1600px] place-items-center gap-4 md:grid-cols-2 xl:grid-cols-4">
         {featureCards.map((card) => (
           <LandingFeatureCard key={card.title} card={card} />
         ))}

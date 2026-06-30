@@ -46,6 +46,15 @@ export const prototypes: Prototype[] = [
     tags: ["carte", "géographie", "visualisation"],
     figmaUrl: "",
   },
+  {
+    slug: "preview-dashboard",
+    title: "Preview dashboard",
+    description:
+      "Dashboard de suivi des familles de formats et de leur capacité à être prévisualisées sur data.gouv.fr.",
+    status: "brouillon",
+    tags: ["formats", "prévisualisation", "dashboard"],
+    figmaUrl: "",
+  },
 ];
 
 export function getPrototypeBySlug(slug: string) {

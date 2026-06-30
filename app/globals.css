@@ -47,6 +47,14 @@ body {
   display: block !important;
 }
 
+.mobile-preview-dashboard {
+  display: none !important;
+}
+
+.desktop-preview-dashboard {
+  display: block !important;
+}
+
 @media (max-width: 1023.98px) {
   .mobile-data-cards {
     display: block !important;
@@ -70,6 +78,14 @@ body {
   }
 
   .desktop-structure-table {
+    display: none !important;
+  }
+
+  .mobile-preview-dashboard {
+    display: block !important;
+  }
+
+  .desktop-preview-dashboard {
     display: none !important;
   }
 
