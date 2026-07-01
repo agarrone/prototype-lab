@@ -8,7 +8,9 @@ import {
   RiMicroscopeLine,
   RiPagesLine,
   RiPaletteLine,
+  RiSearchLine,
   RiSparklingLine,
+  RiTerminalLine,
 } from "@remixicon/react";
 import { prototypes } from "@/lib/prototypes";
 
@@ -37,7 +39,9 @@ function ChevronIcon() {
 
 const prototypeIcons = {
   explorateur: RiMicroscopeLine,
+  "explorateur-sql-et-ia": RiTerminalLine,
   "enrichissement-donnees": RiSparklingLine,
+  recherche: RiSearchLine,
   "design-system": RiPaletteLine,
   "carte-landing-page": RiPagesLine,
   "preview-dashboard": RiBarChartBoxLine,

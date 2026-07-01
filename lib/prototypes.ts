@@ -19,6 +19,15 @@ export const prototypes: Prototype[] = [
       "https://www.figma.com/design/IyyYD8UbvPyTo7E1rKkiCF/%F0%9F%A6%B7-Nouvelle-navigation-dans-les-ressources?node-id=160-4820&m=dev",
   },
   {
+    slug: "explorateur-sql-et-ia",
+    title: "Explorateur SQL et IA",
+    description:
+      "Duplication de l'explorateur de données pour prototyper des interactions SQL et IA autour des ressources tabulaires.",
+    status: "exploration",
+    tags: ["data", "sql", "ia"],
+    figmaUrl: "",
+  },
+  {
     slug: "enrichissement-donnees",
     title: "Enrichissement de données",
     description:
@@ -27,6 +36,15 @@ export const prototypes: Prototype[] = [
     tags: ["données", "analyse", "enrichissement"],
     figmaUrl:
       "https://www.figma.com/design/eYZGImREXHxoGaD3yn9iNz/%E2%9E%95-Enrichissement-de-donn%C3%A9es?node-id=68-6926&m=dev",
+  },
+  {
+    slug: "recherche",
+    title: "Recherche",
+    description:
+      "Prototype haute fidélité de la recherche avancée de jeux de données sur data.gouv.fr.",
+    status: "exploration",
+    tags: ["recherche", "catalogue", "filtres"],
+    figmaUrl: "",
   },
   {
     slug: "design-system",
