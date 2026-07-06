@@ -18,6 +18,7 @@ import {
   RiArrowRightSLine,
   RiArrowUpLine,
   RiBook2Line,
+  RiBrainLine,
   RiCalendarLine,
   RiCheckboxCircleLine,
   RiCheckLine,
@@ -47,6 +48,8 @@ import {
   RiTableLine,
   RiTerminalLine,
   RiText,
+  RiThumbDownLine,
+  RiThumbUpLine,
 } from "@remixicon/react";
 
 type ResourceType = "table" | "code" | "geodata" | "documentation";
@@ -73,18 +76,32 @@ const resources: Resource[] = [
     type: "table",
     tabs: ["Aperçu", "Description", "Structure des données", "Métadonnées", "API"],
   },
+  {
+    id: "deces",
+    name: "Fichier des personnes décédées",
+    size: "657,9 Mo",
+    format: "PARQUET",
+    updatedAt: "3 juillet 2026",
+    downloads: 0,
+    type: "table",
+    tabs: ["Aperçu", "Description", "Structure des données", "Métadonnées", "API"],
+  },
 ];
 
 const downloadGroups = [
   {
     title: "FORMAT ORIGINAL",
-    items: [{ label: "Format parquet", size: "67,5 Mo" }],
+    items: [
+      { label: "Résultats électoraux consolidés", size: "67,5 Mo" },
+      { label: "Fichier des personnes décédées", size: "657,9 Mo" },
+    ],
     closable: true,
   },
   {
     title: "LIEN SOURCE",
     items: [
       { label: "data.gouv.fr/api/1/datasets/r/ff16d511...", size: "Parquet" },
+      { label: "data.gouv.fr/api/1/datasets/r/d7aed239...", size: "Parquet" },
     ],
     closable: false,
   },
@@ -1175,6 +1192,9 @@ const icons = {
   sidebarFold: RiSidebarFoldLine,
   sidebarUnfold: RiSidebarUnfoldLine,
   text: RiText,
+  brain: RiBrainLine,
+  thumbUp: RiThumbUpLine,
+  thumbDown: RiThumbDownLine,
 } satisfies Record<string, RemixIconComponent>;
 
 function FormatTag({ children }: { children: string }) {
@@ -3244,275 +3264,1114 @@ function DownloadMenu({ onClose }: { onClose: () => void }) {
   );
 }
 
-type ChatSidebarTab = "agent" | "sql";
+type AssistantIntent =
+  | "explain_structure"
+  | "search_rows"
+  | "aggregate"
+  | "clarify"
+  | "unable";
+
+type AssistantFilterPayload = {
+  key: ColumnKey;
+  label: string;
+  value: string;
+  type: ColumnType;
+  count: number;
+};
+
+type AssistantSortPayload = {
+  key: ColumnKey;
+  label: string;
+  direction: SortDirection;
+};
+
+type AssistantProposedAction =
+  | {
+      type: "apply_filter";
+      payload: {
+        filters: AssistantFilterPayload[];
+      };
+    }
+  | {
+      type: "apply_sort";
+      payload: AssistantSortPayload;
+    }
+  | {
+      type: "highlight_rows" | "none";
+      payload?: Record<string, never>;
+    };
 
 type AgentResponse = {
+  intent: AssistantIntent;
   answer: string;
   reasoning?: string;
   sql?: string;
+  columnsUsed?: string[];
+  chart?: AssistantChartSpec;
+  queryRows?: Record<string, unknown>[];
+  toolTrace?: {
+    tool: "get_resource_context" | "execute_query" | "create_chart";
+    summary: string;
+    show?: boolean;
+  }[];
+  proposedAction: AssistantProposedAction;
+  needsClarification?: boolean;
+  clarificationOptions?: AssistantFilterPayload[];
   model?: string;
+  status: "success" | "ambiguous" | "empty" | "unable" | "error";
 };
+
+type AssistantChartSpec = {
+  type: "bar" | "line" | "histogram" | "map";
+  title: string;
+  xKey: string;
+  yKey: string;
+  data: Record<string, unknown>[];
+};
+
+type AssistantMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  response?: AgentResponse;
+};
+
+type AssistantConversationContext = {
+  filters: AssistantFilterPayload[];
+  lastIntent?: AssistantIntent;
+};
+
+type AssistantActionHandlers = {
+  onApplyFilter: (filters: AssistantFilterPayload[]) => void;
+  onApplySort: (sort: AssistantSortPayload) => void;
+};
+
+function getAssistantStarterQuestions() {
+  const hasGeography = tableColumns.some((column) =>
+    ["codeDepartement", "libelleDepartement", "codeCommune", "libelleCommune"].includes(
+      column.key,
+    ),
+  );
+  const hasElectionYears = rows.some((row) => /\b(19|20)\d{2}\b/.test(row.idElection));
+  const hasCategories = tableColumns.some((column) =>
+    ["category", "reference", "referenceData", "identifier"].includes(column.type),
+  );
+
+  return [
+    "Explique-moi la structure du dataset",
+    "Quelles sont les colonnes importantes ?",
+    hasElectionYears ? "Quelle période couvre ce jeu de données ?" : null,
+    hasGeography ? "Quels territoires sont couverts ?" : null,
+    hasCategories ? "Quelles sont les valeurs les plus fréquentes ?" : null,
+    "Quelles colonnes contiennent le plus de valeurs manquantes ?",
+    hasCategories ? "Fais un graphique des principales catégories" : null,
+  ].filter(Boolean) as string[];
+}
+
+const assistantLoadingSteps = [
+  "Lecture du schéma",
+  "Analyse des valeurs",
+  "Préparation de l’action",
+];
+
+function normalizeAssistantText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function escapeSqlValue(value: string) {
+  return value.replace(/'/g, "''");
+}
+
+function buildFilterSql(filters: AssistantFilterPayload[]) {
+  return `SELECT *\nFROM resultats_electoraux\nWHERE ${filters
+    .map((filter) => `${filter.label} = '${escapeSqlValue(filter.value)}'`)
+    .join("\n  AND ")};`;
+}
+
+function countRowsMatchingFilters(filters: AssistantFilterPayload[]) {
+  return rows.filter((row) =>
+    filters.every((filter) => getRowValue(row, filter.key) === filter.value),
+  ).length;
+}
+
+function getColumnByLabelOrKey(value: string) {
+  const normalizedValue = normalizeAssistantText(value);
+
+  return tableColumns.find(
+    (column) =>
+      normalizeAssistantText(column.key) === normalizedValue ||
+      normalizeAssistantText(column.label) === normalizedValue,
+  );
+}
+
+function getColumnCoverageSummary() {
+  const typeCounts = tableColumns.reduce<Record<ColumnType, number>>(
+    (accumulator, column) => {
+      accumulator[column.type] = (accumulator[column.type] ?? 0) + 1;
+
+      return accumulator;
+    },
+    {
+      identifier: 0,
+      referenceData: 0,
+      reference: 0,
+      category: 0,
+      number: 0,
+      date: 0,
+      text: 0,
+    },
+  );
+
+  return `${tableColumns.length} colonnes, ${rows.length} lignes disponibles dans l’aperçu, dont ${typeCounts.number} colonnes numériques, ${typeCounts.identifier} identifiants et ${typeCounts.reference + typeCounts.referenceData} colonnes territoriales ou référentielles.`;
+}
+
+function buildStructureAnswer(question: string): AgentResponse {
+  const importantColumns = [
+    "id_election",
+    "libelle_departement",
+    "libelle_commune",
+    "inscrits",
+    "votants",
+    "exprimes",
+    "ratio_abstentions_inscrits",
+  ];
+  const normalizedQuestion = normalizeAssistantText(question);
+  const asksImportantColumns =
+    normalizedQuestion.includes("colonnes importantes") ||
+    normalizedQuestion.includes("importantes");
+  const answer = asksImportantColumns
+    ? `Les colonnes les plus utiles sont ${importantColumns.join(", ")}. Elles permettent d’identifier l’élection, le territoire et les principaux volumes de participation.`
+    : `Cette ressource contient des résultats électoraux consolidés. Elle expose ${getColumnCoverageSummary()}`;
+
+  return {
+    intent: "explain_structure",
+    answer,
+    columnsUsed: asksImportantColumns ? importantColumns : tableColumns.map((column) => column.label),
+    proposedAction: { type: "none" },
+    status: "success",
+  };
+}
+
+function buildFrequentValuesAnswer(): AgentResponse {
+  const columns = ["idElection", "libelleDepartement", "libelleCommune"]
+    .map(getColumnByLabelOrKey)
+    .filter(Boolean) as TableColumn[];
+  const summary = columns
+    .map((column) => {
+      const values = getColumnFrequentValues(column)
+        .slice(0, 3)
+        .map((item) => `${item.label} ${item.value}`)
+        .join(", ");
+
+      return `${column.label} : ${values}`;
+    })
+    .join("\n");
+
+  return {
+    intent: "aggregate",
+    answer: `Les valeurs les plus fréquentes dans l’aperçu sont :\n${summary}`,
+    columnsUsed: columns.map((column) => column.label),
+    proposedAction: { type: "none" },
+    status: "success",
+  };
+}
+
+function buildYearsAnswer(): AgentResponse {
+  const years = Array.from(
+    new Set(
+      rows
+        .map((row) => getRowValue(row, "idElection").match(/\d{4}/)?.[0])
+        .filter(Boolean),
+    ),
+  ).sort();
+
+  return {
+    intent: "aggregate",
+    answer: `Les années visibles dans l’aperçu sont ${years.join(", ")}.`,
+    sql: "SELECT DISTINCT regexp_extract(id_election, '\\d{4}') AS annee\nFROM resultats_electoraux\nORDER BY annee;",
+    columnsUsed: ["id_election"],
+    proposedAction: { type: "none" },
+    status: "success",
+  };
+}
+
+function buildTerritoriesAnswer(): AgentResponse {
+  const departments = getColumnFrequentValues(tableColumns[3])
+    .map((item) => item.label)
+    .join(", ");
+  const communes = getColumnFrequentValues(tableColumns[5])
+    .slice(0, 5)
+    .map((item) => item.label)
+    .join(", ");
+
+  return {
+    intent: "aggregate",
+    answer: `Les territoires couverts dans l’aperçu incluent les départements ${departments}. Les communes les plus représentées incluent ${communes}.`,
+    columnsUsed: ["libelle_departement", "libelle_commune"],
+    proposedAction: { type: "none" },
+    status: "success",
+  };
+}
+
+function buildHighestValuesAnswer(): AgentResponse {
+  const numericColumns = tableColumns.filter((column) => column.type === "number");
+  const highest = numericColumns
+    .map((column) => {
+      const stats = getNumberStats(column);
+
+      return `${column.label} : maximum ${stats.max}`;
+    })
+    .slice(0, 6)
+    .join(", ");
+
+  return {
+    intent: "aggregate",
+    answer: `Voici les valeurs les plus élevées observées : ${highest}.`,
+    columnsUsed: numericColumns.slice(0, 6).map((column) => column.label),
+    proposedAction: {
+      type: "apply_sort",
+      payload: {
+        key: "inscrits",
+        label: "inscrits",
+        direction: "desc",
+      },
+    },
+    status: "success",
+  };
+}
+
+function findAssistantMatches(question: string) {
+  const normalizedQuestion = normalizeAssistantText(question);
+  const matches: AssistantFilterPayload[] = [];
+
+  tableColumns
+    .filter((column) => column.type !== "number")
+    .forEach((column) => {
+      const counts = rows.reduce<Map<string, number>>((accumulator, row) => {
+        const value = getRowValue(row, column.key);
+
+        if (normalizedQuestion.includes(normalizeAssistantText(value))) {
+          accumulator.set(value, (accumulator.get(value) ?? 0) + 1);
+        }
+
+        return accumulator;
+      }, new Map<string, number>());
+
+      counts.forEach((count, value) => {
+        matches.push({
+          key: column.key,
+          label: column.label,
+          value,
+          type: column.type,
+          count,
+        });
+      });
+    });
+
+  return matches;
+}
+
+function findYearFilter(question: string): AssistantFilterPayload | null {
+  const year = question.match(/\b(19|20)\d{2}\b/)?.[0];
+
+  if (!year) {
+    return null;
+  }
+
+  const count = rows.filter((row) => getRowValue(row, "idElection").includes(year)).length;
+
+  return {
+    key: "idElection",
+    label: "id_election",
+    value: year,
+    type: "identifier",
+    count,
+  };
+}
+
+function answerAssistantQuestion({
+  question,
+  context,
+}: {
+  question: string;
+  context: AssistantConversationContext;
+}): AgentResponse {
+  const startedAt = performance.now();
+  const normalizedQuestion = normalizeAssistantText(question);
+  let response: AgentResponse;
+
+  if (
+    normalizedQuestion.includes("structure") ||
+    normalizedQuestion.includes("colonnes") ||
+    normalizedQuestion.includes("dataset") ||
+    normalizedQuestion.includes("jeu de donnees") ||
+    normalizedQuestion.includes("contient")
+  ) {
+    response = buildStructureAnswer(question);
+  } else if (normalizedQuestion.includes("frequent")) {
+    response = buildFrequentValuesAnswer();
+  } else if (normalizedQuestion.includes("annees") || /\b(19|20)\d{2}\b/.test(question)) {
+    const yearFilter = findYearFilter(question);
+    const filters = yearFilter
+      ? [...context.filters.filter((filter) => filter.key !== yearFilter.key), yearFilter]
+      : context.filters;
+    const count = yearFilter ? countRowsMatchingFilters(filters) : 0;
+
+    response =
+      yearFilter && context.filters.length > 0
+        ? {
+            intent: "search_rows",
+            answer:
+              count > 0
+                ? `J’ai trouvé ${count} lignes correspondant à ${filters.map((filter) => `${filter.label} = ${filter.value}`).join(" et ")}.`
+                : `Je n’ai trouvé aucune ligne correspondant à ${filters.map((filter) => `${filter.label} = ${filter.value}`).join(" et ")}.`,
+            sql: buildFilterSql(filters),
+            columnsUsed: filters.map((filter) => filter.label),
+            proposedAction: { type: "apply_filter", payload: { filters } },
+            status: count > 0 ? "success" : "empty",
+          }
+        : buildYearsAnswer();
+  } else if (
+    normalizedQuestion.includes("territoires") ||
+    normalizedQuestion.includes("departements") ||
+    normalizedQuestion.includes("communes")
+  ) {
+    response = buildTerritoriesAnswer();
+  } else if (
+    normalizedQuestion.includes("plus elevees") ||
+    normalizedQuestion.includes("maximum") ||
+    normalizedQuestion.includes("plus haut")
+  ) {
+    response = buildHighestValuesAnswer();
+  } else {
+    const matches = findAssistantMatches(question);
+
+    if (matches.length > 1 && new Set(matches.map((match) => match.key)).size > 1) {
+      response = {
+        intent: "clarify",
+        answer: `J’ai trouvé des correspondances pour cette question dans plusieurs colonnes. Laquelle voulez-vous explorer ?`,
+        columnsUsed: matches.map((match) => match.label),
+        proposedAction: { type: "none" },
+        needsClarification: true,
+        clarificationOptions: matches,
+        status: "ambiguous",
+      };
+    } else if (matches.length === 1) {
+      const filters = [
+        ...context.filters.filter((filter) => filter.key !== matches[0].key),
+        matches[0],
+      ];
+      const count = countRowsMatchingFilters(filters);
+
+      response = {
+        intent: "search_rows",
+        answer:
+          count > 0
+            ? `J’ai trouvé ${count} lignes correspondant à ${matches[0].value} dans la colonne ${matches[0].label}.`
+            : `Je n’ai trouvé aucune ligne correspondant à ${matches[0].value} dans la colonne ${matches[0].label}.`,
+        sql: buildFilterSql(filters),
+        columnsUsed: filters.map((filter) => filter.label),
+        proposedAction: { type: "apply_filter", payload: { filters } },
+        status: count > 0 ? "success" : "empty",
+      };
+    } else {
+      response = {
+        intent: "unable",
+        answer:
+          "Je n’ai pas trouvé de correspondance exploitable dans les données déjà disponibles. Essayez une commune, un département, une année ou une question sur la structure.",
+        proposedAction: { type: "none" },
+        status: "unable",
+      };
+    }
+  }
+
+  console.info("prototype-assistant-log", {
+    resource_id: "resultats_electoraux",
+    dataset_id: "resultats-electoraux-consolides",
+    question,
+    intent: response.intent,
+    sql: response.sql,
+    status: response.status,
+    duration_ms: Math.round(performance.now() - startedAt),
+  });
+
+  return response;
+}
+
+function ModelTokenUsage({
+  model,
+  used,
+  limit,
+}: {
+  model: string;
+  used: number;
+  limit: number;
+}) {
+  const percentUsed = Math.min(100, Math.round((used / limit) * 100));
+  const circumference = 2 * Math.PI * 7;
+  const strokeDashoffset = circumference * (1 - percentUsed / 100);
+
+  return (
+    <div className="flex h-6 items-center gap-1 text-[13px] leading-[1.4] text-[#5d5d5d]">
+      <details className="relative">
+        <summary
+          className="flex h-6 w-6 cursor-pointer list-none items-center justify-center rounded hover:bg-[#eeeeee] [&::-webkit-details-marker]:hidden"
+          aria-label={`${percentUsed}% des tokens utilisés`}
+          title="Tokens utilisés"
+        >
+          <span className="relative flex h-4 w-4 items-center justify-center">
+            <svg
+              aria-hidden="true"
+              className="h-4 w-4 -rotate-90"
+              viewBox="0 0 18 18"
+            >
+              <circle
+                cx="9"
+                cy="9"
+                r="7"
+                fill="none"
+                stroke="#dddddd"
+                strokeWidth="2"
+              />
+              <circle
+                cx="9"
+                cy="9"
+                r="7"
+                fill="none"
+                stroke="#000091"
+                strokeLinecap="round"
+                strokeWidth="2"
+                strokeDasharray={circumference}
+                strokeDashoffset={strokeDashoffset}
+              />
+            </svg>
+            <span className="absolute h-1.5 w-1.5 rounded-full bg-[#5d5d5d]" />
+          </span>
+        </summary>
+        <div className="absolute bottom-7 left-0 z-20 w-[184px] rounded border border-[#E5E5E5] bg-[#FFFFFF] p-2 shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]">
+          <div className="flex items-center justify-between text-[11px] leading-4 text-[#5d5d5d]">
+            <span>Tokens utilisés</span>
+            <span>{percentUsed}%</span>
+          </div>
+          <div className="mt-1 h-1 overflow-hidden rounded bg-[#eeeeee]">
+            <div
+              className="h-full rounded bg-[#000091]"
+              style={{ width: `${percentUsed}%` }}
+            />
+          </div>
+          <p className="mt-1 text-[11px] leading-4 text-[#5d5d5d]">
+            {used.toLocaleString("fr-FR")} / {limit.toLocaleString("fr-FR")}
+          </p>
+        </div>
+      </details>
+      <details className="relative">
+        <summary className="flex h-6 cursor-pointer list-none items-center rounded px-1 hover:bg-[#eeeeee] [&::-webkit-details-marker]:hidden">
+          {model}
+        </summary>
+        <div className="absolute bottom-7 left-0 z-20 w-[148px] rounded border border-[#E5E5E5] bg-[#FFFFFF] p-2 text-[11px] leading-4 text-[#5d5d5d] shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]">
+          Modèle actif
+        </div>
+      </details>
+    </div>
+  );
+}
+
+function splitMarkdownTableRow(line: string) {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function isMarkdownTableSeparator(line: string) {
+  return splitMarkdownTableRow(line).every((cell) => /^:?-{3,}:?$/.test(cell));
+}
+
+function renderAssistantMarkdown(content: string) {
+  const lines = content.split("\n");
+  const nodes: ReactNode[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const nextLine = lines[index + 1];
+
+    if (
+      line.includes("|") &&
+      nextLine?.includes("|") &&
+      isMarkdownTableSeparator(nextLine)
+    ) {
+      const headers = splitMarkdownTableRow(line);
+      const rows: string[][] = [];
+      index += 2;
+
+      while (index < lines.length && lines[index].includes("|")) {
+        rows.push(splitMarkdownTableRow(lines[index]));
+        index += 1;
+      }
+
+      nodes.push(
+        <div key={`table-${index}`} className="overflow-auto rounded border border-[#E5E5E5]">
+          <table className="min-w-full border-collapse text-left text-[12px] leading-5">
+            <thead className="bg-[#f6f6f6] text-[#161616]">
+              <tr>
+                {headers.map((header) => (
+                  <th
+                    key={header}
+                    scope="col"
+                    className="border-b border-r border-[#E5E5E5] px-2 py-1 font-medium last:border-r-0"
+                  >
+                    {header}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row, rowIndex) => (
+                <tr key={`${row.join("-")}-${rowIndex}`}>
+                  {headers.map((header, cellIndex) => (
+                    <td
+                      key={`${header}-${cellIndex}`}
+                      className="border-b border-r border-[#E5E5E5] px-2 py-1 text-[#3a3a3a] last:border-r-0"
+                    >
+                      {row[cellIndex] ?? ""}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>,
+      );
+      continue;
+    }
+
+    if (line.trim()) {
+      nodes.push(
+        <p key={`p-${index}`} className="whitespace-pre-wrap">
+          {line}
+        </p>,
+      );
+    }
+
+    index += 1;
+  }
+
+  return nodes.length > 0 ? nodes : content;
+}
+
+function AssistantChart({ chart }: { chart: AssistantChartSpec }) {
+  const values = chart.data
+    .map((item) => Number(item[chart.yKey]))
+    .filter((value) => Number.isFinite(value));
+  const maxValue = Math.max(...values, 1);
+
+  return (
+    <div className="rounded border border-[#E5E5E5] bg-[#FFFFFF] p-3">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <p className="min-w-0 truncate text-[12px] font-medium text-[#161616]">
+          {chart.title}
+        </p>
+        <span className="shrink-0 rounded bg-[#f6f6f6] px-1.5 py-0.5 text-[11px] text-[#5d5d5d]">
+          {chart.type}
+        </span>
+      </div>
+      <div className="space-y-2">
+        {chart.data.slice(0, 8).map((item, index) => {
+          const label = String(item[chart.xKey] ?? `Valeur ${index + 1}`);
+          const value = Number(item[chart.yKey]);
+          const percent = Number.isFinite(value)
+            ? Math.max(4, Math.round((value / maxValue) * 100))
+            : 4;
+
+          return (
+            <div key={`${label}-${index}`} className="grid grid-cols-[96px_minmax(0,1fr)_44px] items-center gap-2 text-[11px] leading-4">
+              <span className="truncate text-[#5d5d5d]">{label}</span>
+              <div className="h-1.5 overflow-hidden rounded bg-[#eeeeee]">
+                <div
+                  className="h-full rounded bg-[#000091]"
+                  style={{ width: `${percent}%` }}
+                />
+              </div>
+              <span className="text-right text-[#3a3a3a]">
+                {Number.isFinite(value) ? value.toLocaleString("fr-FR") : "-"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 function ChatSidebar({
   activeResource,
   previewRows,
+  conversationContext,
+  onApplyFilter,
+  onApplySort,
   onClose,
 }: {
   activeResource: Resource;
   previewRows: Row[];
+  conversationContext: AssistantConversationContext;
+  onApplyFilter: AssistantActionHandlers["onApplyFilter"];
+  onApplySort: AssistantActionHandlers["onApplySort"];
   onClose: () => void;
 }) {
-  const [activeTab, setActiveTab] = useState<ChatSidebarTab>("agent");
   const [agentQuestion, setAgentQuestion] = useState("");
-  const [agentResponse, setAgentResponse] = useState<AgentResponse | null>(null);
-  const [agentError, setAgentError] = useState("");
-  const [agentModel, setAgentModel] = useState("openweight-large");
+  const [messages, setMessages] = useState<AssistantMessage[]>([]);
+  const [appliedActionMessageIds, setAppliedActionMessageIds] = useState<
+    string[]
+  >([]);
   const [isAgentLoading, setIsAgentLoading] = useState(false);
+  const [loadingStepIndex, setLoadingStepIndex] = useState(0);
+  const [localContext, setLocalContext] =
+    useState<AssistantConversationContext>(conversationContext);
+  const starterQuestions = useMemo(() => getAssistantStarterQuestions(), []);
 
-  async function submitAgentQuestion() {
-    const question = agentQuestion.trim();
+  function normalizeRemoteResponse(response: Partial<AgentResponse>): AgentResponse {
+    return {
+      intent: response.intent ?? "aggregate",
+      answer:
+        response.answer ??
+        "Je n’ai pas reçu de réponse exploitable pour cette question.",
+      reasoning: response.reasoning,
+      sql: response.sql,
+      chart: response.chart,
+      queryRows: response.queryRows,
+      toolTrace: response.toolTrace,
+      columnsUsed: response.columnsUsed,
+      proposedAction: response.proposedAction ?? { type: "none" },
+      needsClarification: response.needsClarification,
+      clarificationOptions: response.clarificationOptions,
+      model: response.model,
+      status: response.status ?? "success",
+    };
+  }
+
+  function applyResponseAction(response: AgentResponse, messageId?: string) {
+    if (response.proposedAction.type === "apply_filter") {
+      onApplyFilter(response.proposedAction.payload.filters);
+      if (messageId) {
+        setAppliedActionMessageIds((current) =>
+          current.includes(messageId) ? current : [...current, messageId],
+        );
+      }
+      setLocalContext({
+        filters: response.proposedAction.payload.filters,
+        lastIntent: response.intent,
+      });
+      return;
+    }
+
+    if (response.proposedAction.type === "apply_sort") {
+      onApplySort(response.proposedAction.payload);
+      if (messageId) {
+        setAppliedActionMessageIds((current) =>
+          current.includes(messageId) ? current : [...current, messageId],
+        );
+      }
+      setLocalContext((current) => ({
+        ...current,
+        lastIntent: response.intent,
+      }));
+    }
+  }
+
+  function submitAgentQuestion(nextQuestion = agentQuestion) {
+    const question = nextQuestion.trim();
 
     if (!question || isAgentLoading) {
       return;
     }
 
     setIsAgentLoading(true);
-    setAgentResponse(null);
-    setAgentError("");
+    setLoadingStepIndex(0);
+    setAgentQuestion("");
 
-    try {
-      const response = await fetch("/api/prototypes/explorateur-sql-et-ia/agent", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          question,
-          resourceName: activeResource.name,
-          tableName: activeResource.id,
-          columns: tableColumns.map((column) => column.label),
-          previewRows,
-        }),
-      });
-      const data = (await response.json()) as {
-        answer?: string;
-        reasoning?: string;
-        sql?: string;
-        model?: string;
-        error?: string;
-      };
-
-      if (!response.ok) {
-        throw new Error(data.error ?? "Impossible d'interroger Albert.");
-      }
-
-      setAgentResponse({
-        answer: data.answer ?? "Albert n'a pas retourné de réponse.",
-        reasoning: data.reasoning,
-        sql: data.sql,
-        model: data.model,
-      });
-      if (data.model) {
-        setAgentModel(data.model);
-      }
-    } catch (error) {
-      setAgentError(
-        error instanceof Error
-          ? error.message
-          : "Impossible d'interroger Albert.",
+    const loadingInterval = window.setInterval(() => {
+      setLoadingStepIndex((current) =>
+        current >= assistantLoadingSteps.length - 1 ? current : current + 1,
       );
-    } finally {
-      setIsAgentLoading(false);
-    }
+    }, 260);
+
+    window.setTimeout(() => {
+      window.clearInterval(loadingInterval);
+      void (async () => {
+        let response: AgentResponse;
+
+        try {
+          const apiResponse = await fetch(
+            "/api/prototypes/explorateur-sql-et-ia/agent",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                question,
+                resourceName: activeResource.name,
+                resourceId: activeResource.id,
+                tableName: activeResource.id,
+                columns: tableColumns.map((column) => column.label),
+                previewRows,
+                conversationHistory: messages.slice(-8).map((message) => ({
+                  role: message.role,
+                  content: message.content,
+                })),
+              }),
+            },
+          );
+          const data = (await apiResponse.json()) as Partial<AgentResponse> & {
+            error?: string;
+          };
+
+          if (!apiResponse.ok) {
+            throw new Error(data.error ?? "Impossible d’interroger le modèle.");
+          }
+
+          response = normalizeRemoteResponse(data);
+        } catch (error) {
+          const fallbackResponse = answerAssistantQuestion({
+            question,
+            context: localContext,
+          });
+          response = {
+            ...fallbackResponse,
+            reasoning:
+              error instanceof Error
+                ? `Réponse locale de secours : ${error.message}`
+                : "Réponse locale de secours.",
+            status:
+              fallbackResponse.status === "success"
+                ? "success"
+                : fallbackResponse.status,
+          };
+        }
+
+        const userMessageId = `user-${Date.now()}`;
+        const assistantMessageId = `assistant-${Date.now()}`;
+        const nextMessages: AssistantMessage[] = [
+          {
+            id: userMessageId,
+            role: "user",
+            content: question,
+          },
+          {
+            id: assistantMessageId,
+            role: "assistant",
+            content: response.answer,
+            response,
+          },
+        ];
+
+        setMessages((current) => [...current, ...nextMessages]);
+        if (response.proposedAction.type === "apply_filter") {
+          applyResponseAction(response, assistantMessageId);
+        } else {
+          setLocalContext((current) => ({
+            ...current,
+            lastIntent: response.intent,
+          }));
+        }
+        setIsAgentLoading(false);
+      })();
+    }, 500);
   }
 
   return (
-    <aside className="chat-sidebar flex w-[360px] shrink-0 flex-col border-l border-[#E5E5E5] bg-[#FFFFFF]">
-      <div className="flex h-14 items-center justify-between border-b border-[#E5E5E5] bg-[#f6f6f6] px-3">
-        <div className="min-w-0">
-          <p className="truncate text-[13px] font-medium text-[#161616]">
-            Interroger ces données
-          </p>
-          <p className="truncate text-[12px] leading-4 text-[#666666]">
-            {activeResource.name} · {activeResource.format}
-          </p>
-        </div>
+    <aside
+      className="chat-sidebar flex w-[400px] shrink-0 flex-col overflow-hidden border-l border-[#E5E5E5] bg-[#FFFFFF]"
+      data-active-resource={activeResource.id}
+    >
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-[#F1F1F1] bg-[#fcfcfc] px-3">
+        <p className="min-w-0 truncate text-[13px] font-medium leading-[1.4] text-[#161616]">
+          Interroger ces données
+        </p>
         <button
           type="button"
-          aria-label="Fermer le chat"
+          aria-label="Fermer l’assistant"
           onClick={onClose}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded transition-colors hover:bg-[#eeeeee]"
+          className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-[#161616] transition-colors hover:bg-[#eeeeee]"
         >
-          <Icon path={icons.close} className="h-4 w-4 text-[#3a3a3a]" />
+          <Icon path={icons.sidebarFold} className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="flex h-10 border-b border-[#E5E5E5] bg-[#FFFFFF] px-2">
-        {[
-          { id: "agent", label: "Agent" },
-          { id: "sql", label: "Requêtes SQL" },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveTab(tab.id as ChatSidebarTab)}
-            className={`relative flex h-10 flex-1 items-center justify-center gap-1 text-[13px] font-medium ${
-              activeTab === tab.id ? "text-[#000091]" : "text-[#666666]"
-            }`}
-          >
-            {tab.id === "sql" ? (
-              <span
-                className={`rounded px-1.5 py-0.5 text-[11px] font-bold ${
-                  activeTab === "sql"
-                    ? "bg-[#e8edff] text-[#000091]"
-                    : "bg-[#eeeeee] text-[#666666]"
-                }`}
-              >
-                SQL
-              </span>
-            ) : (
-              <Icon
-                path={icons.sparkle}
-                className={`h-4 w-4 ${
-                  activeTab === "agent" ? "text-[#000091]" : "text-[#666666]"
-                }`}
-              />
-            )}
-            {tab.label}
-            {activeTab === tab.id ? (
-              <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-[#000091]" />
-            ) : null}
-          </button>
-        ))}
-      </div>
-
-      {activeTab === "agent" ? (
-        <>
-          <div className="flex min-h-0 flex-1 items-center justify-center overflow-auto p-6 text-center">
-            <div className="flex max-w-[280px] flex-col items-center">
-              <span className="flex h-12 w-12 items-center justify-center rounded bg-[#e8edff] text-[#000091]">
-                <Icon path={icons.sparkle} className="h-6 w-6 text-[#000091]" />
-              </span>
-              <h2 className="mt-4 text-[16px] font-bold leading-6 text-[#161616]">
-                Interrogez cette ressource
-              </h2>
-              <p className="mt-2 text-[13px] leading-5 text-[#666666]">
-                Posez une question en langage naturel pour explorer les données
-                de {activeResource.name}.
-              </p>
-              {isAgentLoading ? (
-                <p className="mt-4 rounded bg-[#f6f6f6] px-3 py-2 text-[13px] leading-5 text-[#3a3a3a]">
-                  Analyse...
-                </p>
-              ) : null}
-              {agentResponse ? (
-                <div className="mt-4 w-full space-y-2 text-left">
-                  <div className="whitespace-pre-wrap rounded border border-[#E5E5E5] bg-[#FFFFFF] p-3 text-[13px] leading-5 text-[#161616]">
-                    {agentResponse.answer}
-                  </div>
-                  {agentResponse.reasoning ? (
+      <div className="min-h-0 flex-1 overflow-auto bg-[#FFFFFF] px-2 py-3">
+        {messages.length === 0 ? (
+          <div className="flex min-h-full flex-col justify-end pb-2">
+            <p className="px-2 text-[14px] font-medium leading-[1.4] text-[#161616]">
+              Comment puis-je vous aider
+            </p>
+            <p className="mt-1 px-2 text-[13px] leading-[1.4] text-[#5d5d5d]">
+              Vous pouvez poser une question pour retrouver une information,
+              résumer les données, comprendre la structure ou générer une
+              visualisation.
+            </p>
+            <div className="mt-1 flex flex-col items-start gap-0.5">
+              {starterQuestions.map((question) => (
+                <button
+                  key={question}
+                  type="button"
+                  onClick={() => submitAgentQuestion(question)}
+                  className="min-h-6 cursor-pointer rounded px-2 py-0.5 text-left text-[14px] leading-[1.4] text-[#5d5d5d] transition-colors hover:bg-[#f6f6f6] hover:text-[#000091]"
+                >
+                  {question}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {messages.map((message) =>
+              message.role === "user" ? (
+                <div key={message.id} className="flex justify-end">
+                  <p className="max-w-[280px] rounded bg-[#e8edff] px-3 py-2 text-[13px] leading-5 text-[#000091]">
+                    {message.content}
+                  </p>
+                </div>
+              ) : (
+                <div key={message.id} className="space-y-2">
+                  {message.response?.sql || message.response?.reasoning ? (
                     <details className="rounded border border-[#E5E5E5] bg-[#FFFFFF]">
-                      <summary className="cursor-pointer px-3 py-2 text-[12px] font-medium text-[#3a3a3a]">
-                        Raisonnement
+                      <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-[12px] font-medium text-[#3a3a3a]">
+                        <Icon path={icons.brain} className="h-4 w-4 text-[#3a3a3a]" />
+                        <span>Voir comment cette réponse a été calculée</span>
                       </summary>
-                      <div className="border-t border-[#E5E5E5] px-3 py-2 text-[12px] leading-5 text-[#3a3a3a]">
-                        {agentResponse.reasoning}
+                      <div className="border-t border-[#E5E5E5]">
+                        {message.response.reasoning ? (
+                          <p className="px-3 py-2 text-[12px] leading-5 text-[#3a3a3a]">
+                            {message.response.reasoning}
+                          </p>
+                        ) : null}
+                        {message.response.sql ? (
+                          <pre className="overflow-auto bg-[#f6f6f6] p-3 font-mono text-[12px] leading-5 text-[#161616]">
+                            {message.response.sql}
+                          </pre>
+                        ) : null}
+                        {message.response.columnsUsed?.length ? (
+                          <p className="px-3 pb-3 text-[12px] leading-5 text-[#3a3a3a]">
+                            Colonnes utilisées : {message.response.columnsUsed.join(", ")}
+                          </p>
+                        ) : null}
                       </div>
                     </details>
                   ) : null}
-                  {agentResponse.sql ? (
-                    <details className="rounded border border-[#E5E5E5] bg-[#FFFFFF]">
-                      <summary className="cursor-pointer px-3 py-2 text-[12px] font-medium text-[#3a3a3a]">
-                        Requête SQL
-                      </summary>
-                      <pre className="overflow-auto border-t border-[#E5E5E5] bg-[#f6f6f6] p-3 font-mono text-[12px] leading-5 text-[#161616]">
-                        {agentResponse.sql}
-                      </pre>
-                    </details>
+                  <div className="rounded border border-[#E5E5E5] bg-[#FFFFFF] p-3 text-[13px] leading-5 text-[#161616]">
+                    <div className="space-y-2">{renderAssistantMarkdown(message.content)}</div>
+                    {message.response?.proposedAction.type === "apply_filter" ? (
+                      <div className="mt-3 rounded border border-[#E5E5E5] bg-[#f6f6f6] p-2">
+                        <p className="mb-1 text-[11px] font-bold uppercase leading-4 text-[#666666]">
+                          Filtre proposé
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {message.response.proposedAction.payload.filters.map(
+                            (filter) => (
+                              <span
+                                key={`${filter.key}-${filter.value}`}
+                                className="rounded bg-[#FFFFFF] px-2 py-1 text-[12px] leading-4 text-[#161616]"
+                              >
+                                {filter.label} = {filter.value}
+                              </span>
+                            ),
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+                    {message.response?.proposedAction.type === "apply_sort" ? (
+                      <div className="mt-3 rounded border border-[#E5E5E5] bg-[#f6f6f6] p-2">
+                        <p className="mb-1 text-[11px] font-bold uppercase leading-4 text-[#666666]">
+                          Tri proposé
+                        </p>
+                        <span className="rounded bg-[#FFFFFF] px-2 py-1 text-[12px] leading-4 text-[#161616]">
+                          {message.response.proposedAction.payload.label} ·{" "}
+                          {message.response.proposedAction.payload.direction ===
+                          "desc"
+                            ? "décroissant"
+                            : "croissant"}
+                        </span>
+                      </div>
+                    ) : null}
+                    {message.response?.needsClarification &&
+                    message.response.clarificationOptions ? (
+                      <div className="mt-3 flex flex-col gap-1">
+                        {message.response.clarificationOptions.map((option) => (
+                          <button
+                            key={`${option.key}-${option.value}`}
+                            type="button"
+                            onClick={() =>
+                              applyResponseAction({
+                                intent: "search_rows",
+                                answer: `J’applique le filtre ${option.label} = ${option.value}.`,
+                                columnsUsed: [option.label],
+                                proposedAction: {
+                                  type: "apply_filter",
+                                  payload: { filters: [option] },
+                                },
+                                status: "success",
+                              })
+                            }
+                            className="flex h-8 items-center justify-between rounded border border-[#E5E5E5] px-2 text-left text-[12px] hover:border-[#000091] hover:text-[#000091]"
+                          >
+                            <span>{option.label} = {option.value}</span>
+                            <span>{option.count}</span>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
+                    {message.response?.proposedAction.type === "apply_filter" ? (
+                      appliedActionMessageIds.includes(message.id) ? (
+                        <div className="mt-3 flex h-8 items-center gap-2 rounded bg-[#e6feda] px-3 text-[13px] font-medium text-[#18753c]">
+                          <Icon path={icons.check} className="h-4 w-4 text-[#18753c]" />
+                          Filtre appliqué
+                        </div>
+                      ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          applyResponseAction(
+                            message.response as AgentResponse,
+                            message.id,
+                          )
+                        }
+                        className="mt-3 flex h-8 items-center gap-2 bg-[#000091] px-3 text-[13px] font-medium text-[#FFFFFF]"
+                      >
+                        <Icon path={icons.filter} className="h-4 w-4 text-[#FFFFFF]" />
+                        Appliquer le filtre dans le tableau
+                      </button>
+                      )
+                    ) : null}
+                    {message.response?.proposedAction.type === "apply_sort" ? (
+                      appliedActionMessageIds.includes(message.id) ? (
+                        <div className="mt-3 flex h-8 items-center gap-2 rounded bg-[#e6feda] px-3 text-[13px] font-medium text-[#18753c]">
+                          <Icon path={icons.check} className="h-4 w-4 text-[#18753c]" />
+                          Tri appliqué
+                        </div>
+                      ) : (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          applyResponseAction(
+                            message.response as AgentResponse,
+                            message.id,
+                          )
+                        }
+                        className="mt-3 flex h-8 items-center gap-2 bg-[#000091] px-3 text-[13px] font-medium text-[#FFFFFF]"
+                      >
+                        <Icon path={icons.arrowDown} className="h-4 w-4 text-[#FFFFFF]" />
+                        Trier le tableau
+                      </button>
+                      )
+                    ) : null}
+                  </div>
+                  {message.response?.chart ? (
+                    <AssistantChart chart={message.response.chart} />
                   ) : null}
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      aria-label="Réponse utile"
+                      title="Réponse utile"
+                      className="flex h-6 w-6 items-center justify-center rounded text-[#5d5d5d] hover:bg-[#f6f6f6] hover:text-[#000091]"
+                    >
+                      <Icon path={icons.thumbUp} className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      aria-label="Réponse inutile"
+                      title="Réponse inutile"
+                      className="flex h-6 w-6 items-center justify-center rounded text-[#5d5d5d] hover:bg-[#f6f6f6] hover:text-[#000091]"
+                    >
+                      <Icon path={icons.thumbDown} className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
                 </div>
-              ) : null}
-              {agentError ? (
-                <p className="mt-4 rounded bg-[#fff4f3] px-3 py-2 text-[13px] leading-5 text-[#b34000]">
-                  {agentError}
+              ),
+            )}
+            {isAgentLoading ? (
+              <div className="rounded border border-[#E5E5E5] bg-[#f6f6f6] p-3">
+                <p className="mb-2 text-[12px] font-bold uppercase leading-4 text-[#666666]">
+                  Analyse en cours
                 </p>
-              ) : null}
-            </div>
+                <div className="space-y-2">
+                  {assistantLoadingSteps.map((step, index) => (
+                    <div
+                      key={step}
+                      className={`flex items-center gap-2 text-[13px] leading-5 ${
+                        index <= loadingStepIndex
+                          ? "text-[#000091]"
+                          : "text-[#666666]"
+                      }`}
+                    >
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          index < loadingStepIndex
+                            ? "bg-[#18753c]"
+                            : index === loadingStepIndex
+                              ? "bg-[#000091]"
+                              : "bg-[#CECECE]"
+                        }`}
+                      />
+                      {step}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
+        )}
+      </div>
 
-          <form
-            className="border-t border-[#E5E5E5] bg-[#FFFFFF] p-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submitAgentQuestion();
-            }}
-          >
-            <label className="sr-only" htmlFor="chat-question">
-              Question sur les données
-            </label>
-            <div className="flex items-end gap-2 rounded border border-[#E5E5E5] bg-[#f6f6f6] p-2">
-              <textarea
-                id="chat-question"
-                rows={2}
-                value={agentQuestion}
-                onChange={(event) => setAgentQuestion(event.target.value)}
-                placeholder="Posez une question ou demandez une requête SQL..."
-                className="min-h-10 flex-1 resize-none bg-transparent text-[13px] leading-5 text-[#161616] outline-none placeholder:text-[#666666]"
-              />
-              <button
-                type="submit"
-                aria-label="Envoyer la question"
-                disabled={isAgentLoading || !agentQuestion.trim()}
-                className="flex h-8 w-8 shrink-0 items-center justify-center bg-[#000091] text-[#FFFFFF] disabled:cursor-not-allowed disabled:bg-[#929292]"
-              >
-                <Icon path={icons.send} className="h-4 w-4 text-[#FFFFFF]" />
-              </button>
-            </div>
-            <div className="mt-2 flex justify-end">
-              <span className="rounded bg-[#eeeeee] px-2 py-0.5 text-[11px] leading-4 text-[#3a3a3a]">
-                {agentResponse?.model ?? agentModel}
-              </span>
-            </div>
-          </form>
-        </>
-      ) : (
-        <div className="flex min-h-0 flex-1 flex-col p-3">
-          <div className="flex items-center gap-2 rounded border border-[#E5E5E5] bg-[#f6f6f6] p-3">
-            <span className="flex h-8 w-8 items-center justify-center rounded bg-[#e8edff]">
-              <Icon path={icons.codeAi} className="h-4 w-4 text-[#000091]" />
-            </span>
-            <div className="min-w-0">
-              <p className="text-[13px] font-medium leading-5 text-[#161616]">
-                Requêtes SQL
-              </p>
-              <p className="truncate text-[12px] leading-4 text-[#666666]">
-                Table active : {activeResource.id}
-              </p>
-            </div>
-          </div>
-
-          <label className="mt-3 text-[12px] font-medium leading-4 text-[#3a3a3a]">
-            Requête
-          </label>
+      <form
+        className="shrink-0 bg-[#FFFFFF] px-2 pb-1"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submitAgentQuestion();
+        }}
+      >
+        <label className="sr-only" htmlFor="chat-question">
+          Question sur les données
+        </label>
+        <div className="flex h-[161px] flex-col justify-between rounded border border-[#ebebeb] bg-[rgba(0,0,0,0.02)] px-2 py-3">
           <textarea
-            rows={8}
-            defaultValue={`SELECT *\nFROM ${activeResource.id}\nLIMIT 10;`}
-            className="mt-2 min-h-[176px] resize-none rounded border border-[#E5E5E5] bg-[#FFFFFF] p-3 font-mono text-[12px] leading-5 text-[#161616] outline-none focus:ring-2 focus:ring-[#000091]"
+            id="chat-question"
+            rows={4}
+            value={agentQuestion}
+            onChange={(event) => setAgentQuestion(event.target.value)}
+            placeholder="posez une question en langage naturel"
+            className="min-h-0 flex-1 resize-none bg-transparent text-[13px] leading-[1.4] text-[#161616] outline-none placeholder:text-[#3a3a3a]"
           />
-
-          <button
-            type="button"
-            className="mt-3 flex h-8 w-full items-center justify-center gap-2 bg-[#000091] text-[13px] font-medium text-[#FFFFFF]"
-          >
-            Exécuter la requête
-            <Icon path={icons.codeAi} className="h-4 w-4 text-[#FFFFFF]" />
-          </button>
-
-          <div className="mt-3 rounded border border-[#E5E5E5] bg-[#f6f6f6] p-3 text-[12px] leading-5 text-[#666666]">
-            Les résultats de la requête s&apos;afficheront ici.
+          <div className="flex items-center justify-between">
+            <ModelTokenUsage model="gpt-oss-120b" used={18320} limit={32000} />
+            <button
+              type="submit"
+              aria-label="Envoyer la question"
+              disabled={isAgentLoading || !agentQuestion.trim()}
+              className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center bg-[#000091] text-[#FFFFFF] transition-colors hover:bg-[#1212ff] disabled:cursor-not-allowed disabled:bg-[#929292]"
+            >
+              <Icon path={icons.arrowUp} className="h-4 w-4 text-[#FFFFFF]" />
+            </button>
           </div>
         </div>
-      )}
+        <div className="flex min-h-5 items-center justify-end gap-1 pt-1 text-right text-[11px] leading-none text-[#5d5d5d]">
+          <span>L’assistant peut faire des erreurs.</span>
+          <Link
+            href="/a-propos"
+            className="underline decoration-solid underline-offset-2 hover:text-[#000091]"
+          >
+            En savoir plus
+          </Link>
+          <Icon path={icons.externalLink} className="h-2.5 w-2.5 shrink-0" />
+        </div>
+      </form>
     </aside>
   );
 }
@@ -3554,6 +4413,7 @@ export default function ExplorateurSqlEtIaPage() {
     Partial<Record<ColumnKey, DateFilterValue>>
   >({});
   const [hasTableScrolled, setHasTableScrolled] = useState(false);
+  const [isFilterFeedbackVisible, setIsFilterFeedbackVisible] = useState(false);
 
   const visibleColumns = useMemo(
     () =>
@@ -3847,6 +4707,62 @@ export default function ExplorateurSqlEtIaPage() {
     setIsMobileResourceMenuOpen(false);
   }
 
+  function applyAssistantFilters(filters: AssistantFilterPayload[]) {
+    setCategoryFilters((current) => {
+      const nextFilters = { ...current };
+
+      filters.forEach((filter) => {
+        if (filter.type === "number") {
+          return;
+        }
+
+        nextFilters[filter.key] = [filter.value];
+      });
+
+      return nextFilters;
+    });
+    setActiveTab("Aperçu");
+    setActiveFilter(null);
+    setActiveCell(null);
+    setIsMobileFiltersOpen(false);
+    setIsColumnSelectorOpen(false);
+    setIsFilterFeedbackVisible(true);
+    window.setTimeout(() => setIsFilterFeedbackVisible(false), 1200);
+  }
+
+  function applyAssistantSort(sort: AssistantSortPayload) {
+    setSortState({ key: sort.key, direction: sort.direction });
+    setActiveTab("Aperçu");
+    setActiveFilter(null);
+    setActiveCell(null);
+    setIsMobileFiltersOpen(false);
+    setIsColumnSelectorOpen(false);
+    setIsFilterFeedbackVisible(true);
+    window.setTimeout(() => setIsFilterFeedbackVisible(false), 1200);
+  }
+
+  const assistantConversationContext = useMemo<AssistantConversationContext>(
+    () => ({
+      filters: Object.entries(categoryFilters).flatMap(([key, values]) => {
+        const column = tableColumns.find((item) => item.key === key);
+
+        if (!column || !values?.length) {
+          return [];
+        }
+
+        return values.map((value) => ({
+          key,
+          label: column.label,
+          value,
+          type: column.type,
+          count: rows.filter((row) => getRowValue(row, key) === value).length,
+        }));
+      }),
+      lastIntent: undefined,
+    }),
+    [categoryFilters],
+  );
+
   return (
     <main
       className={`relative h-dvh overflow-hidden text-[#161616] ${
@@ -3929,7 +4845,7 @@ export default function ExplorateurSqlEtIaPage() {
                       isChatSidebarOpen ? "text-[#000091]" : "text-[#3a3a3a]"
                     }`}
                   />
-                  Interroger ces données
+                  Poser une question
                 </button>
                 <button
                   type="button"
@@ -4207,7 +5123,7 @@ export default function ExplorateurSqlEtIaPage() {
                           : "text-[#3a3a3a]"
                       }`}
                     />
-                    Interroger
+                    Question
                   </button>
                   <button
                     type="button"
@@ -4382,24 +5298,32 @@ export default function ExplorateurSqlEtIaPage() {
               </div>
             </div>
 
-            <ActiveFiltersBar
-              searchQuery={searchQuery}
-              sortState={sortState}
-              categoryFilters={categoryFilters}
-              numberRanges={numberRanges}
-              dateFilters={dateFilters}
-              onOpenFilter={(key) => {
-                setActiveCell(null);
-                setActiveFilter(key);
-                setIsMobileFiltersOpen(true);
-              }}
-              onClearSearch={() => setSearchQuery("")}
-              onClearCategory={clearCategoryFilter}
-              onClearNumber={clearNumberRange}
-              onClearDate={clearDateFilter}
-              onClearSort={() => setSortState(null)}
-              onClearAll={clearAllFilters}
-            />
+            <div
+              className={`transition-[box-shadow] duration-300 ${
+                isFilterFeedbackVisible
+                  ? "shadow-[inset_0_0_0_2px_#000091]"
+                  : "shadow-none"
+              }`}
+            >
+              <ActiveFiltersBar
+                searchQuery={searchQuery}
+                sortState={sortState}
+                categoryFilters={categoryFilters}
+                numberRanges={numberRanges}
+                dateFilters={dateFilters}
+                onOpenFilter={(key) => {
+                  setActiveCell(null);
+                  setActiveFilter(key);
+                  setIsMobileFiltersOpen(true);
+                }}
+                onClearSearch={() => setSearchQuery("")}
+                onClearCategory={clearCategoryFilter}
+                onClearNumber={clearNumberRange}
+                onClearDate={clearDateFilter}
+                onClearSort={() => setSortState(null)}
+                onClearAll={clearAllFilters}
+              />
+            </div>
 
             <div className="relative min-h-0 flex-1">
               {activeFilter || activeCell ? (
@@ -4589,6 +5513,9 @@ export default function ExplorateurSqlEtIaPage() {
             <ChatSidebar
               activeResource={activeResource}
               previewRows={filteredRows.slice(0, 30)}
+              conversationContext={assistantConversationContext}
+              onApplyFilter={applyAssistantFilters}
+              onApplySort={applyAssistantSort}
               onClose={() => setIsChatSidebarOpen(false)}
             />
           ) : null}

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Fragment, useMemo, useState } from "react";
 import type {
   ComponentType,
+  FocusEvent as ReactFocusEvent,
   KeyboardEvent,
   MouseEvent as ReactMouseEvent,
   ReactNode,
@@ -63,7 +64,7 @@ type Resource = {
 const resources: Resource[] = [
   {
     id: "ecoles",
-    name: "Ecoles",
+    name: "Ecoles maternelles et élémentaires publiques et privées sous contrat avec détails d’implantation par commune",
     size: "134 Mo",
     format: "CSV",
     updatedAt: "13 octobre 2022",
@@ -122,6 +123,28 @@ const resources: Resource[] = [
     tabs: ["Aperçu", "Métadonnées"],
   },
 ];
+
+const resourceSidebarDefaultWidth = 300;
+const resourceSidebarMinWidth = 260;
+const resourceSidebarMaxWidth = 560;
+const collapsedResourceSidebarWidth = 48;
+
+function clampResourceSidebarWidth(width: number) {
+  return Math.min(
+    resourceSidebarMaxWidth,
+    Math.max(resourceSidebarMinWidth, Math.round(width)),
+  );
+}
+
+function getAutoFitResourceSidebarWidth(items: Resource[]) {
+  const longestResourceName = items.reduce(
+    (longest, resource) =>
+      resource.name.length > longest.length ? resource.name : longest,
+    "",
+  );
+
+  return clampResourceSidebarWidth(longestResourceName.length * 7.2 + 124);
+}
 
 const downloadGroups = [
   {
@@ -436,6 +459,12 @@ type ActiveCell = {
   key: ColumnKey;
   value: string;
   type: ColumnType;
+} | null;
+type ResourceTooltip = {
+  resource: Resource;
+  top: number;
+  left: number;
+  width: number;
 } | null;
 type ExplorerTab =
   | "Aperçu"
@@ -1380,16 +1409,35 @@ function ResourceItem({
   resource,
   active,
   onSelect,
+  onShowTooltip,
+  onHideTooltip,
 }: {
   resource: Resource;
   active: boolean;
   onSelect: () => void;
+  onShowTooltip: (resource: Resource, element: HTMLButtonElement) => void;
+  onHideTooltip: () => void;
 }) {
+  function showTooltip(
+    event:
+      | ReactMouseEvent<HTMLButtonElement>
+      | ReactFocusEvent<HTMLButtonElement>,
+  ) {
+    onShowTooltip(resource, event.currentTarget);
+  }
+
   return (
     <button
       type="button"
-      onClick={onSelect}
-      className={`grid h-7 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 rounded px-1 py-1 text-left ${
+      onClick={() => {
+        onHideTooltip();
+        onSelect();
+      }}
+      onMouseEnter={showTooltip}
+      onMouseLeave={onHideTooltip}
+      onFocus={showTooltip}
+      onBlur={onHideTooltip}
+      className={`group/resource relative grid h-7 w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-1 rounded px-1 py-1 text-left ${
         active ? "bg-[#eeeeee]" : "hover:bg-[#f6f6f6]"
       }`}
     >
@@ -1398,19 +1446,16 @@ function ResourceItem({
       >
         <Icon path={icons[resource.type]} className="h-4 w-4" />
       </span>
-      <div className="flex min-w-0 items-center gap-0.5 whitespace-nowrap">
-        <span
-          className={`truncate text-[13px] ${
-            active ? "font-extrabold text-[#161616]" : "font-medium text-[#3a3a3a]"
-          }`}
-        >
-          {resource.name}
-        </span>
-        <span className="text-[13px] text-[#3a3a3a]">·</span>
-        <span className="truncate text-[12px] text-[#3a3a3a]">
-          {resource.size}
-        </span>
-      </div>
+      <span
+        className={`min-w-0 truncate text-[13px] ${
+          active ? "font-extrabold text-[#161616]" : "font-medium text-[#3a3a3a]"
+        }`}
+      >
+        {resource.name}
+      </span>
+      <span className="shrink-0 whitespace-nowrap text-[12px] text-[#3a3a3a]">
+        {resource.size}
+      </span>
       <FormatTag>{resource.format}</FormatTag>
     </button>
   );
@@ -1510,6 +1555,31 @@ function HeaderCell({
       >
         <span className="mx-auto block h-full w-px bg-transparent transition-colors hover:bg-[#000091]" />
       </button>
+    </div>
+  );
+}
+
+function RowCountHeaderCell({
+  filteredCount,
+  totalCount,
+  isScrolled,
+}: {
+  filteredCount: number;
+  totalCount: number;
+  isScrolled: boolean;
+}) {
+  return (
+    <div
+      className={`sticky right-0 z-20 flex h-12 w-[156px] shrink-0 items-center border-l border-r border-[#E5E5E5] px-3 ${
+        isScrolled ? "bg-[#FFFFFF]/88 backdrop-blur-md" : "bg-[#f6f6f6]"
+      }`}
+    >
+      <div className="flex min-w-0 items-center gap-1">
+        <Icon path={icons.rows} className="h-4 w-4 text-[#3a3a3a]" />
+        <span className="truncate text-[12px] font-bold text-[#161616]">
+          {filteredCount} sur {totalCount} lignes
+        </span>
+      </div>
     </div>
   );
 }
@@ -3430,6 +3500,9 @@ function DownloadMenu({ onClose }: { onClose: () => void }) {
 
 export default function ExplorateurPage() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [resourceSidebarWidth, setResourceSidebarWidth] = useState(
+    resourceSidebarDefaultWidth,
+  );
   const [activeResourceId, setActiveResourceId] = useState("ecoles");
   const [resourceSearchQuery, setResourceSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<ColumnKey | null>(null);
@@ -3464,12 +3537,70 @@ export default function ExplorateurPage() {
     Partial<Record<ColumnKey, DateFilterValue>>
   >({});
   const [hasTableScrolled, setHasTableScrolled] = useState(false);
+  const [resourceTooltip, setResourceTooltip] = useState<ResourceTooltip>(null);
 
   const visibleColumns = useMemo(
     () =>
       tableColumns.filter((column) => visibleColumnKeys.includes(column.key)),
     [visibleColumnKeys],
   );
+
+  function toggleResourceSidebarAutoFit() {
+    const autoFitWidth = getAutoFitResourceSidebarWidth(resources);
+    const isAlreadyAutoFit = Math.abs(resourceSidebarWidth - autoFitWidth) <= 2;
+
+    setResourceSidebarWidth(
+      isAlreadyAutoFit ? resourceSidebarDefaultWidth : autoFitWidth,
+    );
+  }
+
+  function showResourceTooltip(resource: Resource, element: HTMLButtonElement) {
+    const rect = element.getBoundingClientRect();
+    const tooltipWidth = Math.min(
+      Math.max(180, resource.name.length * 7 + 28),
+      window.innerWidth - 32,
+    );
+    const tooltipHeight = 126;
+    const left = Math.max(
+      8,
+      Math.min(rect.left, window.innerWidth - tooltipWidth - 8),
+    );
+    const preferredTop = rect.bottom + 6;
+    const top =
+      preferredTop + tooltipHeight > window.innerHeight
+        ? Math.max(8, rect.top - tooltipHeight - 6)
+        : preferredTop;
+
+    setResourceTooltip({ resource, top, left, width: tooltipWidth });
+  }
+
+  function startResourceSidebarResize(
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (isSidebarCollapsed) {
+      return;
+    }
+
+    const startX = event.clientX;
+    const startWidth = resourceSidebarWidth;
+
+    function handleMouseMove(moveEvent: MouseEvent) {
+      setResourceSidebarWidth(
+        clampResourceSidebarWidth(startWidth + moveEvent.clientX - startX),
+      );
+    }
+
+    function handleMouseUp() {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    }
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  }
 
   function startColumnResize(
     key: ColumnKey,
@@ -3840,9 +3971,12 @@ export default function ExplorateurPage() {
         ) : null}
         <div className="flex min-h-0 flex-1">
           <aside
-            className={`resource-sidebar desktop-resource-sidebar shrink-0 flex-col rounded border-r border-[#E5E5E5] bg-[#FFFFFF] transition-[width] duration-200 ${
-              isSidebarCollapsed ? "w-12" : "w-[246px]"
-            }`}
+            className="resource-sidebar desktop-resource-sidebar relative shrink-0 flex-col rounded border-r border-[#E5E5E5] bg-[#FFFFFF] transition-[width] duration-200"
+            style={{
+              width: isSidebarCollapsed
+                ? collapsedResourceSidebarWidth
+                : resourceSidebarWidth,
+            }}
           >
             <div className="flex h-14 items-center justify-between border-b border-[#E5E5E5] bg-[#f6f6f6] px-3">
               {isSidebarCollapsed ? null : (
@@ -3893,6 +4027,8 @@ export default function ExplorateurPage() {
                     resource={resource}
                     active={resource.id === activeResource.id}
                     onSelect={() => selectResource(resource)}
+                    onShowTooltip={showResourceTooltip}
+                    onHideTooltip={() => setResourceTooltip(null)}
                   />
                 ))}
               </section>
@@ -3907,10 +4043,28 @@ export default function ExplorateurPage() {
                     resource={resource}
                     active={resource.id === activeResource.id}
                     onSelect={() => selectResource(resource)}
+                    onShowTooltip={showResourceTooltip}
+                    onHideTooltip={() => setResourceTooltip(null)}
                   />
                 ))}
               </section>
             </div>
+            {isSidebarCollapsed ? null : (
+              <button
+                type="button"
+                aria-label="Redimensionner la navigation des ressources"
+                title="Glisser pour redimensionner, double-cliquer pour ajuster ou réinitialiser"
+                onMouseDown={startResourceSidebarResize}
+                onDoubleClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  toggleResourceSidebarAutoFit();
+                }}
+                className="absolute -right-1 top-0 z-20 h-full w-2 cursor-col-resize touch-none rounded-r transition-colors hover:bg-[#000091]/10"
+              >
+                <span className="sr-only">Redimensionner</span>
+              </button>
+            )}
           </aside>
 
           <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#FFFFFF]">
@@ -3987,6 +4141,8 @@ export default function ExplorateurPage() {
                                 selectResource(resource);
                                 setIsMobileResourceMenuOpen(false);
                               }}
+                              onShowTooltip={showResourceTooltip}
+                              onHideTooltip={() => setResourceTooltip(null)}
                             />
                           ))}
                         </section>
@@ -4003,6 +4159,8 @@ export default function ExplorateurPage() {
                                 selectResource(resource);
                                 setIsMobileResourceMenuOpen(false);
                               }}
+                              onShowTooltip={showResourceTooltip}
+                              onHideTooltip={() => setResourceTooltip(null)}
                             />
                           ))}
                         </section>
@@ -4160,9 +4318,9 @@ export default function ExplorateurPage() {
               <PreviewUnavailablePanel />
             ) : (
               <>
-            <div className="flex min-h-12 flex-wrap items-center gap-2 border-b border-[#E5E5E5] bg-[#FFFFFF] px-2 py-2 lg:flex-nowrap lg:py-0">
-              <div className="flex shrink-0 items-center gap-2">
-                <label className="flex h-8 w-[220px] min-w-0 items-center gap-1 rounded border border-[#E5E5E5] bg-[#f6f6f6] px-2">
+            <div className="flex min-h-12 flex-wrap items-center gap-2 border-b border-[#E5E5E5] bg-[#FFFFFF] px-2 py-2 xl:flex-nowrap xl:py-0">
+              <div className="flex min-w-[180px] flex-1 items-center gap-2">
+                <label className="flex h-8 w-[clamp(160px,22vw,220px)] min-w-0 items-center gap-1 rounded border border-[#E5E5E5] bg-[#f6f6f6] px-2">
                   <Icon path={icons.search} className="h-3.5 w-3.5 text-[#3a3a3a]" />
                   <input
                     value={searchQuery}
@@ -4185,11 +4343,11 @@ export default function ExplorateurPage() {
                   <Icon path={icons.filter} className="h-3.5 w-3.5 text-[#3a3a3a]" />
                   Filtres
                 </button>
-                <span className="hidden text-[13px] text-[#3a3a3a] lg:inline">
+                <span className="hidden truncate text-[13px] text-[#3a3a3a] 2xl:inline">
                   Dernière mise à jour de l’aperçu : 13/06/2024 17:51
                 </span>
               </div>
-              <div className="ml-auto flex min-w-0 shrink-0 items-center gap-3 text-[12px] text-[#3a3a3a] lg:gap-4 lg:text-[13px]">
+              <div className="ml-auto flex min-w-fit shrink-0 items-center gap-2 text-[12px] text-[#3a3a3a] lg:gap-3 lg:text-[13px]">
                 <span className="relative flex shrink-0 items-center gap-1">
                   {isColumnSelectorOpen ? (
                     <button
@@ -4229,15 +4387,6 @@ export default function ExplorateurPage() {
                       onClose={() => setIsColumnSelectorOpen(false)}
                     />
                   ) : null}
-                </span>
-                <span className="flex items-center gap-1">
-                  <Icon path={icons.rows} className="h-3.5 w-3.5 text-[#3a3a3a]" />
-                  <span className="hidden whitespace-nowrap lg:inline">
-                    Lignes {filteredRows.length} sur {rows.length}
-                  </span>
-                  <span className="whitespace-nowrap lg:hidden">
-                    {filteredRows.length}/{rows.length}
-                  </span>
                 </span>
               </div>
             </div>
@@ -4370,6 +4519,13 @@ export default function ExplorateurPage() {
                       }
                     />
                   ))}
+                  {visibleColumns.length > 0 ? (
+                    <RowCountHeaderCell
+                      filteredCount={filteredRows.length}
+                      totalCount={rows.length}
+                      isScrolled={hasTableScrolled}
+                    />
+                  ) : null}
                 </div>
 
                 {visibleColumns.length === 0 ? (
@@ -4447,6 +4603,39 @@ export default function ExplorateurPage() {
           </section>
         </div>
       </div>
+      {resourceTooltip ? (
+        <div
+          className="pointer-events-none fixed z-[80] rounded border border-[#E5E5E5] bg-[#FFFFFF] p-2 text-left shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]"
+          style={{
+            left: resourceTooltip.left,
+            top: resourceTooltip.top,
+            width: resourceTooltip.width,
+          }}
+          role="tooltip"
+        >
+          <p className="text-[13px] font-medium leading-5 text-[#161616]">
+            {resourceTooltip.resource.name}
+          </p>
+          <div className="mt-1 flex items-center gap-1 text-[12px] leading-4 text-[#3a3a3a]">
+            <span>{resourceTooltip.resource.size}</span>
+            <FormatTag>{resourceTooltip.resource.format}</FormatTag>
+          </div>
+          <dl className="mt-2 grid gap-1 border-t border-[#E5E5E5] pt-2 text-[12px] leading-4">
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-[#666666]">Mise à jour</dt>
+              <dd className="whitespace-nowrap font-medium text-[#161616]">
+                {resourceTooltip.resource.updatedAt}
+              </dd>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-[#666666]">Téléchargements</dt>
+              <dd className="whitespace-nowrap font-medium text-[#161616]">
+                {resourceTooltip.resource.downloads.toLocaleString("fr-FR")}
+              </dd>
+            </div>
+          </dl>
+        </div>
+      ) : null}
     </main>
   );
 }

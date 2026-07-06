@@ -1,6 +1,6 @@
 const duckdb = require("duckdb");
 
-const [, , parquetPath, sql, limitArg = "50"] = process.argv;
+const [, , parquetPath, sql, limitArg = "50", tableNameArg = "resultats_electoraux"] = process.argv;
 
 if (!parquetPath || !sql) {
   console.error("Usage: node scripts/run-duckdb-query.cjs <parquetPath> <sql> [limit]");
@@ -8,6 +8,9 @@ if (!parquetPath || !sql) {
 }
 
 const limit = Number(limitArg) || 50;
+const tableName = /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(tableNameArg)
+  ? tableNameArg
+  : "resultats_electoraux";
 const escapedParquetPath = parquetPath.replace(/'/g, "''");
 const db = new duckdb.Database(":memory:");
 const connection = db.connect();
@@ -52,7 +55,7 @@ function normalizeValue(value) {
 
 async function main() {
   await run(
-    `CREATE VIEW resultats_electoraux AS SELECT * FROM read_parquet('${escapedParquetPath}')`,
+    `CREATE VIEW ${tableName} AS SELECT * FROM read_parquet('${escapedParquetPath}')`,
   );
 
   const rows = await all(`SELECT * FROM (${sql}) AS agent_query LIMIT ${limit}`);
