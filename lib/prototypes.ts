@@ -73,6 +73,15 @@ export const prototypes: Prototype[] = [
     tags: ["formats", "prévisualisation", "dashboard"],
     figmaUrl: "",
   },
+  {
+    slug: "templates",
+    title: "Templates",
+    description:
+      "Bibliothèque de gabarits de pages data.gouv.fr pour tester l'intégration de nouveaux modules d'interface.",
+    status: "exploration",
+    tags: ["templates", "dataset", "intégration"],
+    figmaUrl: "",
+  },
 ];
 
 export function getPrototypeBySlug(slug: string) {

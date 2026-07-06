@@ -5,6 +5,7 @@ import {
   RiBarChartBoxLine,
   RiFolder3Line,
   RiInformationLine,
+  RiLayout2Line,
   RiMicroscopeLine,
   RiPagesLine,
   RiPaletteLine,
@@ -45,6 +46,7 @@ const prototypeIcons = {
   "design-system": RiPaletteLine,
   "carte-landing-page": RiPagesLine,
   "preview-dashboard": RiBarChartBoxLine,
+  templates: RiLayout2Line,
 };
 
 function StatusBadge({ status }: { status: string }) {

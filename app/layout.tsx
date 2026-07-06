@@ -19,6 +19,11 @@ const marianne = localFont({
       weight: "700",
       style: "normal",
     },
+    {
+      path: "./fonts/Marianne-ExtraBold.woff2",
+      weight: "800",
+      style: "normal",
+    },
   ],
   variable: "--font-marianne",
   display: "swap",
