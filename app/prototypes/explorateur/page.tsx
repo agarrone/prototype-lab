@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type {
   ComponentType,
   FocusEvent as ReactFocusEvent,
@@ -47,6 +47,7 @@ import {
   RiTerminalLine,
   RiText,
 } from "@remixicon/react";
+import type { DatagouvResourceSummary } from "@/lib/datagouv";
 
 type ResourceType = "table" | "code" | "geodata" | "documentation";
 
@@ -123,6 +124,65 @@ const resources: Resource[] = [
     tabs: ["Aperçu", "Métadonnées"],
   },
 ];
+
+function toExplorerResource(resource: DatagouvResourceSummary): Resource {
+  const format = resource.format.trim().toUpperCase() || "FICHIER";
+  const type = getExplorerResourceType(format, resource.type);
+
+  return {
+    id: resource.id,
+    name: resource.title,
+    size: resource.sizeLabel,
+    format,
+    updatedAt: resource.updatedAtLabel,
+    downloads: resource.downloads,
+    type,
+    tabs: getExplorerResourceTabs(type, format),
+  };
+}
+
+function getExplorerResourceType(
+  format: string,
+  resourceType: string,
+): ResourceType {
+  const normalizedType = resourceType.toLowerCase();
+
+  if (
+    normalizedType.includes("documentation") ||
+    ["PDF", "DOC", "DOCX", "ODT", "RTF"].includes(format)
+  ) {
+    return "documentation";
+  }
+
+  if (["GEOJSON", "SHP", "SHAPEFILE", "KML", "GPX"].includes(format)) {
+    return "geodata";
+  }
+
+  if (["JSON", "XML", "XSD", "YAML", "YML"].includes(format)) {
+    return "code";
+  }
+
+  return "table";
+}
+
+function getExplorerResourceTabs(
+  type: ResourceType,
+  format: string,
+): ExplorerTab[] {
+  if (type === "geodata") {
+    return ["Carte", "Métadonnées"];
+  }
+
+  if (type === "documentation" || type === "code") {
+    return ["Aperçu", "Métadonnées"];
+  }
+
+  if (["CSV", "XLS", "XLSX", "ODS", "PARQUET", "TXT"].includes(format)) {
+    return ["Aperçu", "Description", "Structure des données", "Métadonnées", "API"];
+  }
+
+  return ["Aperçu", "Métadonnées"];
+}
 
 const resourceSidebarDefaultWidth = 300;
 const resourceSidebarMinWidth = 260;
@@ -1555,31 +1615,6 @@ function HeaderCell({
       >
         <span className="mx-auto block h-full w-px bg-transparent transition-colors hover:bg-[#000091]" />
       </button>
-    </div>
-  );
-}
-
-function RowCountHeaderCell({
-  filteredCount,
-  totalCount,
-  isScrolled,
-}: {
-  filteredCount: number;
-  totalCount: number;
-  isScrolled: boolean;
-}) {
-  return (
-    <div
-      className={`sticky right-0 z-20 flex h-12 w-[156px] shrink-0 items-center border-l border-r border-[#E5E5E5] px-3 ${
-        isScrolled ? "bg-[#FFFFFF]/88 backdrop-blur-md" : "bg-[#f6f6f6]"
-      }`}
-    >
-      <div className="flex min-w-0 items-center gap-1">
-        <Icon path={icons.rows} className="h-4 w-4 text-[#3a3a3a]" />
-        <span className="truncate text-[12px] font-bold text-[#161616]">
-          {filteredCount} sur {totalCount} lignes
-        </span>
-      </div>
     </div>
   );
 }
@@ -3498,12 +3533,27 @@ function DownloadMenu({ onClose }: { onClose: () => void }) {
   );
 }
 
-export default function ExplorateurPage() {
+export function ExplorerPrototype({
+  embedded = false,
+  returnTo = "/prototypes/explore-in-context",
+  datasetReference,
+  datasetResources,
+}: {
+  embedded?: boolean;
+  returnTo?: string;
+  datasetReference?: string;
+  datasetResources?: DatagouvResourceSummary[];
+}) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [resourceSidebarWidth, setResourceSidebarWidth] = useState(
     resourceSidebarDefaultWidth,
   );
-  const [activeResourceId, setActiveResourceId] = useState("ecoles");
+  const [activeResourceId, setActiveResourceId] = useState(
+    datasetResources?.[0]?.id ?? resources[0].id,
+  );
+  const [standaloneDatasetResources, setStandaloneDatasetResources] = useState<
+    DatagouvResourceSummary[] | null
+  >(null);
   const [resourceSearchQuery, setResourceSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<ColumnKey | null>(null);
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
@@ -3539,6 +3589,82 @@ export default function ExplorateurPage() {
   const [hasTableScrolled, setHasTableScrolled] = useState(false);
   const [resourceTooltip, setResourceTooltip] = useState<ResourceTooltip>(null);
 
+  useEffect(() => {
+    if (embedded || datasetResources?.length) {
+      return;
+    }
+
+    const datasetFromUrl = new URLSearchParams(window.location.search).get(
+      "dataset",
+    );
+
+    if (!datasetFromUrl) {
+      setStandaloneDatasetResources(null);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    fetch(
+      `/api/prototypes/explore-in-context/datasets/resolve?input=${encodeURIComponent(
+        datasetFromUrl,
+      )}`,
+      { signal: controller.signal },
+    )
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error("Unable to resolve dataset resources");
+        }
+
+        return response.json() as Promise<{
+          dataset?: { resources?: DatagouvResourceSummary[] };
+        }>;
+      })
+      .then((payload) => {
+        setStandaloneDatasetResources(payload.dataset?.resources ?? null);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof Error && error.name === "AbortError") {
+          return;
+        }
+
+        setStandaloneDatasetResources(null);
+      });
+
+    return () => controller.abort();
+  }, [datasetResources?.length, embedded]);
+
+  const explorerResources = useMemo(() => {
+    const dynamicResources =
+      datasetResources?.length ? datasetResources : standaloneDatasetResources;
+
+    if (!dynamicResources?.length) {
+      return resources;
+    }
+
+    return dynamicResources.map(toExplorerResource);
+  }, [datasetResources, standaloneDatasetResources]);
+
+  useEffect(() => {
+    const nextActiveResource =
+      explorerResources.find((resource) => resource.id === activeResourceId) ??
+      explorerResources[0];
+
+    if (nextActiveResource.id === activeResourceId) {
+      return;
+    }
+
+    setActiveResourceId(nextActiveResource.id);
+    setActiveTab(nextActiveResource.tabs[0]);
+    setActiveFilter(null);
+    setActiveCell(null);
+    setIsColumnSelectorOpen(false);
+    setIsMobileFiltersOpen(false);
+    setIsMobileResourceMenuOpen(false);
+    setIsDownloadMenuOpen(false);
+    setResourceTooltip(null);
+  }, [activeResourceId, explorerResources]);
+
   const visibleColumns = useMemo(
     () =>
       tableColumns.filter((column) => visibleColumnKeys.includes(column.key)),
@@ -3546,7 +3672,7 @@ export default function ExplorateurPage() {
   );
 
   function toggleResourceSidebarAutoFit() {
-    const autoFitWidth = getAutoFitResourceSidebarWidth(resources);
+    const autoFitWidth = getAutoFitResourceSidebarWidth(explorerResources);
     const isAlreadyAutoFit = Math.abs(resourceSidebarWidth - autoFitWidth) <= 2;
 
     setResourceSidebarWidth(
@@ -3637,23 +3763,23 @@ export default function ExplorateurPage() {
   }
 
   const activeResource =
-    resources.find((resource) => resource.id === activeResourceId) ??
-    resources[0];
+    explorerResources.find((resource) => resource.id === activeResourceId) ??
+    explorerResources[0];
 
   const filteredResources = useMemo(() => {
     const normalizedQuery = resourceSearchQuery.trim().toLowerCase();
 
     if (!normalizedQuery) {
-      return resources;
+      return explorerResources;
     }
 
-    return resources.filter((resource) =>
+    return explorerResources.filter((resource) =>
       [resource.name, resource.format, resource.type]
         .join(" ")
         .toLowerCase()
         .includes(normalizedQuery),
     );
-  }, [resourceSearchQuery]);
+  }, [explorerResources, resourceSearchQuery]);
 
   const mainResources = filteredResources.filter(
     (resource) => resource.type !== "documentation",
@@ -3888,15 +4014,25 @@ export default function ExplorateurPage() {
     setIsMobileResourceMenuOpen(false);
   }
 
+  const isMinimized = embedded ? false : isExplorerMinimized;
+  const Root = embedded ? "section" : "main";
+  const fullscreenParams = new URLSearchParams({ returnTo });
+
+  if (datasetReference) {
+    fullscreenParams.set("dataset", datasetReference);
+  }
+
   return (
-    <main
-      className={`relative h-dvh overflow-hidden text-[#161616] ${
-        isExplorerMinimized
-          ? "flex items-center justify-center bg-[#f6f6f6] p-6"
-          : "bg-[#FFFFFF] p-0"
-      }`}
+    <Root
+      className={`relative overflow-hidden text-[#161616] ${
+        embedded
+          ? "h-[720px] min-h-[560px] border border-[#E5E5E5] bg-[#FFFFFF]"
+          : isMinimized
+            ? "flex items-center justify-center bg-[#f6f6f6] p-6"
+            : "bg-[#FFFFFF] p-0"
+      } ${embedded ? "" : "h-dvh"}`}
     >
-      {isExplorerMinimized ? (
+      {isMinimized ? (
         <Link
           href="/"
           className="absolute left-4 top-4 z-50 inline-flex h-8 items-center gap-2 px-2 text-[13px] font-normal leading-6 text-[#161616] underline-offset-4 hover:underline"
@@ -3907,12 +4043,12 @@ export default function ExplorateurPage() {
       ) : null}
       <div
         className={`explorer-shell flex flex-col bg-[#FFFFFF] transition-[height,width,box-shadow] duration-200 ${
-          isExplorerMinimized
+          isMinimized
             ? "h-[78dvh] w-[82vw] overflow-hidden rounded-lg border border-[#E5E5E5] shadow-[0_8px_24px_rgba(0,0,0,0.10)]"
             : "h-full w-full"
         }`}
       >
-        {!isExplorerMinimized ? (
+        {!embedded && !isMinimized ? (
           <DatasetContextHeader
             updatedAt={activeResource.updatedAt}
             actions={
@@ -3952,6 +4088,15 @@ export default function ExplorateurPage() {
                   type="button"
                   aria-label="Réduire l’explorateur"
                   onClick={() => {
+                    const returnTo = new URLSearchParams(
+                      window.location.search,
+                    ).get("returnTo");
+
+                    if (returnTo?.startsWith("/")) {
+                      window.location.href = returnTo;
+                      return;
+                    }
+
                     setIsExplorerMinimized(true);
                     setIsDownloadMenuOpen(false);
                     setIsColumnSelectorOpen(false);
@@ -4194,7 +4339,7 @@ export default function ExplorateurPage() {
                 </span>
               </div>
 
-              {isExplorerMinimized ? (
+              {embedded || isMinimized ? (
                 <div className="flex items-center gap-2">
                   <div className="relative">
                     {isDownloadMenuOpen ? (
@@ -4227,23 +4372,36 @@ export default function ExplorateurPage() {
                       <DownloadMenu onClose={() => setIsDownloadMenuOpen(false)} />
                     ) : null}
                   </div>
-                  <button
-                    type="button"
-                    aria-label="Afficher l’explorateur en plein écran"
-                    onClick={() => {
-                      setIsExplorerMinimized(false);
-                      setIsDownloadMenuOpen(false);
-                      setIsColumnSelectorOpen(false);
-                      setActiveFilter(null);
-                      setActiveCell(null);
-                    }}
-                    className="flex h-8 w-8 items-center justify-center border border-[#E5E5E5] bg-[#FFFFFF] text-[#161616] hover:bg-[#f6f6f6]"
-                  >
-                    <Icon
-                      path={icons.fullscreen}
-                      className="h-4 w-4 text-[#3a3a3a]"
-                    />
-                  </button>
+                  {embedded ? (
+                    <Link
+                      href={`/prototypes/explorateur?${fullscreenParams.toString()}`}
+                      aria-label="Afficher l’explorateur en plein écran"
+                      className="flex h-8 w-8 items-center justify-center border border-[#E5E5E5] bg-[#FFFFFF] text-[#161616] hover:bg-[#f6f6f6]"
+                    >
+                      <Icon
+                        path={icons.fullscreen}
+                        className="h-4 w-4 text-[#3a3a3a]"
+                      />
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      aria-label="Afficher l’explorateur en plein écran"
+                      onClick={() => {
+                        setIsExplorerMinimized(false);
+                        setIsDownloadMenuOpen(false);
+                        setIsColumnSelectorOpen(false);
+                        setActiveFilter(null);
+                        setActiveCell(null);
+                      }}
+                      className="flex h-8 w-8 items-center justify-center border border-[#E5E5E5] bg-[#FFFFFF] text-[#161616] hover:bg-[#f6f6f6]"
+                    >
+                      <Icon
+                        path={icons.fullscreen}
+                        className="h-4 w-4 text-[#3a3a3a]"
+                      />
+                    </button>
+                  )}
                 </div>
               ) : null}
             </header>
@@ -4388,6 +4546,18 @@ export default function ExplorateurPage() {
                     />
                   ) : null}
                 </span>
+                <span
+                  aria-label={`${filteredRows.length} sur ${rows.length} lignes`}
+                  className="flex h-6 shrink-0 items-center gap-1 rounded px-1"
+                >
+                  <Icon path={icons.rows} className="h-3.5 w-3.5 text-[#3a3a3a]" />
+                  <span className="hidden whitespace-nowrap sm:inline">
+                    Lignes {filteredRows.length} sur {rows.length}
+                  </span>
+                  <span className="whitespace-nowrap sm:hidden">
+                    {filteredRows.length}/{rows.length}
+                  </span>
+                </span>
               </div>
             </div>
 
@@ -4519,13 +4689,6 @@ export default function ExplorateurPage() {
                       }
                     />
                   ))}
-                  {visibleColumns.length > 0 ? (
-                    <RowCountHeaderCell
-                      filteredCount={filteredRows.length}
-                      totalCount={rows.length}
-                      isScrolled={hasTableScrolled}
-                    />
-                  ) : null}
                 </div>
 
                 {visibleColumns.length === 0 ? (
@@ -4636,6 +4799,10 @@ export default function ExplorateurPage() {
           </dl>
         </div>
       ) : null}
-    </main>
+    </Root>
   );
+}
+
+export default function ExplorateurPage() {
+  return <ExplorerPrototype />;
 }

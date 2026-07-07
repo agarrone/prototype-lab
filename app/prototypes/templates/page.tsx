@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import Link from "next/link";
 import {
   RiArrowRightSLine,
@@ -6,6 +7,10 @@ import {
   RiCheckboxCircleLine,
   RiInformationLine,
 } from "@remixicon/react";
+import {
+  defaultDatasetSummary,
+  type DatagouvDatasetSummary,
+} from "@/lib/datagouv";
 import { DescriptionPreview } from "./description-preview";
 
 export const metadata: Metadata = {
@@ -16,7 +21,7 @@ export const metadata: Metadata = {
 
 const frContainerClass = "mx-auto w-full max-w-[78rem] px-4 lg:px-6";
 
-function Breadcrumb() {
+function Breadcrumb({ dataset }: { dataset: DatagouvDatasetSummary }) {
   return (
     <nav
       aria-label="Fil d'Ariane"
@@ -35,14 +40,14 @@ function Breadcrumb() {
           </li>
         ))}
         <li className="max-w-[360px] truncate text-[#161616]">
-          Fichier des personnes décédées
+          {dataset.title}
         </li>
       </ol>
     </nav>
   );
 }
 
-function ProducerBlock() {
+function ProducerBlock({ dataset }: { dataset: DatagouvDatasetSummary }) {
   return (
     <section aria-labelledby="producer-title" className="space-y-1">
       <h2
@@ -53,19 +58,23 @@ function ProducerBlock() {
       </h2>
       <div className="flex min-w-0 items-center gap-2">
         <div className="flex h-[52px] w-[52px] shrink-0 items-center justify-center border border-[#e5e5e5] bg-white p-2">
-          <img
-            src="https://udata-avatars.s3.rbx.io.cloud.ovh.net/64/f90b7bc5674a8c9160fad0ec1def4d-100.png"
-            alt=""
-            className="h-full w-full object-contain"
-          />
+          {dataset.organizationLogo ? (
+            <img
+              src={dataset.organizationLogo}
+              alt=""
+              className="h-full w-full object-contain"
+            />
+          ) : (
+            <span className="text-[10px] font-bold text-[#000091]">DG</span>
+          )}
         </div>
         <Link
-          href="#"
+          href={dataset.organizationPage ?? "#"}
           className="flex min-w-0 flex-1 items-center gap-1.5 text-[14px] font-bold leading-6 text-[#000091] underline underline-offset-4"
         >
           <RiBankLine aria-hidden="true" className="h-4 w-4 shrink-0" />
           <span className="min-w-0 flex-1 truncate">
-            Institut national de la statistique et des études économiques
+            {dataset.organizationName}
           </span>
           <RiCheckboxCircleLine
             aria-hidden="true"
@@ -108,7 +117,7 @@ function StatSparkline({ variant }: { variant: "views" | "downloads" }) {
   );
 }
 
-function DatasetStats() {
+function DatasetStats({ dataset }: { dataset: DatagouvDatasetSummary }) {
   return (
     <div className="grid grid-cols-2 gap-8">
       <section aria-labelledby="views-title" className="min-w-0">
@@ -120,7 +129,7 @@ function DatasetStats() {
         </h2>
         <div className="flex items-center gap-2">
           <p className="whitespace-nowrap text-[14px] font-extrabold leading-6 text-[#161616]">
-            3.61M
+            {dataset.viewsLabel}
           </p>
           <StatSparkline variant="views" />
         </div>
@@ -141,7 +150,7 @@ function DatasetStats() {
         </h2>
         <div className="flex items-center gap-2">
           <p className="whitespace-nowrap text-[14px] font-extrabold leading-6 text-[#161616]">
-            1.45M
+            {dataset.downloadsLabel}
           </p>
           <StatSparkline variant="downloads" />
         </div>
@@ -156,10 +165,10 @@ function DatasetStats() {
   );
 }
 
-function SideMetadata() {
+function SideMetadata({ dataset }: { dataset: DatagouvDatasetSummary }) {
   return (
     <aside className="w-full space-y-4 text-[14px] text-[#161616]">
-      <ProducerBlock />
+      <ProducerBlock dataset={dataset} />
 
       <section aria-labelledby="licence-title" className="space-y-1">
         <h2
@@ -172,7 +181,7 @@ function SideMetadata() {
           href="#"
           className="inline-flex max-w-full truncate rounded-[2px] bg-[#f6f6f6] px-1 font-['Inconsolata'] text-[14px] leading-6 tracking-[0.7px] text-[#666666]"
         >
-          Licence Ouverte / Open Licence version 2.0
+          {dataset.licenseLabel}
         </Link>
       </section>
 
@@ -183,10 +192,12 @@ function SideMetadata() {
         >
           Dernière mise à jour
         </h2>
-        <p className="text-[14px] leading-6 text-[#161616]">8 juin 2026</p>
+        <p className="text-[14px] leading-6 text-[#161616]">
+          {dataset.lastUpdateLabel}
+        </p>
       </section>
 
-      <DatasetStats />
+      <DatasetStats dataset={dataset} />
 
       <section aria-labelledby="quality-title" className="space-y-1">
         <h2
@@ -197,22 +208,28 @@ function SideMetadata() {
           Qualité des métadonnées:
         </h2>
         <div className="h-2 overflow-hidden rounded-full bg-[#eeeeee]">
-          <div className="h-full w-full rounded-full bg-[#18753c]" />
+          <div
+            className="h-full rounded-full bg-[#18753c]"
+            style={{ width: `${Math.round(dataset.qualityScore * 100)}%` }}
+          />
         </div>
       </section>
     </aside>
   );
 }
 
-const tabs = [
-  { label: "Fichiers", count: "22", active: true },
-  { label: "Réutilisations", count: "44" },
-  { label: "Discussions", count: "10" },
-  { label: "Ressources communautaires", count: "2" },
-  { label: "Informations" },
-];
+function DatasetTabs({ dataset }: { dataset: DatagouvDatasetSummary }) {
+  const tabs = [
+    { label: "Fichiers", count: String(dataset.resourceCount), active: true },
+    { label: "Réutilisations", count: String(dataset.reuseCount) },
+    { label: "Discussions", count: String(dataset.discussionCount) },
+    {
+      label: "Ressources communautaires",
+      count: String(dataset.communityResourceCount),
+    },
+    { label: "Informations" },
+  ];
 
-function DatasetTabs() {
   return (
     <nav
       aria-label="Navigation du jeu de données"
@@ -242,32 +259,45 @@ function DatasetTabs() {
   );
 }
 
-export default function TemplatesPage() {
+export function DatasetPageTemplate({
+  children,
+  dataset = defaultDatasetSummary,
+}: {
+  children?: ReactNode;
+  dataset?: DatagouvDatasetSummary;
+}) {
   return (
     <main className="min-h-dvh bg-white py-3 text-[#161616]">
       <section className="w-full">
-        <Breadcrumb />
+        <Breadcrumb dataset={dataset} />
 
         <div className={`${frContainerClass} pt-3`}>
           <div className="grid grid-cols-1 gap-8 md:grid-cols-3 md:items-start md:gap-10">
             <div className="min-w-0 overflow-x-hidden md:col-span-2">
               <h1 className="mb-6 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[24px] font-extrabold leading-8 text-[#161616]">
-                <span>Fichier des personnes décédées</span>
-                <span className="text-[12px] font-bold leading-5 text-[#161616]">
-                  Décès
-                </span>
+                <span>{dataset.title}</span>
+                {dataset.acronym ? (
+                  <span className="text-[12px] font-bold leading-5 text-[#161616]">
+                    {dataset.acronym}
+                  </span>
+                ) : null}
               </h1>
-              <DescriptionPreview />
+              <DescriptionPreview description={dataset.description} />
             </div>
 
             <div className="min-w-0 md:col-span-1">
-              <SideMetadata />
+              <SideMetadata dataset={dataset} />
             </div>
           </div>
         </div>
 
-        <DatasetTabs />
+        <DatasetTabs dataset={dataset} />
+        {children}
       </section>
     </main>
   );
+}
+
+export default function TemplatesPage() {
+  return <DatasetPageTemplate />;
 }

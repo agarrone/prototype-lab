@@ -47,6 +47,7 @@ const prototypeIcons = {
   "carte-landing-page": RiPagesLine,
   "preview-dashboard": RiBarChartBoxLine,
   templates: RiLayout2Line,
+  "explore-in-context": RiMicroscopeLine,
 };
 
 function StatusBadge({ status }: { status: string }) {

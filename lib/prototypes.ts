@@ -82,6 +82,16 @@ export const prototypes: Prototype[] = [
     tags: ["templates", "dataset", "intégration"],
     figmaUrl: "",
   },
+  {
+    slug: "explore-in-context",
+    title: "Explore in context",
+    description:
+      "Prototype d'intégration de l'explorateur sous les onglets d'une page dataset data.gouv.fr.",
+    status: "exploration",
+    tags: ["dataset", "explorateur", "intégration"],
+    figmaUrl:
+      "https://www.figma.com/design/ZKqud6Wa8ue8fM0YEhH2pc/Jeu-de-donn%C3%A9es?node-id=1-2006&m=dev",
+  },
 ];
 
 export function getPrototypeBySlug(slug: string) {

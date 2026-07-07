@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 
-export function DescriptionPreview() {
+export function DescriptionPreview({ description }: { description: string }) {
   const [expanded, setExpanded] = useState(false);
+  const paragraphs = toDescriptionParagraphs(description);
 
   return (
     <section aria-labelledby="description-title" className="relative">
@@ -18,43 +19,16 @@ export function DescriptionPreview() {
           expanded ? "max-h-[1200px]" : "max-h-[342px]"
         }`}
       >
-        <p className="mb-5 font-bold italic">
-          Avertissement : L’Insee, en aucune façon, n’est lié au site MatchID
-          comme à tout autre site utilisant les données mises à disposition
-          depuis cette page. Toutes réclamations ou questions concernant ces
-          sites doit leur être adressées directement.
-        </p>
-        <p className="mb-5 font-bold">
-          Les fichiers nominatifs diffusés ici ne sont pas des fichiers
-          aisément manipulables pour des calculs statistiques et ne sont
-          actualisés que tous les mois. Ils incluent les décès survenus à
-          l’étranger. Pour avoir les derniers résultats des décès comptabilisés
-          sur le territoire français durant la pandémie du Covid 19 et en
-          suivre l’évolution, il est recommandé de se référer aux données
-          relatives aux décès quotidiens.
-        </p>
-        <p className="mb-5">
-          L&apos;Insee reçoit des communes les décès enregistrés.
-        </p>
-        <p className="mb-5">
-          Les informations des fichiers de personnes décédées ne sont pas des
-          données à caractère personnel, ni ne relèvent du secret de la vie
-          privée. Les droits prévus par l’article 85 de la loi Informatique et
-          libertés s’appliquent néanmoins au motif de l’exécution de directives
-          post-mortem. L’INSEE étant soumis à une obligation légale de
-          diffusion, cet article ne s’applique pas à l’Insee.
-        </p>
-        <p className="mb-5">
-          Les proches de personnes décédées peuvent toutefois s’opposer à la
-          rediffusion par des tiers de données en demandant l’inscription du ou
-          des décès dans le fichier des oppositions à la rediffusion en
-          s’adressant à l’Insee par message électronique.
-        </p>
-        <p className="mb-5">
-          Les rediffuseurs sont invités à exclure du champ des données qu’ils
-          publient les informations relatives aux décès qui figurent dans ce
-          fichier d’opposition.
-        </p>
+        {paragraphs.map((paragraph, index) => (
+          <p
+            key={`${paragraph.text}-${index}`}
+            className={`mb-5 ${paragraph.strong ? "font-bold" : ""} ${
+              paragraph.italic ? "italic" : ""
+            }`}
+          >
+            {paragraph.text}
+          </p>
+        ))}
         {!expanded ? (
           <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-b from-white/0 via-white/95 to-white pb-2 pt-10">
             <button
@@ -78,4 +52,31 @@ export function DescriptionPreview() {
       ) : null}
     </section>
   );
+}
+
+function toDescriptionParagraphs(description: string) {
+  const cleanBlocks = description
+    .split(/\n{2,}/)
+    .map((block) => block.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+
+  if (cleanBlocks.length === 0) {
+    return [{ text: "Aucune description disponible.", strong: false, italic: false }];
+  }
+
+  return cleanBlocks.map((block) => {
+    const italic = block.startsWith("_") && block.endsWith("_");
+    const withoutItalic = block.replace(/^_+|_+$/g, "");
+    const strong =
+      withoutItalic.startsWith("**") && withoutItalic.endsWith("**");
+    const text = withoutItalic
+      .replace(/\*\*/g, "")
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/<!--.*?-->/g, "")
+      .replace(/[#>*`]/g, "")
+      .trim();
+
+    return { text, strong, italic };
+  });
 }
