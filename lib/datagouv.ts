@@ -28,6 +28,7 @@ export type DatagouvResourceSummary = {
   updatedAtLabel: string;
   downloads: number;
   type: string;
+  url?: string;
 };
 
 type DatagouvDatasetApi = {
@@ -64,6 +65,7 @@ type DatagouvResourceApi = {
   title?: string;
   format?: string | null;
   filesize?: number | null;
+  url?: string | null;
   last_modified?: string | null;
   created_at?: string | null;
   metrics?: {
@@ -116,6 +118,7 @@ Les informations des fichiers de personnes décédées ne sont pas des données 
       updatedAtLabel: "8 juin 2026",
       downloads: 1450000,
       type: "main",
+      url: "https://www.data.gouv.fr/datasets/r/0183f946-4f09-476a-aea1-27f03e80aae3",
     },
     {
       id: "deces-2026-m04",
@@ -125,6 +128,7 @@ Les informations des fichiers de personnes décédées ne sont pas des données 
       updatedAtLabel: "7 mai 2026",
       downloads: 32700,
       type: "main",
+      url: "https://www.data.gouv.fr/datasets/r/29142f96-5fcc-42c6-966f-60afa5fc706e",
     },
     {
       id: "documentation-fichier-personnes-decedees",
@@ -248,6 +252,7 @@ function toResourceSummary(
     updatedAtLabel: formatDate(resource.last_modified ?? resource.created_at),
     downloads: resource.metrics?.downloads ?? resource.metrics?.views ?? 0,
     type: resource.type ?? "main",
+    url: resource.url ?? undefined,
   };
 }
 

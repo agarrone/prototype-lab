@@ -3538,18 +3538,20 @@ export function ExplorerPrototype({
   returnTo = "/prototypes/explore-in-context",
   datasetReference,
   datasetResources,
+  initialResourceId,
 }: {
   embedded?: boolean;
   returnTo?: string;
   datasetReference?: string;
   datasetResources?: DatagouvResourceSummary[];
+  initialResourceId?: string;
 }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [resourceSidebarWidth, setResourceSidebarWidth] = useState(
     resourceSidebarDefaultWidth,
   );
   const [activeResourceId, setActiveResourceId] = useState(
-    datasetResources?.[0]?.id ?? resources[0].id,
+    initialResourceId ?? datasetResources?.[0]?.id ?? resources[0].id,
   );
   const [standaloneDatasetResources, setStandaloneDatasetResources] = useState<
     DatagouvResourceSummary[] | null
@@ -4178,21 +4180,23 @@ export function ExplorerPrototype({
                 ))}
               </section>
 
-              <section className="space-y-0.5">
-                <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
-                  {documentationResources.length} Documentation
-                </p>
-                {documentationResources.map((resource) => (
-                  <ResourceItem
-                    key={resource.id}
-                    resource={resource}
-                    active={resource.id === activeResource.id}
-                    onSelect={() => selectResource(resource)}
-                    onShowTooltip={showResourceTooltip}
-                    onHideTooltip={() => setResourceTooltip(null)}
-                  />
-                ))}
-              </section>
+              {documentationResources.length > 0 ? (
+                <section className="space-y-0.5">
+                  <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
+                    {documentationResources.length} Documentation
+                  </p>
+                  {documentationResources.map((resource) => (
+                    <ResourceItem
+                      key={resource.id}
+                      resource={resource}
+                      active={resource.id === activeResource.id}
+                      onSelect={() => selectResource(resource)}
+                      onShowTooltip={showResourceTooltip}
+                      onHideTooltip={() => setResourceTooltip(null)}
+                    />
+                  ))}
+                </section>
+              ) : null}
             </div>
             {isSidebarCollapsed ? null : (
               <button
@@ -4291,24 +4295,26 @@ export function ExplorerPrototype({
                             />
                           ))}
                         </section>
-                        <section className="mt-3 space-y-0.5">
-                          <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
-                            {documentationResources.length} Documentation
-                          </p>
-                          {documentationResources.map((resource) => (
-                            <ResourceItem
-                              key={resource.id}
-                              resource={resource}
-                              active={resource.id === activeResource.id}
-                              onSelect={() => {
-                                selectResource(resource);
-                                setIsMobileResourceMenuOpen(false);
-                              }}
-                              onShowTooltip={showResourceTooltip}
-                              onHideTooltip={() => setResourceTooltip(null)}
-                            />
-                          ))}
-                        </section>
+                        {documentationResources.length > 0 ? (
+                          <section className="mt-3 space-y-0.5">
+                            <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
+                              {documentationResources.length} Documentation
+                            </p>
+                            {documentationResources.map((resource) => (
+                              <ResourceItem
+                                key={resource.id}
+                                resource={resource}
+                                active={resource.id === activeResource.id}
+                                onSelect={() => {
+                                  selectResource(resource);
+                                  setIsMobileResourceMenuOpen(false);
+                                }}
+                                onShowTooltip={showResourceTooltip}
+                                onHideTooltip={() => setResourceTooltip(null)}
+                              />
+                            ))}
+                          </section>
+                        ) : null}
                       </div>
                     </div>
                   ) : null}

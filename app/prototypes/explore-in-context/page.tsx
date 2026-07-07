@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import { ExplorerPrototype } from "../explorateur/page";
 import { DatasetPageTemplate } from "../templates/page";
 import {
   defaultDatasetSummary,
   fetchDatagouvDataset,
 } from "@/lib/datagouv";
 import { DatasetSwitcher } from "./dataset-switcher";
+import { ResourceViewer } from "./resource-viewer";
 
 export const metadata: Metadata = {
   title: "Explore in context - Prototype Lab",
@@ -26,18 +26,15 @@ export default async function ExploreInContextPage({
     : defaultDatasetSummary;
 
   return (
-    <DatasetPageTemplate dataset={dataset}>
-      <div className={`${frContainerClass} pt-6`}>
+    <>
+      <div className={`${frContainerClass} pt-3`}>
         <DatasetSwitcher currentDataset={dataset} />
-        <ExplorerPrototype
-          embedded
-          datasetReference={dataset.slug || dataset.id}
-          datasetResources={dataset.resources}
-          returnTo={`/prototypes/explore-in-context?dataset=${encodeURIComponent(
-            dataset.slug || dataset.id,
-          )}`}
-        />
       </div>
-    </DatasetPageTemplate>
+      <DatasetPageTemplate dataset={dataset}>
+        <div className={`${frContainerClass} pt-6`}>
+          <ResourceViewer dataset={dataset} />
+        </div>
+      </DatasetPageTemplate>
+    </>
   );
 }

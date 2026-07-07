@@ -112,13 +112,20 @@ export function DatasetSwitcher({
   }
 
   return (
-    <section className="mb-3 border border-[#E5E5E5] bg-[#f6f6f6] p-3">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end">
-        <div className="min-w-0 flex-1">
-          <p className="mb-1 text-[12px] font-medium leading-5 text-[#666666]">
-            Tester un autre jeu de données
+    <section className="border-b border-[#E5E5E5] pb-3">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
+        <div className="min-w-0 lg:w-[28rem]">
+          <p className="text-[11px] font-medium uppercase leading-4 text-[#666666]">
+            Jeu de données
           </p>
-          <label className="flex h-9 items-center gap-2 border border-[#E5E5E5] bg-white px-2">
+          <p className="truncate text-[13px] font-bold leading-5 text-[#161616]">
+            {currentDataset.title}
+          </p>
+        </div>
+
+        <div className="grid min-w-0 flex-1 gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <label className="flex h-8 min-w-0 items-center gap-2 border border-[#E5E5E5] bg-white px-2">
+            <span className="sr-only">Rechercher un dataset sur data.gouv.fr</span>
             <RiSearchLine aria-hidden className="h-4 w-4 text-[#3a3a3a]" />
             <input
               value={query}
@@ -129,13 +136,13 @@ export function DatasetSwitcher({
                   void searchDatasets();
                 }
               }}
-              placeholder="Rechercher un dataset sur data.gouv.fr"
+              placeholder="Rechercher un dataset"
               className="min-w-0 flex-1 bg-transparent text-[13px] text-[#161616] outline-none placeholder:text-[#666666]"
             />
             <button
               type="button"
               onClick={() => void searchDatasets()}
-              className="inline-flex h-7 items-center gap-1 bg-[#000091] px-2 text-[12px] font-medium text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-6 items-center gap-1 px-1.5 text-[12px] font-medium text-[#000091] disabled:cursor-not-allowed disabled:opacity-60"
               disabled={isSearching}
             >
               {isSearching ? (
@@ -147,13 +154,9 @@ export function DatasetSwitcher({
               Rechercher
             </button>
           </label>
-        </div>
 
-        <div className="min-w-0 flex-1">
-          <p className="mb-1 text-[12px] font-medium leading-5 text-[#666666]">
-            Ou coller un lien data.gouv.fr
-          </p>
-          <label className="flex h-9 items-center gap-2 border border-[#E5E5E5] bg-white px-2">
+          <label className="flex h-8 min-w-0 items-center gap-2 border border-[#E5E5E5] bg-white px-2">
+            <span className="sr-only">Coller un lien data.gouv.fr</span>
             <RiLink aria-hidden className="h-4 w-4 text-[#3a3a3a]" />
             <input
               value={linkInput}
@@ -170,7 +173,7 @@ export function DatasetSwitcher({
             <button
               type="button"
               onClick={() => void resolveDataset()}
-              className="inline-flex h-7 items-center gap-1 bg-white px-2 text-[12px] font-medium text-[#000091] ring-1 ring-[#000091] disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-6 items-center gap-1 px-1.5 text-[12px] font-medium text-[#000091] disabled:cursor-not-allowed disabled:opacity-60"
               disabled={isResolving}
             >
               {isResolving ? (
@@ -185,25 +188,18 @@ export function DatasetSwitcher({
         </div>
       </div>
 
-      <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] leading-5">
-        <span className="text-[#666666]">Dataset actif</span>
-        <span className="max-w-full truncate font-bold text-[#161616]">
-          {currentDataset.title}
-        </span>
-      </div>
-
       {error ? (
         <p className="mt-2 text-[12px] leading-5 text-[#b34000]">{error}</p>
       ) : null}
 
       {results.length > 0 ? (
-        <div className="mt-3 grid gap-2 md:grid-cols-2">
+        <div className="mt-2 grid gap-1.5 md:grid-cols-2">
           {results.map((dataset) => (
             <button
               key={dataset.id}
               type="button"
               onClick={() => selectDataset(dataset)}
-              className="flex min-w-0 items-center justify-between gap-3 border border-[#E5E5E5] bg-white p-2 text-left hover:border-[#000091]"
+              className="flex min-w-0 items-center justify-between gap-3 border border-[#E5E5E5] bg-white px-2 py-1.5 text-left hover:border-[#000091]"
             >
               <span className="min-w-0">
                 <span className="block truncate text-[13px] font-bold leading-5 text-[#161616]">
