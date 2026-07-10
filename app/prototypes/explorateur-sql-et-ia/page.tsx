@@ -3605,6 +3605,7 @@ type AgentPhaseResponse = {
   sql?: string;
   model?: string;
   usage?: TokenUsage;
+  needsClarification?: boolean;
   error?: string;
 };
 
@@ -3612,6 +3613,11 @@ type SqlExecutionEvidence = {
   description?: string;
   sql: string;
   result: ExecuteSqlResult;
+};
+
+type SqlExecutionFailure = {
+  sql: string;
+  error: string;
 };
 
 type VegaLiteSpec = Record<string, unknown>;
@@ -3800,11 +3806,16 @@ function splitMarkdownTableRow(line: string) {
 }
 
 function isMarkdownTableSeparator(line: string) {
-  return splitMarkdownTableRow(line).every((cell) => /^:?-{3,}:?$/.test(cell));
+  const cells = splitMarkdownTableRow(line);
+  return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
 }
 
 function renderInlineMarkdown(text: string) {
-  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).filter(Boolean);
+  const parts = text
+    .split(
+      /(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|\[[^\]]+\]\(https?:\/\/[^)]+\)|(?<![\w*])\*[^*\n]+\*(?![\w*])|(?<![\w_])_[^_\n]+_(?![\w_]))/g,
+    )
+    .filter(Boolean);
 
   return parts.map((part, index) => {
     if (part.startsWith("`") && part.endsWith("`")) {
@@ -3818,7 +3829,10 @@ function renderInlineMarkdown(text: string) {
       );
     }
 
-    if (part.startsWith("**") && part.endsWith("**")) {
+    if (
+      (part.startsWith("**") && part.endsWith("**")) ||
+      (part.startsWith("__") && part.endsWith("__"))
+    ) {
       return (
         <strong key={`${part}-${index}`} className="font-semibold text-[#161616]">
           {part.slice(2, -2)}
@@ -3826,18 +3840,97 @@ function renderInlineMarkdown(text: string) {
       );
     }
 
+    if (part.startsWith("~~") && part.endsWith("~~")) {
+      return <del key={`${part}-${index}`}>{part.slice(2, -2)}</del>;
+    }
+
+    const linkMatch = part.match(/^\[([^\]]+)\]\((https?:\/\/[^)]+)\)$/);
+    if (linkMatch) {
+      return (
+        <a
+          key={`${part}-${index}`}
+          href={linkMatch[2]}
+          target="_blank"
+          rel="noreferrer"
+          className="text-[#000091] underline underline-offset-2"
+        >
+          {linkMatch[1]}
+        </a>
+      );
+    }
+
+    if (
+      (part.startsWith("*") && part.endsWith("*")) ||
+      (part.startsWith("_") && part.endsWith("_"))
+    ) {
+      return <em key={`${part}-${index}`}>{part.slice(1, -1)}</em>;
+    }
+
     return <Fragment key={`${part}-${index}`}>{part}</Fragment>;
   });
 }
 
 function renderAssistantMarkdown(content: string) {
-  const lines = content.split("\n");
+  const normalizedContent = content
+    .replace(/\r\n?/g, "\n")
+    .trim()
+    .replace(/^```(?:markdown|md)\s*\n([\s\S]*?)\n```$/i, "$1");
+  const lines = normalizedContent.split("\n");
   const nodes: ReactNode[] = [];
   let index = 0;
 
   while (index < lines.length) {
     const line = lines[index];
     const nextLine = lines[index + 1];
+
+    const headingMatch = line.match(/^\s*(#{1,4})\s+(.+)$/);
+    if (headingMatch) {
+      const level = headingMatch[1].length;
+      nodes.push(
+        <p
+          key={`heading-${index}`}
+          role="heading"
+          aria-level={level}
+          className={`font-semibold text-[#161616] ${
+            level === 1
+              ? "text-[17px] leading-6"
+              : level === 2
+                ? "text-[15px] leading-5"
+                : "text-[13px] leading-5"
+          }`}
+        >
+          {renderInlineMarkdown(headingMatch[2])}
+        </p>,
+      );
+      index += 1;
+      continue;
+    }
+
+    const blockquoteMatch = line.match(/^\s*>\s?(.*)$/);
+    if (blockquoteMatch) {
+      const quoteLines: string[] = [];
+      while (index < lines.length) {
+        const quoteMatch = lines[index].match(/^\s*>\s?(.*)$/);
+        if (!quoteMatch) break;
+        quoteLines.push(quoteMatch[1]);
+        index += 1;
+      }
+      nodes.push(
+        <blockquote
+          key={`quote-${index}`}
+          className="border-l-2 border-[#929292] pl-3 text-[#666666]"
+        >
+          {renderInlineMarkdown(quoteLines.join(" "))}
+        </blockquote>,
+      );
+      continue;
+    }
+
+    if (/^\s*(?:---+|\*\*\*+)\s*$/.test(line)) {
+      nodes.push(<hr key={`hr-${index}`} className="border-0 border-t border-[#E5E5E5]" />);
+      index += 1;
+      continue;
+    }
 
     if (line.trim().startsWith("```")) {
       const codeLines: string[] = [];
@@ -4272,118 +4365,6 @@ function chartFromVegaSpec(
   };
 }
 
-function normalizeSchemaSearchText(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9._]+/g, " ")
-    .trim();
-}
-
-const schemaLookupStopWords = new Set([
-  "a",
-  "au",
-  "aux",
-  "avec",
-  "ce",
-  "cette",
-  "ces",
-  "dans",
-  "de",
-  "des",
-  "du",
-  "elle",
-  "en",
-  "est",
-  "et",
-  "fichier",
-  "il",
-  "jeu",
-  "jeux",
-  "la",
-  "le",
-  "les",
-  "nombre",
-  "on",
-  "ou",
-  "pour",
-  "qu",
-  "que",
-  "qui",
-  "sur",
-  "un",
-  "une",
-  "y",
-]);
-
-const schemaLookupTermExpansions: Record<string, string[]> = {
-  telechargement: ["download", "downloads"],
-  telechargements: ["download", "downloads"],
-  vue: ["view", "views"],
-  vues: ["view", "views"],
-  ressource: ["resource", "resources"],
-  ressources: ["resource", "resources"],
-  organisation: ["organization"],
-  organisations: ["organization"],
-  licence: ["license"],
-};
-
-function getSchemaLookupTerms(question: string) {
-  const normalizedQuestion = normalizeSchemaSearchText(question);
-  const baseTerms = normalizedQuestion
-    .split(/\s+/)
-    .map((term) => term.trim())
-    .filter((term) => term.length > 2 && !schemaLookupStopWords.has(term));
-
-  return Array.from(
-    new Set(
-      baseTerms.flatMap((term) => [
-        term,
-        term.replace(/s$/, ""),
-        ...(schemaLookupTermExpansions[term] ?? []),
-      ]),
-    ),
-  ).filter((term) => term.length > 2);
-}
-
-function isSchemaLookupQuestion(question: string) {
-  const normalizedQuestion = normalizeSchemaSearchText(question);
-
-  return /\b(est ce|existe|contient|dispose|presence|present|champ|champs|colonne|colonnes|information|infos|donnee|donnees|a t il|a il|y a)\b/.test(
-    normalizedQuestion,
-  );
-}
-
-function getSchemaColumnMatches(question: string, schema: InspectSchemaResult) {
-  const terms = getSchemaLookupTerms(question);
-
-  return schema.columns
-    .map((column) => {
-      const normalizedColumnName = normalizeSchemaSearchText(column.name);
-      const normalizedExamples = column.examples
-        .slice(0, 3)
-        .map((example) => normalizeSchemaSearchText(String(example)))
-        .join(" ");
-      const score = terms.reduce((currentScore, term) => {
-        if (normalizedColumnName.includes(term)) {
-          return currentScore + 3;
-        }
-
-        if (normalizedExamples.includes(term)) {
-          return currentScore + 1;
-        }
-
-        return currentScore;
-      }, 0);
-
-      return { column, score };
-    })
-    .filter((match) => match.score > 0)
-    .sort((left, right) => right.score - left.score)
-    .map((match) => match.column);
-}
-
 function ChatSidebar({
   activeResource,
   onApplyFilter,
@@ -4506,84 +4487,101 @@ function ChatSidebar({
 
   async function runRemoteAssistant(question: string): Promise<AgentResponse> {
     const toolTrace: AgentResponse["toolTrace"] = [];
-    const plan = await callAgentPhase({
+    const cachedSchema = inspectedSchemaRef.current;
+    let plan = await callAgentPhase({
       phase: "plan",
       question,
+      schema: cachedSchema,
     });
+    let planningUsage = plan.usage;
 
     if (plan.answer) {
       return normalizeRemoteResponse({
         answer: plan.answer,
         reasoning: plan.reasoning,
+        needsClarification: plan.needsClarification,
         proposedAction: { type: "none" },
         model: plan.model,
         usage: plan.usage,
-        status: "success",
+        status: plan.needsClarification ? "ambiguous" : "success",
       });
     }
 
-    if (plan.toolCall?.tool !== "inspect_schema") {
-      throw new Error("Le modèle doit appeler inspect_schema avant de générer du SQL.");
+    if (
+      plan.toolCall?.tool !== "inspect_schema" &&
+      plan.toolCall?.tool !== "execute_sql"
+    ) {
+      throw new Error("Le modèle n'a pas choisi un tool exploitable à cette étape.");
     }
 
-    const schema = inspectedSchemaRef.current ?? (await inspectSchema());
+    const schema = cachedSchema ?? (await inspectSchema());
     inspectedSchemaRef.current = schema;
-    toolTrace.push({
-      tool: "inspect_schema",
-      description: "Récupérer le schéma réel avant d'écrire du SQL.",
-      summary: `${schema.columns.length} colonnes et ${Number(schema.rows).toLocaleString("fr-FR")} lignes inspectées localement.`,
-    });
-
-    if (/\bcolonnes?\b/i.test(question) || isSchemaLookupQuestion(question)) {
-      const matchingColumns = /\bcolonnes?\b/i.test(question)
-        ? schema.columns
-        : getSchemaColumnMatches(question, schema);
-      const hasMatches = matchingColumns.length > 0;
-      const columnTable = [
-        "| Colonne | Type DuckDB | Exemples |",
-        "|---|---:|---|",
-        ...matchingColumns.map((column) => {
-          const examples = column.examples
-            .slice(0, 3)
-            .map((example) => `\`${String(example)}\``)
-            .join(", ");
-
-          return `| \`${column.name}\` | ${column.type} | ${examples || "-"} |`;
-        }),
-      ].join("\n");
-      const columnNames = matchingColumns
-        .map((column) => `\`${column.name}\``)
-        .join(", ");
-
-      return normalizeRemoteResponse({
-        intent: "explain_structure",
-        answer: hasMatches
-          ? /\bcolonnes?\b/i.test(question)
-            ? `Ce jeu de données contient ${schema.columns.length} colonnes.\n\n${columnTable}`
-            : `Oui, le schéma contient ${matchingColumns.length} colonne${matchingColumns.length > 1 ? "s" : ""} qui semble${matchingColumns.length > 1 ? "nt" : ""} correspondre à cette information.\n\n${columnTable}`
-          : "Je n’ai pas trouvé de colonne correspondant clairement à cette information dans le schéma inspecté.",
-        reasoning:
-          hasMatches
-            ? `La question porte sur la présence d’une information dans le fichier. J’ai vérifié la structure disponible, puis j’ai recherché les colonnes dont le nom ou les exemples correspondent aux termes de la demande. J’ai présenté les résultats sous forme de tableau, car cette réponse est naturellement structurée en colonnes. Je n’ai pas calculé de valeur : ici, il s’agit seulement de vérifier si l’information existe dans le fichier. Colonnes retenues : ${columnNames}.`
-            : "La question porte sur la présence d’une information dans le fichier. J’ai vérifié les colonnes disponibles et leurs exemples de valeurs. Aucune colonne ne correspond clairement aux termes de la demande, donc je l’indique sans inventer de champ.",
-        toolTrace,
-        proposedAction: { type: "none" },
-        usage: plan.usage,
-        status: "success",
+    if (!cachedSchema) {
+      toolTrace.push({
+        tool: "inspect_schema",
+        description: "Récupérer le schéma réel avant d'écrire du SQL.",
+        summary: `${schema.columns.length} colonnes et ${Number(schema.rows).toLocaleString("fr-FR")} lignes inspectées localement.`,
       });
+    }
+
+    if (!cachedSchema || plan.toolCall?.tool === "inspect_schema") {
+      const schemaPlan = await callAgentPhase({
+        phase: "plan",
+        question,
+        schema,
+      });
+      planningUsage = mergeTokenUsage(planningUsage, schemaPlan.usage);
+      plan = schemaPlan;
+
+      if (plan.answer) {
+        return normalizeRemoteResponse({
+          answer: plan.answer,
+          reasoning: plan.reasoning,
+          needsClarification: plan.needsClarification,
+          toolTrace,
+          proposedAction: { type: "none" },
+          model: plan.model,
+          usage: planningUsage,
+          status: plan.needsClarification ? "ambiguous" : "success",
+        });
+      }
+
+      if (plan.toolCall?.tool !== "execute_sql") {
+        return normalizeRemoteResponse({
+          answer:
+            "Je ne suis pas certain de l’analyse à effectuer avec les colonnes disponibles. Peux-tu préciser la mesure, la dimension ou le résultat attendu ?",
+          reasoning:
+            "La structure du fichier a été inspectée, mais aucune interprétation suffisamment fiable n’a pu être retenue sans précision supplémentaire.",
+          needsClarification: true,
+          toolTrace,
+          proposedAction: { type: "none" },
+          model: plan.model,
+          usage: planningUsage,
+          status: "ambiguous",
+        });
+      }
     }
 
     const sqlEvidence: SqlExecutionEvidence[] = [];
+    const sqlFailures: SqlExecutionFailure[] = [];
     let finalModel = plan.model;
-    let totalUsage = plan.usage;
+    let totalUsage = planningUsage;
+    let pendingSqlToolCall =
+      plan.toolCall?.tool === "execute_sql"
+        ? plan.toolCall
+        : undefined;
 
     for (let queryIndex = 0; queryIndex < 3; queryIndex += 1) {
-      const sqlPlan = await callAgentPhase({
-        phase: "generate_sql",
-        question,
-        schema,
-        previousSqlResults: sqlEvidence,
-      });
+      const sqlPlan = pendingSqlToolCall
+        ? { toolCall: pendingSqlToolCall, model: plan.model, usage: undefined }
+        : await callAgentPhase({
+            phase: "generate_sql",
+            question,
+            schema,
+            previousSqlResults: sqlEvidence,
+            previousSqlErrors: sqlFailures,
+          });
+      pendingSqlToolCall = undefined;
 
       finalModel = sqlPlan.model ?? finalModel;
       totalUsage = mergeTokenUsage(totalUsage, sqlPlan.usage);
@@ -4597,7 +4595,23 @@ function ChatSidebar({
         sqlPlan.toolCall.arguments.description ||
         "Exécuter une requête sur le fichier chargé.";
       const shouldShow = sqlPlan.toolCall.arguments.show ?? queryIndex >= 2;
-      const executionResult = await executeSql(sql);
+      let executionResult: ExecuteSqlResult;
+
+      try {
+        executionResult = await executeSql(sql);
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Erreur SQL inconnue.";
+
+        sqlFailures.push({ sql, error: errorMessage.slice(0, 1200) });
+        toolTrace.push({
+          tool: "execute_sql",
+          description: sqlDescription,
+          summary: "La requête a échoué et va être corrigée automatiquement.",
+          show: false,
+        });
+        continue;
+      }
 
       sqlEvidence.push({
         description: sqlDescription,
@@ -4619,41 +4633,19 @@ function ChatSidebar({
     const finalEvidence = sqlEvidence.at(-1);
 
     if (!finalEvidence) {
-      throw new Error("Aucune requête SQL n'a été exécutée.");
-    }
-
-    let generatedChart: AssistantChartSpec | undefined;
-
-    if (shouldCreateChart(question)) {
-      const chartPlan = await callAgentPhase({
-        phase: "create_chart",
-        question,
-        schema,
-        sql: finalEvidence.sql,
-        executionResult: finalEvidence.result,
-      });
-
-      totalUsage = mergeTokenUsage(totalUsage, chartPlan.usage);
-
-      if (chartPlan.toolCall?.tool !== "create_chart") {
-        throw new Error("Le modèle doit appeler create_chart pour produire un graphique.");
-      }
-
-      const chartDescription =
-        chartPlan.toolCall.arguments.description ||
-        "Créer une visualisation à partir du résultat SQL.";
-      const chartData = executionRowsToRecords(finalEvidence.result);
-
-      generatedChart = chartFromVegaSpec(
-        chartPlan.toolCall.arguments.spec,
-        chartData,
-        chartDescription,
-      );
-      toolTrace.push({
-        tool: "create_chart",
-        description: chartDescription,
-        summary: `${generatedChart.data.length} lignes utilisées pour générer le graphique.`,
-        show: true,
+      return normalizeRemoteResponse({
+        answer:
+          "Je n’ai pas réussi à construire une analyse fiable avec les informations actuelles. Peux-tu préciser les colonnes à utiliser ou le résultat que tu attends ?",
+        reasoning:
+          sqlFailures.length > 0
+            ? `Les ${sqlFailures.length} tentatives SQL ont échoué malgré leur correction automatique. Une précision sur la mesure ou la granularité permettra de repartir sur une interprétation différente.`
+            : "Aucune requête suffisamment fiable n’a pu être exécutée avec le schéma disponible.",
+        needsClarification: true,
+        toolTrace,
+        proposedAction: { type: "none" },
+        model: finalModel,
+        usage: totalUsage,
+        status: "ambiguous",
       });
     }
 
@@ -4665,6 +4657,50 @@ function ChatSidebar({
       executionResult: finalEvidence.result,
       previousSqlResults: sqlEvidence,
     });
+
+    let generatedChart: AssistantChartSpec | undefined;
+
+    if (shouldCreateChart(question)) {
+      try {
+        const chartPlan = await callAgentPhase({
+          phase: "create_chart",
+          question,
+          schema,
+          sql: finalEvidence.sql,
+          executionResult: finalEvidence.result,
+        });
+
+        totalUsage = mergeTokenUsage(totalUsage, chartPlan.usage);
+
+        if (chartPlan.toolCall?.tool !== "create_chart") {
+          throw new Error("Le modèle n'a pas produit de graphique exploitable.");
+        }
+
+        const chartDescription =
+          chartPlan.toolCall.arguments.description ||
+          "Créer une visualisation à partir du résultat SQL.";
+        const chartData = executionRowsToRecords(finalEvidence.result);
+
+        generatedChart = chartFromVegaSpec(
+          chartPlan.toolCall.arguments.spec,
+          chartData,
+          chartDescription,
+        );
+        toolTrace.push({
+          tool: "create_chart",
+          description: chartDescription,
+          summary: `${generatedChart.data.length} lignes utilisées pour générer le graphique.`,
+          show: true,
+        });
+      } catch {
+        toolTrace.push({
+          tool: "create_chart",
+          description: "Créer une visualisation à partir du résultat SQL.",
+          summary: "Le graphique n’a pas pu être généré ; le résultat tabulaire reste disponible.",
+          show: false,
+        });
+      }
+    }
 
     return normalizeRemoteResponse({
       answer:
@@ -4741,15 +4777,16 @@ function ChatSidebar({
       } catch (error) {
         console.error("prototype-assistant-remote-error", error);
         response = {
-          intent: "unable",
+          intent: "clarify",
           answer:
-            "Je n’ai pas pu finaliser l’analyse.",
+            "Je n’ai pas pu confirmer une réponse fiable. Peux-tu reformuler la demande en précisant le résultat attendu ou les colonnes à utiliser ?",
           reasoning:
             error instanceof Error
-              ? `J’ai bien reçu la question et j’ai lancé l’analyse. Le flux s’est interrompu avant d’obtenir une réponse exploitable : ${error.message}`
-              : "J’ai bien reçu la question et j’ai lancé l’analyse, mais le flux s’est interrompu avant d’obtenir une réponse exploitable.",
+              ? `L’analyse a été interrompue avant d’obtenir une preuve exploitable : ${error.message}. Une précision permettra de relancer le parcours avec une interprétation plus ciblée.`
+              : "L’analyse a été interrompue avant d’obtenir une preuve exploitable. Une précision permettra de relancer le parcours avec une interprétation plus ciblée.",
+          needsClarification: true,
           proposedAction: { type: "none" },
-          status: "error",
+          status: "ambiguous",
         };
       } finally {
         window.clearInterval(loadingInterval);
