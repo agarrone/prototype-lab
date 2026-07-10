@@ -8,6 +8,7 @@ type AgentRequest = {
   schema?: InspectSchemaResult;
   sql?: string;
   executionResult?: ExecuteSqlResult;
+  previousSqlResults?: SqlExecutionEvidence[];
   conversationHistory?: {
     role: "user" | "assistant";
     content: string;
@@ -38,6 +39,12 @@ type ExecuteSqlResult = {
   rowCount: number;
 };
 
+type SqlExecutionEvidence = {
+  description?: string;
+  sql: string;
+  result: ExecuteSqlResult;
+};
+
 type AssistantToolCall =
   | {
       tool: "inspect_schema";
@@ -47,6 +54,8 @@ type AssistantToolCall =
       tool: "execute_sql";
       arguments: {
         sql: string;
+        description?: string;
+        show?: boolean;
       };
     };
 
@@ -77,6 +86,24 @@ Tu disposes uniquement de deux tools :
 - inspect_schema
 - execute_sql
 
+Tool inspect_schema :
+- À utiliser avant toute requête SQL si le schéma courant n'est pas déjà disponible.
+- Sert à connaître le nom de table, le nombre de lignes, les colonnes, leurs types DuckDB et quelques exemples.
+- Sert de preuve pour choisir les bonnes colonnes, les bons opérateurs et éviter les champs inventés.
+- Ne suffit pas pour répondre à une question factuelle sur les valeurs du fichier : dans ce cas, il faut ensuite execute_sql.
+
+Tool execute_sql :
+- À utiliser pour toute réponse qui dépend des données : comptages, listes, exemples, agrégations, distributions, classements, filtres, échantillons.
+- L'appel doit toujours inclure une description courte du but de la requête.
+- Tu peux utiliser plusieurs appels execute_sql pour une même question si une requête exploratoire est utile avant la requête finale.
+- Utilise show=false pour une requête exploratoire intermédiaire.
+- Utilise show=true pour la requête finale dont le résultat sera présenté à l'utilisateur.
+- Le SQL doit être en lecture seule, compatible DuckDB, et basé uniquement sur les colonnes du schéma.
+- Pour les catégories nombreuses, utilise un top-N avec ORDER BY et LIMIT.
+- Pour les résumés, pré-agrège en SQL avec GROUP BY, COUNT, AVG, MEDIAN, MIN, MAX ou équivalent.
+- Filtre explicitement les NULL quand ils fausseraient un calcul ou une comparaison.
+- Réutilise les résultats SQL précédents quand ils suffisent ; ne relance pas une requête inutile.
+
 Principes fixes :
 - Tool-aware : tu raisonnes d'abord sur la demande, puis tu utilises les tools seulement quand ils sont nécessaires.
 - Evidence-first : toute réponse factuelle sur les données doit venir du contexte de ressource, du schéma inspecté ou du résultat execute_sql.
@@ -85,14 +112,14 @@ Principes fixes :
 - Sécurité : tu ne modifies jamais les données.
 
 Tu ne connais jamais le schéma à l'avance.
-Tu dois appeler inspect_schema avant d'écrire une requête SQL si la question nécessite les données et que le schéma n'est pas encore connu.
+Tu dois toujours appeler inspect_schema en priorité avant le premier execute_sql d'une question qui nécessite les données.
 Tu écris uniquement du SQL compatible DuckDB.
 Tu privilégies des requêtes simples, lisibles, efficaces, et fondées sur les colonnes présentes dans le schéma.
 Quand tu réponds à une question :
 1. Comprends la demande.
 2. Décide si les tools sont nécessaires.
 3. Si la réponse dépend des données, inspecte le schéma si nécessaire.
-4. Génère puis exécute une requête SQL si nécessaire.
+4. Génère puis exécute une ou plusieurs requêtes SQL si nécessaire.
 5. Explique brièvement le résultat ou la réponse directe.
 Ne fais jamais d'hypothèse sur les noms de colonnes.
 Si une information n'existe pas dans le fichier ou n'est pas prouvée par la requête, indique-le clairement.
@@ -113,7 +140,8 @@ Si la question demande une valeur, un comptage, une liste, une distribution, un 
 Si le schéma n'est pas disponible et que les tools sont nécessaires :
 → appelle inspect_schema.
 Sinon, si le schéma est disponible et que les tools sont nécessaires :
-→ appelle execute_sql avec une requête SQL DuckDB répondant à la question.
+→ appelle execute_sql avec la prochaine requête SQL DuckDB utile.
+Tu peux demander plusieurs execute_sql successifs si une première requête sert à explorer ou valider avant la requête finale.
 Pour chaque requête, vise le minimum nécessaire : colonnes explicites, agrégations SQL, filtres sur les valeurs non nulles si nécessaire, LIMIT pour les listes ou échantillons.
 
 Réponds uniquement avec du JSON valide :
@@ -121,9 +149,11 @@ Réponds uniquement avec du JSON valide :
 ou
 {"action":"use_tools","tool":"inspect_schema","arguments":{}}
 ou
-{"action":"use_tools","tool":"execute_sql","arguments":{"sql":"SELECT ..."}}`;
+{"action":"use_tools","tool":"execute_sql","arguments":{"sql":"SELECT ...","description":"...","show":true}}
 
-const sqlGeneratorPrompt = `Tu génères une requête SQL DuckDB.
+Quand tu produis reasoning pour answer_direct, écris en langage naturel, en 2 à 4 phrases. Explique ce que tu as compris, pourquoi aucun tool n'est nécessaire, et quelle limite éventuelle tu gardes en tête. Ne révèle pas de chaîne de pensée interne : décris seulement la méthode observable.`;
+
+const sqlGeneratorPrompt = `Tu génères un appel au tool execute_sql.
 Contraintes :
 - utiliser uniquement les colonnes présentes dans le schéma ;
 - produire une seule requête SQL ;
@@ -136,7 +166,12 @@ Contraintes :
 - utiliser des alias explicites ;
 - utiliser la table data ;
 - entourer avec des guillemets doubles les noms de colonnes qui contiennent un point ou un caractère spécial ;
-- ne produire aucun texte autour du SQL.`;
+- ajouter une description courte, dans la langue de l'utilisateur, qui explique le but de la requête ;
+- mettre show à true pour la requête finale qui répond à l'utilisateur ;
+- ne produire aucun texte autour du JSON.
+
+Format obligatoire :
+{"action":"use_tools","tool":"execute_sql","arguments":{"description":"...","sql":"SELECT ...","show":true}}`;
 
 function stripCodeFence(content: string) {
   return content
@@ -178,7 +213,19 @@ function parseToolCall(content: string): AssistantToolCall {
   ) {
     return {
       tool: "execute_sql",
-      arguments: { sql: sanitizeSelectSql(parsed.arguments.sql) },
+      arguments: {
+        sql: sanitizeSelectSql(parsed.arguments.sql),
+        description:
+          "description" in parsed.arguments &&
+          typeof parsed.arguments.description === "string"
+            ? parsed.arguments.description.trim()
+            : undefined,
+        show:
+          "show" in parsed.arguments &&
+          typeof parsed.arguments.show === "boolean"
+            ? parsed.arguments.show
+            : true,
+      },
     };
   }
 
@@ -380,12 +427,16 @@ ${sqlGeneratorPrompt}`,
 Tool inspect_schema output:
 ${JSON.stringify(body.schema, null, 2)}
 
+Requêtes SQL déjà exécutées pour cette question:
+${JSON.stringify(body.previousSqlResults ?? [], null, 2)}
+
 Historique de discussion récent:
 ${JSON.stringify(conversationHistory, null, 2)}
 
 Question utilisateur: ${question}
 
-Réponds uniquement avec un appel tool execute_sql en JSON.`,
+Réponds uniquement avec le prochain appel tool execute_sql en JSON, incluant description, sql et show.
+Si une requête précédente suffit déjà, génère une requête finale simple qui expose le résultat utile avec show=true.`,
           },
         ],
       });
@@ -397,14 +448,20 @@ Réponds uniquement avec un appel tool execute_sql en JSON.`,
     }
 
     if (phase === "synthesize") {
-      if (!body.schema || !body.executionResult || !body.sql) {
+      const sqlEvidence =
+        body.previousSqlResults ??
+        (body.sql && body.executionResult
+          ? [{ sql: body.sql, result: body.executionResult }]
+          : []);
+
+      if (!body.schema || sqlEvidence.length === 0) {
         return Response.json(
-          { error: "Le schéma, le SQL et le résultat SQL sont obligatoires." },
+          { error: "Le schéma et au moins un résultat SQL sont obligatoires." },
           { status: 400 },
         );
       }
 
-      const safeSql = sanitizeSelectSql(body.sql);
+      const finalSql = sanitizeSelectSql(sqlEvidence.at(-1)?.sql ?? "");
       const rawAnswer = await callAlbert({
         apiKey,
         apiUrl,
@@ -418,8 +475,16 @@ Réponds uniquement avec un appel tool execute_sql en JSON.`,
 La requête a déjà été exécutée avec execute_sql dans le navigateur de l'utilisateur.
 Réponds uniquement en JSON valide avec les clés :
 - answer: réponse concise dans la langue de la question utilisateur
-- reasoning: méthode courte, indiquant les preuves utilisées : inspect_schema puis execute_sql local
+- reasoning: explication en langage naturel, plus détaillée que la réponse, décrivant la méthode observable
 - sql: SQL exécuté
+Règles pour reasoning :
+- écris 3 à 6 phrases courtes, ou 3 à 5 puces si c'est plus lisible ;
+- explique ce que tu as compris de la question ;
+- indique que le schéma a été inspecté avant le SQL, avec les colonnes utiles retenues ;
+- indique pourquoi la requête SQL exécutée répond à la question ;
+- mentionne les limites visibles : LIMIT, valeurs NULL filtrées, top-N, colonnes absentes ou résultat vide ;
+- reste en langage naturel, sans jargon inutile ;
+- ne révèle pas de chaîne de pensée interne, ne spécule pas, et ne mentionne que les preuves fournies.
 Règles de synthèse :
 - commence par le résultat concret ;
 - ne mentionne que les nombres et valeurs présents dans execute_sql output ;
@@ -434,10 +499,10 @@ Tool inspect_schema output:
 ${JSON.stringify(body.schema, null, 2)}
 
 SQL exécuté:
-${safeSql}
+${finalSql}
 
-Tool execute_sql output:
-${JSON.stringify(body.executionResult, null, 2)}`,
+Historique des tool execute_sql:
+${JSON.stringify(sqlEvidence, null, 2)}`,
           },
         ],
       });
@@ -449,7 +514,7 @@ ${JSON.stringify(body.executionResult, null, 2)}`,
 
       return Response.json({
         ...structuredAnswer,
-        sql: structuredAnswer.sql ?? safeSql,
+        sql: structuredAnswer.sql ?? finalSql,
         model,
       });
     }

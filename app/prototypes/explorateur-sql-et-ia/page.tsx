@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ComponentType,
+  FocusEvent as ReactFocusEvent,
   KeyboardEvent,
   MouseEvent as ReactMouseEvent,
   ReactNode,
@@ -71,6 +72,45 @@ type Resource = {
   type: ResourceType;
   tabs: ExplorerTab[];
 };
+
+type ResourceTooltip = {
+  resource: Resource;
+  top: number;
+  left: number;
+  width: number;
+} | null;
+
+const resourceSidebarDefaultWidth = 300;
+const resourceSidebarMinWidth = 260;
+const resourceSidebarMaxWidth = 560;
+const collapsedResourceSidebarWidth = 48;
+const chatSidebarDefaultWidth = 408;
+const chatSidebarMinWidth = 340;
+const chatSidebarMaxWidth = 560;
+
+function clampResourceSidebarWidth(width: number) {
+  return Math.min(
+    resourceSidebarMaxWidth,
+    Math.max(resourceSidebarMinWidth, Math.round(width)),
+  );
+}
+
+function getAutoFitResourceSidebarWidth(items: Resource[]) {
+  const longestResourceName = items.reduce(
+    (longest, resource) =>
+      resource.name.length > longest.length ? resource.name : longest,
+    "",
+  );
+
+  return clampResourceSidebarWidth(longestResourceName.length * 7.2 + 124);
+}
+
+function clampChatSidebarWidth(width: number) {
+  return Math.min(
+    chatSidebarMaxWidth,
+    Math.max(chatSidebarMinWidth, Math.round(width)),
+  );
+}
 
 const resources: Resource[] = [
   {
@@ -1403,16 +1443,35 @@ function ResourceItem({
   resource,
   active,
   onSelect,
+  onShowTooltip,
+  onHideTooltip,
 }: {
   resource: Resource;
   active: boolean;
   onSelect: () => void;
+  onShowTooltip: (resource: Resource, element: HTMLButtonElement) => void;
+  onHideTooltip: () => void;
 }) {
+  function showTooltip(
+    event:
+      | ReactMouseEvent<HTMLButtonElement>
+      | ReactFocusEvent<HTMLButtonElement>,
+  ) {
+    onShowTooltip(resource, event.currentTarget);
+  }
+
   return (
     <button
       type="button"
-      onClick={onSelect}
-      className={`grid h-7 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1 rounded px-1 py-1 text-left ${
+      onClick={() => {
+        onHideTooltip();
+        onSelect();
+      }}
+      onMouseEnter={showTooltip}
+      onMouseLeave={onHideTooltip}
+      onFocus={showTooltip}
+      onBlur={onHideTooltip}
+      className={`group/resource relative grid h-7 w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-1 rounded px-1 py-1 text-left ${
         active ? "bg-[#eeeeee]" : "hover:bg-[#f6f6f6]"
       }`}
     >
@@ -1421,19 +1480,16 @@ function ResourceItem({
       >
         <Icon path={icons[resource.type]} className="h-4 w-4" />
       </span>
-      <div className="flex min-w-0 items-center gap-0.5 whitespace-nowrap">
-        <span
-          className={`truncate text-[13px] ${
-            active ? "font-extrabold text-[#161616]" : "font-medium text-[#3a3a3a]"
-          }`}
-        >
-          {resource.name}
-        </span>
-        <span className="text-[13px] text-[#3a3a3a]">·</span>
-        <span className="truncate text-[12px] text-[#3a3a3a]">
-          {resource.size}
-        </span>
-      </div>
+      <span
+        className={`min-w-0 truncate text-[13px] ${
+          active ? "font-extrabold text-[#161616]" : "font-medium text-[#3a3a3a]"
+        }`}
+      >
+        {resource.name}
+      </span>
+      <span className="shrink-0 whitespace-nowrap text-[12px] text-[#3a3a3a]">
+        {resource.size}
+      </span>
       <FormatTag>{resource.format}</FormatTag>
     </button>
   );
@@ -3499,6 +3555,7 @@ type AgentResponse = {
   toolTrace?: {
     tool: "inspect_schema" | "execute_sql" | "get_resource_context" | "execute_query" | "create_chart";
     summary: string;
+    description?: string;
     show?: boolean;
   }[];
   proposedAction: AssistantProposedAction;
@@ -3517,6 +3574,8 @@ type AssistantToolCall =
       tool: "execute_sql";
       arguments: {
         sql: string;
+        description?: string;
+        show?: boolean;
       };
     };
 
@@ -3527,6 +3586,12 @@ type AgentPhaseResponse = {
   sql?: string;
   model?: string;
   error?: string;
+};
+
+type SqlExecutionEvidence = {
+  description?: string;
+  sql: string;
+  result: ExecuteSqlResult;
 };
 
 type AssistantChartSpec = {
@@ -3921,9 +3986,32 @@ function ChatSidebar({
   >([]);
   const [isAgentLoading, setIsAgentLoading] = useState(false);
   const [loadingStepIndex, setLoadingStepIndex] = useState(0);
+  const [chatSidebarWidth, setChatSidebarWidth] = useState(chatSidebarDefaultWidth);
   const starterQuestions = useMemo(() => getAssistantStarterQuestions(), []);
   const inspectedSchemaRef = useRef<InspectSchemaResult | null>(null);
   const messageIdCounterRef = useRef(0);
+
+  function startChatSidebarResize(event: ReactMouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startX = event.clientX;
+    const startWidth = chatSidebarWidth;
+
+    function handleMouseMove(moveEvent: MouseEvent) {
+      setChatSidebarWidth(
+        clampChatSidebarWidth(startWidth - (moveEvent.clientX - startX)),
+      );
+    }
+
+    function handleMouseUp() {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    }
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  }
 
   function normalizeRemoteResponse(response: Partial<AgentResponse>): AgentResponse {
     return {
@@ -4004,33 +4092,64 @@ function ChatSidebar({
     inspectedSchemaRef.current = schema;
     toolTrace.push({
       tool: "inspect_schema",
+      description: "Récupérer le schéma réel avant d'écrire du SQL.",
       summary: `${schema.columns.length} colonnes et ${Number(schema.rows).toLocaleString("fr-FR")} lignes inspectées localement.`,
     });
 
-    const sqlPlan = await callAgentPhase({
-      phase: "generate_sql",
-      question,
-      schema,
-    });
+    const sqlEvidence: SqlExecutionEvidence[] = [];
+    let finalModel = plan.model;
 
-    if (sqlPlan.toolCall?.tool !== "execute_sql") {
-      throw new Error("Le modèle doit appeler execute_sql après inspection du schéma.");
+    for (let queryIndex = 0; queryIndex < 3; queryIndex += 1) {
+      const sqlPlan = await callAgentPhase({
+        phase: "generate_sql",
+        question,
+        schema,
+        previousSqlResults: sqlEvidence,
+      });
+
+      finalModel = sqlPlan.model ?? finalModel;
+
+      if (sqlPlan.toolCall?.tool !== "execute_sql") {
+        throw new Error("Le modèle doit appeler execute_sql après inspection du schéma.");
+      }
+
+      const sql = sqlPlan.toolCall.arguments.sql;
+      const sqlDescription =
+        sqlPlan.toolCall.arguments.description ||
+        "Exécuter une requête sur le fichier chargé.";
+      const shouldShow = sqlPlan.toolCall.arguments.show ?? queryIndex >= 2;
+      const executionResult = await executeSql(sql);
+
+      sqlEvidence.push({
+        description: sqlDescription,
+        sql,
+        result: executionResult,
+      });
+      toolTrace.push({
+        tool: "execute_sql",
+        description: sqlDescription,
+        summary: `${executionResult.rowCount} lignes retournées par DuckDB-WASM dans le navigateur.`,
+        show: shouldShow,
+      });
+
+      if (shouldShow) {
+        break;
+      }
     }
 
-    const sql = sqlPlan.toolCall.arguments.sql;
-    const executionResult = await executeSql(sql);
-    toolTrace.push({
-      tool: "execute_sql",
-      summary: `${executionResult.rowCount} lignes retournées par DuckDB-WASM dans le navigateur.`,
-      show: true,
-    });
+    const finalEvidence = sqlEvidence.at(-1);
+
+    if (!finalEvidence) {
+      throw new Error("Aucune requête SQL n'a été exécutée.");
+    }
 
     const finalAnswer = await callAgentPhase({
       phase: "synthesize",
       question,
       schema,
-      sql,
-      executionResult,
+      sql: finalEvidence.sql,
+      executionResult: finalEvidence.result,
+      previousSqlResults: sqlEvidence,
     });
 
     return normalizeRemoteResponse({
@@ -4038,11 +4157,11 @@ function ChatSidebar({
         finalAnswer.answer ??
         "Je n’ai pas reçu de réponse exploitable pour cette question.",
       reasoning: finalAnswer.reasoning,
-      sql: finalAnswer.sql ?? sql,
-      queryRows: executionRowsToRecords(executionResult).slice(0, 12),
+      sql: finalAnswer.sql ?? finalEvidence.sql,
+      queryRows: executionRowsToRecords(finalEvidence.result).slice(0, 12),
       toolTrace,
       proposedAction: { type: "none" },
-      model: finalAnswer.model ?? sqlPlan.model ?? plan.model,
+      model: finalAnswer.model ?? finalModel,
       status: "success",
     });
   }
@@ -4111,8 +4230,8 @@ function ChatSidebar({
             "Je n’ai pas pu finaliser l’analyse avec le modèle et DuckDB-WASM.",
           reasoning:
             error instanceof Error
-              ? `Erreur du flux tool-driven : ${error.message}`
-              : "Erreur inconnue du flux tool-driven.",
+              ? `J’ai bien reçu la question et j’ai lancé le flux normal de l’assistant. L’analyse devait d’abord passer par le modèle, puis par les tools locaux si les données étaient nécessaires. Le flux s’est interrompu avant d’obtenir une réponse exploitable : ${error.message}`
+              : "J’ai bien reçu la question et j’ai lancé le flux normal de l’assistant. L’analyse s’est interrompue avant que le modèle ou les tools locaux ne retournent une réponse exploitable.",
           proposedAction: { type: "none" },
           status: "error",
         };
@@ -4138,12 +4257,28 @@ function ChatSidebar({
 
   return (
     <aside
-      className="chat-sidebar flex w-[408px] shrink-0 flex-col overflow-hidden border-l border-[#E5E5E5] bg-[#FFFFFF]"
+      className="chat-sidebar relative flex shrink-0 flex-col overflow-hidden border-l border-[#E5E5E5] bg-[#FFFFFF] transition-[width] duration-200"
+      style={{ width: chatSidebarWidth }}
       data-active-resource={activeResource.id}
     >
-      <div className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-[#F1F1F1] bg-[#fcfcfc] px-3 py-2">
+      <button
+        type="button"
+        aria-label="Redimensionner l’assistant"
+        title="Glisser pour redimensionner, double-cliquer pour réinitialiser"
+        onMouseDown={startChatSidebarResize}
+        onDoubleClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          setChatSidebarWidth(chatSidebarDefaultWidth);
+        }}
+        className="absolute -left-1 top-0 z-20 h-full w-2 cursor-col-resize touch-none rounded-l transition-colors hover:bg-[#000091]/10"
+      >
+        <span className="sr-only">Redimensionner</span>
+      </button>
+
+      <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-[#E5E5E5] bg-[#f6f6f6] px-3">
         <div className="min-w-0">
-          <p className="truncate text-[13px] font-semibold leading-[1.4] text-[#161616]">
+          <p className="truncate text-[13px] font-medium leading-[1.4] text-[#161616]">
             Interroger ces données
           </p>
         </div>
@@ -4236,8 +4371,20 @@ function ChatSidebar({
                                   <span className="min-w-0">
                                     <code className="rounded bg-[#FFFFFF] px-1 font-mono text-[11px] text-[#161616]">
                                       {trace.tool}
-                                    </code>{" "}
-                                    {trace.summary}
+                                    </code>
+                                    {trace.description ? (
+                                      <span className="ml-1 text-[#161616]">
+                                        {trace.description}
+                                      </span>
+                                    ) : null}
+                                    {trace.tool === "execute_sql" ? (
+                                      <span className="ml-1 rounded bg-[#e6feda] px-1 text-[10px] font-medium uppercase text-[#18753c]">
+                                        {trace.show ? "final" : "exploration"}
+                                      </span>
+                                    ) : null}
+                                    <span className="block text-[#666666]">
+                                      {trace.summary}
+                                    </span>
                                   </span>
                                 </div>
                               ))
@@ -4503,6 +4650,9 @@ function ChatSidebar({
 
 export default function ExplorateurSqlEtIaPage() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [resourceSidebarWidth, setResourceSidebarWidth] = useState(
+    resourceSidebarDefaultWidth,
+  );
   const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false);
   const [activeResourceId, setActiveResourceId] = useState("catalogue_datasets");
   const [resourceSearchQuery, setResourceSearchQuery] = useState("");
@@ -4548,6 +4698,7 @@ export default function ExplorateurSqlEtIaPage() {
   const [datasetRowsByIndex, setDatasetRowsByIndex] = useState<Record<number, Row>>({});
   const [datasetPreviewError, setDatasetPreviewError] = useState<string | null>(null);
   const [isDatasetPreviewLoading, setIsDatasetPreviewLoading] = useState(true);
+  const [resourceTooltip, setResourceTooltip] = useState<ResourceTooltip>(null);
 
   const visibleColumns = useMemo(
     () =>
@@ -4618,6 +4769,61 @@ export default function ExplorateurSqlEtIaPage() {
   const documentationResources = filteredResources.filter(
     (resource) => resource.type === "documentation",
   );
+
+  function toggleResourceSidebarAutoFit() {
+    const autoFitWidth = getAutoFitResourceSidebarWidth(resources);
+    const isAlreadyAutoFit = Math.abs(resourceSidebarWidth - autoFitWidth) <= 2;
+
+    setResourceSidebarWidth(
+      isAlreadyAutoFit ? resourceSidebarDefaultWidth : autoFitWidth,
+    );
+  }
+
+  function showResourceTooltip(resource: Resource, element: HTMLButtonElement) {
+    if (isSidebarCollapsed) {
+      return;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const tooltipWidth = Math.min(
+      360,
+      Math.max(180, resource.name.length * 7 + 28),
+    );
+    const top = Math.min(
+      window.innerHeight - 108,
+      Math.max(8, rect.top - 8),
+    );
+    const left = Math.min(
+      window.innerWidth - tooltipWidth - 8,
+      rect.right + 8,
+    );
+
+    setResourceTooltip({ resource, top, left, width: tooltipWidth });
+  }
+
+  function startResourceSidebarResize(
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const startX = event.clientX;
+    const startWidth = resourceSidebarWidth;
+
+    function handleMouseMove(moveEvent: MouseEvent) {
+      setResourceSidebarWidth(
+        clampResourceSidebarWidth(startWidth + moveEvent.clientX - startX),
+      );
+    }
+
+    function handleMouseUp() {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    }
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+  }
 
   const filteredRows = useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -5189,9 +5395,12 @@ export default function ExplorateurSqlEtIaPage() {
         ) : null}
         <div className="flex min-h-0 flex-1">
           <aside
-            className={`resource-sidebar desktop-resource-sidebar shrink-0 flex-col rounded border-r border-[#E5E5E5] bg-[#FFFFFF] transition-[width] duration-200 ${
-              isSidebarCollapsed ? "w-12" : "w-[246px]"
-            }`}
+            className="resource-sidebar desktop-resource-sidebar relative shrink-0 flex-col rounded border-r border-[#E5E5E5] bg-[#FFFFFF] transition-[width] duration-200"
+            style={{
+              width: isSidebarCollapsed
+                ? collapsedResourceSidebarWidth
+                : resourceSidebarWidth,
+            }}
           >
             <div className="flex h-14 items-center justify-between border-b border-[#E5E5E5] bg-[#f6f6f6] px-3">
               {isSidebarCollapsed ? null : (
@@ -5242,6 +5451,8 @@ export default function ExplorateurSqlEtIaPage() {
                     resource={resource}
                     active={resource.id === activeResource.id}
                     onSelect={() => selectResource(resource)}
+                    onShowTooltip={showResourceTooltip}
+                    onHideTooltip={() => setResourceTooltip(null)}
                   />
                 ))}
               </section>
@@ -5256,10 +5467,28 @@ export default function ExplorateurSqlEtIaPage() {
                     resource={resource}
                     active={resource.id === activeResource.id}
                     onSelect={() => selectResource(resource)}
+                    onShowTooltip={showResourceTooltip}
+                    onHideTooltip={() => setResourceTooltip(null)}
                   />
                 ))}
               </section>
             </div>
+            {isSidebarCollapsed ? null : (
+              <button
+                type="button"
+                aria-label="Redimensionner la navigation des ressources"
+                title="Glisser pour redimensionner, double-cliquer pour ajuster ou réinitialiser"
+                onMouseDown={startResourceSidebarResize}
+                onDoubleClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  toggleResourceSidebarAutoFit();
+                }}
+                className="absolute -right-1 top-0 z-20 h-full w-2 cursor-col-resize touch-none rounded-r transition-colors hover:bg-[#000091]/10"
+              >
+                <span className="sr-only">Redimensionner</span>
+              </button>
+            )}
           </aside>
 
           <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#FFFFFF]">
@@ -5336,6 +5565,8 @@ export default function ExplorateurSqlEtIaPage() {
                                 selectResource(resource);
                                 setIsMobileResourceMenuOpen(false);
                               }}
+                              onShowTooltip={showResourceTooltip}
+                              onHideTooltip={() => setResourceTooltip(null)}
                             />
                           ))}
                         </section>
@@ -5352,6 +5583,8 @@ export default function ExplorateurSqlEtIaPage() {
                                 selectResource(resource);
                                 setIsMobileResourceMenuOpen(false);
                               }}
+                              onShowTooltip={showResourceTooltip}
+                              onHideTooltip={() => setResourceTooltip(null)}
                             />
                           ))}
                         </section>
@@ -5905,6 +6138,39 @@ export default function ExplorateurSqlEtIaPage() {
           ) : null}
         </div>
       </div>
+      {resourceTooltip ? (
+        <div
+          className="pointer-events-none fixed z-[80] rounded border border-[#E5E5E5] bg-[#FFFFFF] p-2 text-left shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]"
+          style={{
+            left: resourceTooltip.left,
+            top: resourceTooltip.top,
+            width: resourceTooltip.width,
+          }}
+          role="tooltip"
+        >
+          <p className="text-[13px] font-medium leading-5 text-[#161616]">
+            {resourceTooltip.resource.name}
+          </p>
+          <div className="mt-1 flex items-center gap-1 text-[12px] leading-4 text-[#3a3a3a]">
+            <span>{resourceTooltip.resource.size}</span>
+            <FormatTag>{resourceTooltip.resource.format}</FormatTag>
+          </div>
+          <dl className="mt-2 grid gap-1 border-t border-[#E5E5E5] pt-2 text-[12px] leading-4">
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-[#666666]">Mise à jour</dt>
+              <dd className="whitespace-nowrap font-medium text-[#161616]">
+                {resourceTooltip.resource.updatedAt}
+              </dd>
+            </div>
+            <div className="flex items-center justify-between gap-3">
+              <dt className="text-[#666666]">Téléchargements</dt>
+              <dd className="whitespace-nowrap font-medium text-[#161616]">
+                {resourceTooltip.resource.downloads.toLocaleString("fr-FR")}
+              </dd>
+            </div>
+          </dl>
+        </div>
+      ) : null}
     </main>
   );
 }
