@@ -1,7 +1,7 @@
 export const runtime = "nodejs";
 
 type AgentRequest = {
-  phase?: "plan" | "generate_sql" | "synthesize";
+  phase?: "plan" | "generate_sql" | "create_chart" | "synthesize";
   question?: string;
   resourceName?: string;
   tableName?: string;
@@ -21,6 +21,13 @@ type AlbertChatResponse = {
       content?: string;
     };
   }[];
+  usage?: TokenUsage;
+};
+
+type TokenUsage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
 };
 
 type InspectSchemaResult = {
@@ -45,6 +52,8 @@ type SqlExecutionEvidence = {
   result: ExecuteSqlResult;
 };
 
+type VegaLiteSpec = Record<string, unknown>;
+
 type AssistantToolCall =
   | {
       tool: "inspect_schema";
@@ -56,6 +65,13 @@ type AssistantToolCall =
         sql: string;
         description?: string;
         show?: boolean;
+      };
+    }
+  | {
+      tool: "create_chart";
+      arguments: {
+        description?: string;
+        spec: VegaLiteSpec;
       };
     };
 
@@ -76,15 +92,72 @@ type StructuredAgentAnswer = {
   sql?: string;
 };
 
+function parseJsonStringLiteral(value: string) {
+  try {
+    return JSON.parse(`"${value}"`) as string;
+  } catch {
+    return value.replace(/\\"/g, '"').replace(/\\n/g, "\n");
+  }
+}
+
+function normalizeStructuredText(value: unknown) {
+  if (typeof value === "string") {
+    return value.trim() || undefined;
+  }
+
+  if (Array.isArray(value)) {
+    const lines = value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    return lines.length > 0 ? lines.join("\n") : undefined;
+  }
+
+  return undefined;
+}
+
+function extractStructuredAnswerFields(content: string): Partial<StructuredAgentAnswer> {
+  const cleanedContent = stripCodeFence(content);
+  const answerMatch = cleanedContent.match(
+    /"answer"\s*:\s*"((?:\\.|[^"\\])*)"/,
+  );
+  const reasoningArrayMatch = cleanedContent.match(
+    /"reasoning"\s*:\s*\[([\s\S]*?)\]\s*,?\s*"sql"/,
+  );
+  const reasoningStringMatch = cleanedContent.match(
+    /"reasoning"\s*:\s*"((?:\\.|[^"\\])*)"/,
+  );
+  const sqlMatch = cleanedContent.match(/"sql"\s*:\s*"((?:\\.|[^"\\])*)"/);
+
+  const reasoning = reasoningArrayMatch
+    ? Array.from(
+        reasoningArrayMatch[1].matchAll(/"((?:\\.|[^"\\])*)"/g),
+        (match) => parseJsonStringLiteral(match[1]).trim(),
+      )
+        .filter(Boolean)
+        .join("\n")
+    : reasoningStringMatch
+      ? parseJsonStringLiteral(reasoningStringMatch[1]).trim()
+      : undefined;
+
+  return {
+    answer: answerMatch ? parseJsonStringLiteral(answerMatch[1]).trim() : undefined,
+    reasoning,
+    sql: sqlMatch ? parseJsonStringLiteral(sqlMatch[1]).trim() : undefined,
+  };
+}
+
 const defaultAlbertApiUrl =
   "https://albert.api.etalab.gouv.fr/v1/chat/completions";
 
 const datasetAssistantSystemPrompt = `Tu es un assistant d'exploration de données pour data.gouv.fr.
 Tu es un Dataset Viewer Assistant spécialisé, pas un assistant généraliste.
 Tu aides l'utilisateur à explorer et analyser un fichier tabulaire chargé localement dans DuckDB-WASM.
-Tu disposes uniquement de deux tools :
+Tu disposes uniquement de trois tools :
 - inspect_schema
 - execute_sql
+- create_chart
 
 Tool inspect_schema :
 - À utiliser avant toute requête SQL si le schéma courant n'est pas déjà disponible.
@@ -104,11 +177,20 @@ Tool execute_sql :
 - Filtre explicitement les NULL quand ils fausseraient un calcul ou une comparaison.
 - Réutilise les résultats SQL précédents quand ils suffisent ; ne relance pas une requête inutile.
 
+Tool create_chart :
+- À utiliser uniquement quand l'utilisateur demande explicitement ou implicitement un graphique, une visualisation, un diagramme, une courbe, un histogramme ou une comparaison visuelle.
+- Toujours utiliser execute_sql avant create_chart : les données du graphique doivent venir d'une requête SQL déjà exécutée.
+- La spec doit être compatible Vega-Lite et contenir data.values avec les lignes déjà retournées par execute_sql.
+- Pré-agrège toujours les données en SQL avant create_chart ; ne compte pas sur Vega-Lite pour faire les agrégations importantes.
+- Limite les axes catégoriels à 20 catégories maximum, via une requête top-N si nécessaire.
+- Filtre les valeurs NULL qui casseraient la visualisation et mentionne cette limite dans la réponse.
+
 Principes fixes :
 - Tool-aware : tu raisonnes d'abord sur la demande, puis tu utilises les tools seulement quand ils sont nécessaires.
 - Evidence-first : toute réponse factuelle sur les données doit venir du contexte de ressource, du schéma inspecté ou du résultat execute_sql.
 - Pas d'invention : tu ne devines jamais un nombre, un nom de colonne, une valeur ou une table.
 - Concision : tu réponds brièvement, avec des puces si la réponse a plusieurs parties.
+- Format tabulaire : quand le résultat est naturellement structuré en lignes et colonnes, utilise un tableau Markdown. C'est notamment le cas pour la liste des colonnes, les top-N, les classements, les distributions, les comparaisons et les exemples de lignes.
 - Sécurité : tu ne modifies jamais les données.
 
 Tu ne connais jamais le schéma à l'avance.
@@ -120,10 +202,11 @@ Quand tu réponds à une question :
 2. Décide si les tools sont nécessaires.
 3. Si la réponse dépend des données, inspecte le schéma si nécessaire.
 4. Génère puis exécute une ou plusieurs requêtes SQL si nécessaire.
-5. Explique brièvement le résultat ou la réponse directe.
+5. Si une visualisation est demandée, crée une spec graphique fondée sur le résultat SQL.
+6. Explique brièvement le résultat ou la réponse directe.
 Ne fais jamais d'hypothèse sur les noms de colonnes.
 Si une information n'existe pas dans le fichier ou n'est pas prouvée par la requête, indique-le clairement.
-Si l'utilisateur demande une visualisation, produis d'abord une requête SQL qui prépare les données au bon grain. Ne produis pas de spécification graphique : aucun tool de graphique n'est disponible dans ce POC.`;
+Si l'utilisateur demande une visualisation, produis d'abord une requête SQL qui prépare les données au bon grain, puis utilise create_chart.`;
 
 const sqlPlannerPrompt = `Tu décides de la prochaine action.
 Tu peux répondre directement uniquement si la question porte sur :
@@ -136,6 +219,9 @@ Tu peux répondre directement uniquement si la question porte sur :
 
 Si la question demande une valeur, un comptage, une liste, une distribution, un résumé du fichier, des colonnes présentes, ou toute information factuelle sur les données :
 → utilise les tools.
+
+Si la question demande seulement si une information, un champ ou une colonne existe dans le fichier :
+→ utilise inspect_schema ; execute_sql n'est nécessaire que si l'utilisateur demande ensuite une valeur calculée, un total, un top, une distribution ou des exemples de lignes.
 
 Si le schéma n'est pas disponible et que les tools sont nécessaires :
 → appelle inspect_schema.
@@ -172,6 +258,25 @@ Contraintes :
 
 Format obligatoire :
 {"action":"use_tools","tool":"execute_sql","arguments":{"description":"...","sql":"SELECT ...","show":true}}`;
+
+const chartGeneratorPrompt = `Tu génères un appel au tool create_chart.
+Les données SQL ont déjà été exécutées localement. Tu dois créer une spec Vega-Lite simple et lisible.
+
+Contraintes :
+- produire uniquement du JSON valide ;
+- utiliser uniquement les colonnes présentes dans execute_sql output ;
+- inclure data.values avec les lignes SQL fournies, sans inventer de valeur ;
+- choisir mark parmi "bar", "line", "point", "arc" ;
+- pour une comparaison catégorielle, préfère mark "bar" ;
+- pour une série temporelle, préfère mark "line" si une colonne date/timestamp existe ;
+- pour une distribution numérique, préfère mark "bar" avec les données déjà groupées par SQL ;
+- ajouter des titres lisibles aux axes ;
+- ajouter tooltip sur les champs affichés ;
+- ne pas fixer width ou height ;
+- ne pas produire de texte autour du JSON.
+
+Format obligatoire :
+{"action":"use_tools","tool":"create_chart","arguments":{"description":"...","spec":{"$schema":"https://vega.github.io/schema/vega-lite/v5.json","mark":{"type":"bar","tooltip":true},"data":{"values":[...]},"encoding":{...}}}}`;
 
 function stripCodeFence(content: string) {
   return content
@@ -229,6 +334,27 @@ function parseToolCall(content: string): AssistantToolCall {
     };
   }
 
+  if (
+    parsed.tool === "create_chart" &&
+    typeof parsed.arguments === "object" &&
+    parsed.arguments !== null &&
+    "spec" in parsed.arguments &&
+    typeof parsed.arguments.spec === "object" &&
+    parsed.arguments.spec !== null
+  ) {
+    return {
+      tool: "create_chart",
+      arguments: {
+        description:
+          "description" in parsed.arguments &&
+          typeof parsed.arguments.description === "string"
+            ? parsed.arguments.description.trim()
+            : undefined,
+        spec: parsed.arguments.spec as VegaLiteSpec,
+      },
+    };
+  }
+
   throw new Error("Le modèle n'a pas appelé un tool autorisé.");
 }
 
@@ -258,15 +384,30 @@ function parsePlannerDecision(content: string): PlannerDecision {
 
 function parseStructuredAnswer(content: string): StructuredAgentAnswer {
   try {
-    const parsed = parseJsonObject<Partial<StructuredAgentAnswer>>(content);
+    const parsed = parseJsonObject<
+      Partial<{
+        answer: unknown;
+        reasoning: unknown;
+        sql: unknown;
+      }>
+    >(content);
+    const answer = normalizeStructuredText(parsed.answer);
+    const fallbackFields = answer ? undefined : extractStructuredAnswerFields(content);
 
     return {
-      answer: parsed.answer?.trim() || stripCodeFence(content),
-      reasoning: parsed.reasoning?.trim(),
-      sql: parsed.sql?.trim(),
+      answer: answer || fallbackFields?.answer || stripCodeFence(content),
+      reasoning:
+        normalizeStructuredText(parsed.reasoning) || fallbackFields?.reasoning,
+      sql: normalizeStructuredText(parsed.sql) || fallbackFields?.sql,
     };
   } catch {
-    return { answer: stripCodeFence(content) };
+    const extractedFields = extractStructuredAnswerFields(content);
+
+    return {
+      answer: extractedFields.answer || stripCodeFence(content),
+      reasoning: extractedFields.reasoning,
+      sql: extractedFields.sql,
+    };
   }
 }
 
@@ -314,12 +455,15 @@ async function callAlbert({
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(`Albert n'a pas pu répondre. ${detail}`);
+    throw new Error(`Le service de génération n'a pas pu répondre. ${detail}`);
   }
 
   const data = (await response.json()) as AlbertChatResponse;
 
-  return data.choices?.[0]?.message?.content?.trim() ?? "";
+  return {
+    content: data.choices?.[0]?.message?.content?.trim() ?? "",
+    usage: data.usage,
+  };
 }
 
 function getConversationHistory(body: AgentRequest) {
@@ -338,7 +482,7 @@ export async function POST(request: Request) {
     return Response.json(
       {
         error:
-          "Clé API Albert absente. Ajoutez ALBERT_API_KEY dans .env.local.",
+          "Clé API du service de génération absente. Ajoutez ALBERT_API_KEY dans .env.local.",
       },
       { status: 500 },
     );
@@ -361,7 +505,7 @@ export async function POST(request: Request) {
 
   try {
     if (phase === "plan") {
-      const plannerContent = await callAlbert({
+      const plannerResponse = await callAlbert({
         apiKey,
         apiUrl,
         model,
@@ -384,19 +528,21 @@ Question utilisateur: ${question}`,
           },
         ],
       });
-      const plannerDecision = parsePlannerDecision(plannerContent);
+      const plannerDecision = parsePlannerDecision(plannerResponse.content);
 
       if (plannerDecision.action === "answer_direct") {
         return Response.json({
           answer: plannerDecision.answer,
           reasoning: plannerDecision.reasoning,
           model,
+          usage: plannerResponse.usage,
         });
       }
 
       return Response.json({
         toolCall: plannerDecision.toolCall,
         model,
+        usage: plannerResponse.usage,
       });
     }
 
@@ -408,7 +554,7 @@ Question utilisateur: ${question}`,
         );
       }
 
-      const sqlContent = await callAlbert({
+      const sqlResponse = await callAlbert({
         apiKey,
         apiUrl,
         model,
@@ -442,8 +588,53 @@ Si une requête précédente suffit déjà, génère une requête finale simple 
       });
 
       return Response.json({
-        toolCall: parseToolCall(sqlContent),
+        toolCall: parseToolCall(sqlResponse.content),
         model,
+        usage: sqlResponse.usage,
+      });
+    }
+
+    if (phase === "create_chart") {
+      if (!body.schema || !body.sql || !body.executionResult) {
+        return Response.json(
+          { error: "Le schéma, le SQL et le résultat SQL sont obligatoires." },
+          { status: 400 },
+        );
+      }
+
+      const chartResponse = await callAlbert({
+        apiKey,
+        apiUrl,
+        model,
+        messages: [
+          {
+            role: "system",
+            content: `${datasetAssistantSystemPrompt}
+
+${chartGeneratorPrompt}`,
+          },
+          {
+            role: "user",
+            content: `Ressource: ${resourceName}
+Question utilisateur: ${question}
+Tool inspect_schema output:
+${JSON.stringify(body.schema, null, 2)}
+
+SQL exécuté:
+${sanitizeSelectSql(body.sql)}
+
+Tool execute_sql output:
+${JSON.stringify(body.executionResult, null, 2)}
+
+Réponds uniquement avec le prochain appel tool create_chart en JSON.`,
+          },
+        ],
+      });
+
+      return Response.json({
+        toolCall: parseToolCall(chartResponse.content),
+        model,
+        usage: chartResponse.usage,
       });
     }
 
@@ -462,7 +653,7 @@ Si une requête précédente suffit déjà, génère une requête finale simple 
       }
 
       const finalSql = sanitizeSelectSql(sqlEvidence.at(-1)?.sql ?? "");
-      const rawAnswer = await callAlbert({
+      const answerResponse = await callAlbert({
         apiKey,
         apiUrl,
         model,
@@ -475,18 +666,20 @@ Si une requête précédente suffit déjà, génère une requête finale simple 
 La requête a déjà été exécutée avec execute_sql dans le navigateur de l'utilisateur.
 Réponds uniquement en JSON valide avec les clés :
 - answer: réponse concise dans la langue de la question utilisateur
-- reasoning: explication en langage naturel, plus détaillée que la réponse, décrivant la méthode observable
+- reasoning: chaîne de texte en langage naturel, plus détaillée que la réponse, décrivant la méthode observable. Ne retourne jamais un tableau.
 - sql: SQL exécuté
 Règles pour reasoning :
-- écris 3 à 6 phrases courtes, ou 3 à 5 puces si c'est plus lisible ;
+- écris 3 à 6 phrases courtes dans une seule chaîne JSON ;
 - explique ce que tu as compris de la question ;
-- indique que le schéma a été inspecté avant le SQL, avec les colonnes utiles retenues ;
-- indique pourquoi la requête SQL exécutée répond à la question ;
+- indique que j'ai vérifié la structure du fichier avant d'analyser les données, avec les colonnes utiles retenues ;
+- indique pourquoi l'analyse effectuée répond à la question ;
 - mentionne les limites visibles : LIMIT, valeurs NULL filtrées, top-N, colonnes absentes ou résultat vide ;
 - reste en langage naturel, sans jargon inutile ;
+- ne mentionne pas Albert, DuckDB-WASM, inspect_schema ou execute_sql dans answer ou reasoning ;
 - ne révèle pas de chaîne de pensée interne, ne spécule pas, et ne mentionne que les preuves fournies.
 Règles de synthèse :
 - commence par le résultat concret ;
+- utilise un tableau Markdown lorsque la réponse est naturellement tabulaire : colonnes du fichier, top-N, classement, distribution, comparaison ou exemples de lignes ;
 - ne mentionne que les nombres et valeurs présents dans execute_sql output ;
 - si le résultat est limité, dis que la sortie affichée est limitée ;
 - si la question ne peut pas être tranchée avec les colonnes disponibles, dis-le clairement ;
@@ -506,16 +699,17 @@ ${JSON.stringify(sqlEvidence, null, 2)}`,
           },
         ],
       });
-      const structuredAnswer = rawAnswer
-        ? parseStructuredAnswer(rawAnswer)
+      const structuredAnswer = answerResponse.content
+        ? parseStructuredAnswer(answerResponse.content)
         : {
-            answer: "Albert n'a pas retourné de réponse exploitable.",
+            answer: "Je n’ai pas reçu de réponse exploitable.",
           };
 
       return Response.json({
         ...structuredAnswer,
         sql: structuredAnswer.sql ?? finalSql,
         model,
+        usage: answerResponse.usage,
       });
     }
 

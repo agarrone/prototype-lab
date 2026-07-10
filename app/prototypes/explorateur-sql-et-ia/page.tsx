@@ -25,6 +25,7 @@ import {
   RiCheckLine,
   RiCloseLine,
   RiCodeAiLine,
+  RiDashboard2Line,
   RiDownloadLine,
   RiDatabase2Line,
   RiErrorWarningLine,
@@ -84,9 +85,9 @@ const resourceSidebarDefaultWidth = 300;
 const resourceSidebarMinWidth = 260;
 const resourceSidebarMaxWidth = 560;
 const collapsedResourceSidebarWidth = 48;
-const chatSidebarDefaultWidth = 408;
+const chatSidebarDefaultWidth = 500;
 const chatSidebarMinWidth = 340;
-const chatSidebarMaxWidth = 560;
+const chatSidebarMaxWidth = 640;
 
 function clampResourceSidebarWidth(width: number) {
   return Math.min(
@@ -124,6 +125,9 @@ const resources: Resource[] = [
     tabs: ["Aperçu", "Description", "Structure des données", "Métadonnées", "API"],
   },
 ];
+
+const defaultParquetFileUrl =
+  "https://hydra.s3.rbx.io.cloud.ovh.net/parquet/f868cca6-8da1-4369-a78d-47463f19a9a3.parquet";
 
 const downloadGroups = [
   {
@@ -1399,6 +1403,7 @@ const icons = {
   check: RiCheckLine,
   close: RiCloseLine,
   codeAi: RiCodeAiLine,
+  dashboard: RiDashboard2Line,
   conform: RiCheckboxCircleLine,
   arrowDown: RiArrowDownLine,
   arrowDownS: RiArrowDownSLine,
@@ -3544,6 +3549,12 @@ type AssistantProposedAction =
       payload?: Record<string, never>;
     };
 
+type TokenUsage = {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+};
+
 type AgentResponse = {
   intent: AssistantIntent;
   answer: string;
@@ -3562,6 +3573,7 @@ type AgentResponse = {
   needsClarification?: boolean;
   clarificationOptions?: AssistantFilterPayload[];
   model?: string;
+  usage?: TokenUsage;
   status: "success" | "ambiguous" | "empty" | "unable" | "error";
 };
 
@@ -3577,6 +3589,13 @@ type AssistantToolCall =
         description?: string;
         show?: boolean;
       };
+    }
+  | {
+      tool: "create_chart";
+      arguments: {
+        description?: string;
+        spec: VegaLiteSpec;
+      };
     };
 
 type AgentPhaseResponse = {
@@ -3585,6 +3604,7 @@ type AgentPhaseResponse = {
   reasoning?: string;
   sql?: string;
   model?: string;
+  usage?: TokenUsage;
   error?: string;
 };
 
@@ -3594,12 +3614,15 @@ type SqlExecutionEvidence = {
   result: ExecuteSqlResult;
 };
 
+type VegaLiteSpec = Record<string, unknown>;
+
 type AssistantChartSpec = {
   type: "bar" | "line" | "histogram" | "map";
   title: string;
   xKey: string;
   yKey: string;
   data: Record<string, unknown>[];
+  spec?: VegaLiteSpec;
 };
 
 type AssistantMessage = {
@@ -3616,9 +3639,8 @@ type AssistantActionHandlers = {
 
 function getAssistantStarterQuestions() {
   return [
-    "Explique-moi la structure du dataset",
-    "Quelles sont les valeurs les plus fréquentes ?",
-    "Liste les 10 principales catégories",
+    "Explique moi ton fonctionnement",
+    "Quelles sont les colonnes de ce jeu de données ?",
   ];
 }
 
@@ -3629,11 +3651,11 @@ const assistantLoadingSteps = [
   },
   {
     label: "Choix des tools",
-    detail: "inspect_schema ou execute_sql sont préparés si besoin.",
+    detail: "Je prépare l’action adaptée si les données sont nécessaires.",
   },
   {
     label: "Exécution locale",
-    detail: "DuckDB-WASM interroge le Parquet dans le navigateur.",
+    detail: "J’analyse le fichier directement dans le navigateur.",
   },
   {
     label: "Rédaction",
@@ -3658,81 +3680,113 @@ function normalizePreviewValue(value: unknown) {
   return String(value);
 }
 
-function ModelTokenUsage({
-  model,
-  used,
-  limit,
-}: {
-  model: string;
-  used: number;
-  limit: number;
-}) {
-  const percentUsed = Math.min(100, Math.round((used / limit) * 100));
-  const circumference = 2 * Math.PI * 7;
-  const strokeDashoffset = circumference * (1 - percentUsed / 100);
+function mergeTokenUsage(...usages: (TokenUsage | undefined)[]) {
+  const totals = usages.reduce<TokenUsage>((accumulator, usage) => {
+    if (!usage) {
+      return accumulator;
+    }
+
+    return {
+      prompt_tokens:
+        (accumulator.prompt_tokens ?? 0) + (usage.prompt_tokens ?? 0),
+      completion_tokens:
+        (accumulator.completion_tokens ?? 0) +
+        (usage.completion_tokens ?? 0),
+      total_tokens:
+        (accumulator.total_tokens ?? 0) + (usage.total_tokens ?? 0),
+    };
+  }, {});
+
+  return totals.total_tokens || totals.prompt_tokens || totals.completion_tokens
+    ? totals
+    : undefined;
+}
+
+function getTokenTotal(usage?: TokenUsage) {
+  if (!usage) {
+    return null;
+  }
+
+  if (typeof usage.total_tokens === "number") {
+    return usage.total_tokens;
+  }
+
+  const computedTotal =
+    (usage.prompt_tokens ?? 0) + (usage.completion_tokens ?? 0);
+
+  return computedTotal > 0 ? computedTotal : null;
+}
+
+function TokenUsageToggle({ usage }: { usage?: TokenUsage }) {
+  const totalTokens = getTokenTotal(usage);
 
   return (
-    <div className="flex h-6 items-center gap-1 text-[13px] leading-[1.4] text-[#5d5d5d]">
+    <div className="flex h-6 items-center gap-1 text-[12px] leading-[1.4] text-[#5d5d5d]">
       <details className="relative">
         <summary
           className="flex h-6 w-6 cursor-pointer list-none items-center justify-center rounded hover:bg-[#eeeeee] [&::-webkit-details-marker]:hidden"
-          aria-label={`${percentUsed}% des tokens utilisés`}
+          aria-label={
+            totalTokens
+              ? `${totalTokens.toLocaleString("fr-FR")} tokens utilisés`
+              : "Tokens indisponibles"
+          }
           title="Tokens utilisés"
         >
-          <span className="relative flex h-4 w-4 items-center justify-center">
-            <svg
-              aria-hidden="true"
-              className="h-4 w-4 -rotate-90"
-              viewBox="0 0 18 18"
-            >
-              <circle
-                cx="9"
-                cy="9"
-                r="7"
-                fill="none"
-                stroke="#dddddd"
-                strokeWidth="2"
-              />
-              <circle
-                cx="9"
-                cy="9"
-                r="7"
-                fill="none"
-                stroke="#000091"
-                strokeLinecap="round"
-                strokeWidth="2"
-                strokeDasharray={circumference}
-                strokeDashoffset={strokeDashoffset}
-              />
-            </svg>
-            <span className="absolute h-1.5 w-1.5 rounded-full bg-[#5d5d5d]" />
-          </span>
+          <Icon
+            path={icons.dashboard}
+            className={`h-4 w-4 ${
+              totalTokens ? "text-[#5d5d5d]" : "text-[#929292]"
+            }`}
+          />
         </summary>
-        <div className="absolute bottom-7 left-0 z-20 w-[184px] rounded border border-[#E5E5E5] bg-[#FFFFFF] p-2 shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]">
-          <div className="flex items-center justify-between text-[11px] leading-4 text-[#5d5d5d]">
-            <span>Tokens utilisés</span>
-            <span>{percentUsed}%</span>
-          </div>
-          <div className="mt-1 h-1 overflow-hidden rounded bg-[#eeeeee]">
-            <div
-              className="h-full rounded bg-[#000091]"
-              style={{ width: `${percentUsed}%` }}
-            />
-          </div>
-          <p className="mt-1 text-[11px] leading-4 text-[#5d5d5d]">
-            {used.toLocaleString("fr-FR")} / {limit.toLocaleString("fr-FR")}
-          </p>
-        </div>
-      </details>
-      <details className="relative">
-        <summary className="flex h-6 cursor-pointer list-none items-center rounded px-1 hover:bg-[#eeeeee] [&::-webkit-details-marker]:hidden">
-          {model}
-        </summary>
-        <div className="absolute bottom-7 left-0 z-20 w-[148px] rounded border border-[#E5E5E5] bg-[#FFFFFF] p-2 text-[11px] leading-4 text-[#5d5d5d] shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]">
-          Modèle actif
+        <div className="absolute bottom-7 left-0 z-20 w-[220px] rounded border border-[#E5E5E5] bg-[#FFFFFF] p-2 shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]">
+          {totalTokens ? (
+            <>
+              <p className="mb-1 text-[11px] font-medium leading-4 text-[#161616]">
+                Nombre de tokens utilisés
+              </p>
+              {typeof usage?.prompt_tokens === "number" ? (
+                <div className="mt-1 flex items-center justify-between text-[11px] leading-4 text-[#5d5d5d]">
+                  <span>Prompt</span>
+                  <span>{usage.prompt_tokens.toLocaleString("fr-FR")}</span>
+                </div>
+              ) : null}
+              {typeof usage?.completion_tokens === "number" ? (
+                <div className="mt-1 flex items-center justify-between text-[11px] leading-4 text-[#5d5d5d]">
+                  <span>Réponse</span>
+                  <span>{usage.completion_tokens.toLocaleString("fr-FR")}</span>
+                </div>
+              ) : null}
+              <div className="mt-2 flex items-center justify-between border-t border-[#E5E5E5] pt-1 text-[11px] font-medium leading-4 text-[#161616]">
+                <span>Total</span>
+                <span>{totalTokens.toLocaleString("fr-FR")}</span>
+              </div>
+            </>
+          ) : (
+            <p className="text-[11px] leading-4 text-[#5d5d5d]">
+              Nombre de tokens utilisés indisponible
+            </p>
+          )}
         </div>
       </details>
     </div>
+  );
+}
+
+function ModelInfoChip() {
+  return (
+    <details className="relative">
+      <summary
+        className="flex h-6 max-w-[150px] cursor-pointer list-none items-center rounded-full border border-[#CECECE] bg-transparent px-2 text-[12px] leading-4 text-[#3a3a3a] hover:bg-[#eeeeee] [&::-webkit-details-marker]:hidden"
+        aria-label="Informations sur le modèle gpt-oss-120b"
+        title="Informations sur le modèle"
+      >
+        <span className="truncate">gpt-oss-120b</span>
+      </summary>
+      <div className="absolute bottom-7 left-0 z-20 w-[230px] rounded border border-[#E5E5E5] bg-[#FFFFFF] p-2 text-[11px] leading-4 text-[#5d5d5d] shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]">
+        Modèle open source exécuté sur une infrastructure opérée par la DINUM.
+      </div>
+    </details>
   );
 }
 
@@ -3924,11 +3978,145 @@ function renderAssistantMarkdown(content: string) {
   return nodes.length > 0 ? nodes : content;
 }
 
+function escapeSvgText(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function createChartSvg(chart: AssistantChartSpec) {
+  const chartRows = chart.data.slice(0, 8).map((item, index) => ({
+    label: String(item[chart.xKey] ?? `Valeur ${index + 1}`),
+    value: Number(item[chart.yKey]),
+  }));
+  const values = chartRows
+    .map((item) => item.value)
+    .filter((value) => Number.isFinite(value));
+  const maxValue = Math.max(...values, 1);
+  const width = 760;
+  const rowHeight = 30;
+  const topPadding = 54;
+  const leftPadding = 172;
+  const rightPadding = 92;
+  const bottomPadding = 24;
+  const height = topPadding + chartRows.length * rowHeight + bottomPadding;
+  const barWidth = width - leftPadding - rightPadding;
+
+  const rowsMarkup = chartRows
+    .map((item, index) => {
+      const y = topPadding + index * rowHeight;
+      const value = Number.isFinite(item.value) ? item.value : 0;
+      const filledWidth = Math.max(3, Math.round((value / maxValue) * barWidth));
+
+      return `
+        <text x="16" y="${y + 16}" font-family="system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" fill="#5d5d5d">${escapeSvgText(item.label.slice(0, 42))}</text>
+        <rect x="${leftPadding}" y="${y + 6}" width="${barWidth}" height="8" rx="4" fill="#eeeeee" />
+        <rect x="${leftPadding}" y="${y + 6}" width="${filledWidth}" height="8" rx="4" fill="#000091" />
+        <text x="${width - 16}" y="${y + 16}" text-anchor="end" font-family="system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" fill="#3a3a3a">${Number.isFinite(item.value) ? item.value.toLocaleString("fr-FR") : "-"}</text>
+      `;
+    })
+    .join("");
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+    <rect width="100%" height="100%" fill="#ffffff" />
+    <text x="16" y="28" font-family="system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="15" font-weight="600" fill="#161616">${escapeSvgText(chart.title)}</text>
+    <text x="16" y="44" font-family="system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#666666">${escapeSvgText(chart.type)}</text>
+    ${rowsMarkup}
+  </svg>`;
+}
+
+async function copySvgChart(chart: AssistantChartSpec) {
+  const svg = createChartSvg(chart);
+
+  try {
+    if ("ClipboardItem" in window && navigator.clipboard?.write) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "image/svg+xml": new Blob([svg], { type: "image/svg+xml" }),
+          "text/plain": new Blob([svg], { type: "text/plain" }),
+        }),
+      ]);
+      return;
+    }
+  } catch {
+    // Some browsers expose ClipboardItem but reject image/svg+xml.
+  }
+
+  await navigator.clipboard?.writeText(svg);
+}
+
+async function copyJpgChart(chart: AssistantChartSpec) {
+  const svg = createChartSvg(chart);
+  const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
+  const objectUrl = URL.createObjectURL(svgBlob);
+
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const nextImage = document.createElement("img");
+      nextImage.onload = () => resolve(nextImage);
+      nextImage.onerror = reject;
+      nextImage.src = objectUrl;
+    });
+    const canvas = document.createElement("canvas");
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      throw new Error("Canvas indisponible.");
+    }
+
+    context.fillStyle = "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0);
+
+    const jpgBlob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            resolve(blob);
+            return;
+          }
+
+          reject(new Error("Impossible de créer l'image JPG."));
+        },
+        "image/jpeg",
+        0.92,
+      );
+    });
+
+    await navigator.clipboard.write([
+      new ClipboardItem({ "image/jpeg": jpgBlob }),
+    ]);
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+}
+
 function AssistantChart({ chart }: { chart: AssistantChartSpec }) {
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const values = chart.data
     .map((item) => Number(item[chart.yKey]))
     .filter((value) => Number.isFinite(value));
   const maxValue = Math.max(...values, 1);
+
+  async function copyChart(format: "jpg" | "svg") {
+    try {
+      if (format === "svg") {
+        await copySvgChart(chart);
+      } else {
+        await copyJpgChart(chart);
+      }
+
+      setCopyStatus(format === "svg" ? "SVG copié" : "JPG copié");
+    } catch {
+      setCopyStatus("Copie impossible");
+    }
+
+    window.setTimeout(() => setCopyStatus(null), 1600);
+  }
 
   return (
     <div className="rounded border border-[#E5E5E5] bg-[#FFFFFF] p-3">
@@ -3936,9 +4124,41 @@ function AssistantChart({ chart }: { chart: AssistantChartSpec }) {
         <p className="min-w-0 truncate text-[12px] font-medium text-[#161616]">
           {chart.title}
         </p>
-        <span className="shrink-0 rounded bg-[#f6f6f6] px-1.5 py-0.5 text-[11px] text-[#5d5d5d]">
-          {chart.type}
-        </span>
+        <div className="flex shrink-0 items-center gap-1">
+          <span className="rounded bg-[#f6f6f6] px-1.5 py-0.5 text-[11px] text-[#5d5d5d]">
+            {chart.type}
+          </span>
+          <details className="relative">
+            <summary
+              className="flex h-6 w-6 cursor-pointer list-none items-center justify-center rounded text-[#5d5d5d] hover:bg-[#f6f6f6] hover:text-[#161616] [&::-webkit-details-marker]:hidden"
+              aria-label="Copier le graphique"
+              title="Copier le graphique"
+            >
+              <Icon path={icons.copy} className="h-3.5 w-3.5" />
+            </summary>
+            <div className="absolute right-0 top-7 z-20 w-[150px] rounded border border-[#E5E5E5] bg-[#FFFFFF] p-1 shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]">
+              <button
+                type="button"
+                onClick={() => void copyChart("jpg")}
+                className="flex h-7 w-full items-center px-2 text-left text-[12px] leading-4 text-[#3a3a3a] hover:bg-[#f6f6f6]"
+              >
+                Copier en JPG
+              </button>
+              <button
+                type="button"
+                onClick={() => void copyChart("svg")}
+                className="flex h-7 w-full items-center px-2 text-left text-[12px] leading-4 text-[#3a3a3a] hover:bg-[#f6f6f6]"
+              >
+                Copier en SVG
+              </button>
+              {copyStatus ? (
+                <p className="border-t border-[#E5E5E5] px-2 py-1 text-[11px] leading-4 text-[#5d5d5d]">
+                  {copyStatus}
+                </p>
+              ) : null}
+            </div>
+          </details>
+        </div>
       </div>
       <div className="space-y-2">
         {chart.data.slice(0, 8).map((item, index) => {
@@ -3968,6 +4188,202 @@ function AssistantChart({ chart }: { chart: AssistantChartSpec }) {
   );
 }
 
+function shouldCreateChart(question: string) {
+  return /\b(graphique|graphe|graph|visualis|visualis|diagramme|courbe|histogramme|barres?|camembert|chart|plot)\b/i.test(
+    question,
+  );
+}
+
+function getVegaField(channel: unknown) {
+  if (
+    typeof channel === "object" &&
+    channel !== null &&
+    "field" in channel &&
+    typeof channel.field === "string"
+  ) {
+    return channel.field;
+  }
+
+  return undefined;
+}
+
+function getVegaMarkType(mark: unknown): AssistantChartSpec["type"] {
+  const markType =
+    typeof mark === "string"
+      ? mark
+      : typeof mark === "object" &&
+          mark !== null &&
+          "type" in mark &&
+          typeof mark.type === "string"
+        ? mark.type
+        : "bar";
+
+  if (markType === "line") {
+    return "line";
+  }
+
+  if (markType === "arc") {
+    return "bar";
+  }
+
+  if (markType === "point") {
+    return "bar";
+  }
+
+  return "bar";
+}
+
+function chartFromVegaSpec(
+  spec: VegaLiteSpec,
+  fallbackData: Record<string, unknown>[],
+  fallbackTitle: string,
+): AssistantChartSpec {
+  const data = spec.data;
+  const values =
+    typeof data === "object" &&
+    data !== null &&
+    "values" in data &&
+    Array.isArray(data.values)
+      ? data.values.filter(
+          (item): item is Record<string, unknown> =>
+            typeof item === "object" && item !== null,
+        )
+      : fallbackData;
+  const encoding =
+    typeof spec.encoding === "object" && spec.encoding !== null
+      ? (spec.encoding as Record<string, unknown>)
+      : {};
+  const firstRow = values[0] ?? {};
+  const fields = Object.keys(firstRow);
+  const xKey = getVegaField(encoding.x) ?? fields[0] ?? "label";
+  const yKey = getVegaField(encoding.y) ?? fields[1] ?? "value";
+  const title =
+    typeof spec.title === "string" && spec.title.trim()
+      ? spec.title.trim()
+      : fallbackTitle;
+
+  return {
+    type: getVegaMarkType(spec.mark),
+    title,
+    xKey,
+    yKey,
+    data: values,
+    spec,
+  };
+}
+
+function normalizeSchemaSearchText(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9._]+/g, " ")
+    .trim();
+}
+
+const schemaLookupStopWords = new Set([
+  "a",
+  "au",
+  "aux",
+  "avec",
+  "ce",
+  "cette",
+  "ces",
+  "dans",
+  "de",
+  "des",
+  "du",
+  "elle",
+  "en",
+  "est",
+  "et",
+  "fichier",
+  "il",
+  "jeu",
+  "jeux",
+  "la",
+  "le",
+  "les",
+  "nombre",
+  "on",
+  "ou",
+  "pour",
+  "qu",
+  "que",
+  "qui",
+  "sur",
+  "un",
+  "une",
+  "y",
+]);
+
+const schemaLookupTermExpansions: Record<string, string[]> = {
+  telechargement: ["download", "downloads"],
+  telechargements: ["download", "downloads"],
+  vue: ["view", "views"],
+  vues: ["view", "views"],
+  ressource: ["resource", "resources"],
+  ressources: ["resource", "resources"],
+  organisation: ["organization"],
+  organisations: ["organization"],
+  licence: ["license"],
+};
+
+function getSchemaLookupTerms(question: string) {
+  const normalizedQuestion = normalizeSchemaSearchText(question);
+  const baseTerms = normalizedQuestion
+    .split(/\s+/)
+    .map((term) => term.trim())
+    .filter((term) => term.length > 2 && !schemaLookupStopWords.has(term));
+
+  return Array.from(
+    new Set(
+      baseTerms.flatMap((term) => [
+        term,
+        term.replace(/s$/, ""),
+        ...(schemaLookupTermExpansions[term] ?? []),
+      ]),
+    ),
+  ).filter((term) => term.length > 2);
+}
+
+function isSchemaLookupQuestion(question: string) {
+  const normalizedQuestion = normalizeSchemaSearchText(question);
+
+  return /\b(est ce|existe|contient|dispose|presence|present|champ|champs|colonne|colonnes|information|infos|donnee|donnees|a t il|a il|y a)\b/.test(
+    normalizedQuestion,
+  );
+}
+
+function getSchemaColumnMatches(question: string, schema: InspectSchemaResult) {
+  const terms = getSchemaLookupTerms(question);
+
+  return schema.columns
+    .map((column) => {
+      const normalizedColumnName = normalizeSchemaSearchText(column.name);
+      const normalizedExamples = column.examples
+        .slice(0, 3)
+        .map((example) => normalizeSchemaSearchText(String(example)))
+        .join(" ");
+      const score = terms.reduce((currentScore, term) => {
+        if (normalizedColumnName.includes(term)) {
+          return currentScore + 3;
+        }
+
+        if (normalizedExamples.includes(term)) {
+          return currentScore + 1;
+        }
+
+        return currentScore;
+      }, 0);
+
+      return { column, score };
+    })
+    .filter((match) => match.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .map((match) => match.column);
+}
+
 function ChatSidebar({
   activeResource,
   onApplyFilter,
@@ -3984,12 +4400,32 @@ function ChatSidebar({
   const [appliedActionMessageIds, setAppliedActionMessageIds] = useState<
     string[]
   >([]);
+  const [messageFeedback, setMessageFeedback] = useState<
+    Record<string, "up" | "down">
+  >({});
   const [isAgentLoading, setIsAgentLoading] = useState(false);
   const [loadingStepIndex, setLoadingStepIndex] = useState(0);
   const [chatSidebarWidth, setChatSidebarWidth] = useState(chatSidebarDefaultWidth);
+  const [lastTokenUsage, setLastTokenUsage] = useState<TokenUsage | undefined>();
   const starterQuestions = useMemo(() => getAssistantStarterQuestions(), []);
   const inspectedSchemaRef = useRef<InspectSchemaResult | null>(null);
   const messageIdCounterRef = useRef(0);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const scrollContainer = chatScrollRef.current;
+
+    if (!scrollContainer) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      scrollContainer.scrollTo({
+        top: scrollContainer.scrollHeight,
+        behavior: "smooth",
+      });
+    });
+  }, [messages.length, isAgentLoading, loadingStepIndex]);
 
   function startChatSidebarResize(event: ReactMouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -4029,6 +4465,7 @@ function ChatSidebar({
       needsClarification: response.needsClarification,
       clarificationOptions: response.clarificationOptions,
       model: response.model,
+      usage: response.usage,
       status: response.status ?? "success",
     };
   }
@@ -4080,6 +4517,7 @@ function ChatSidebar({
         reasoning: plan.reasoning,
         proposedAction: { type: "none" },
         model: plan.model,
+        usage: plan.usage,
         status: "success",
       });
     }
@@ -4096,8 +4534,48 @@ function ChatSidebar({
       summary: `${schema.columns.length} colonnes et ${Number(schema.rows).toLocaleString("fr-FR")} lignes inspectées localement.`,
     });
 
+    if (/\bcolonnes?\b/i.test(question) || isSchemaLookupQuestion(question)) {
+      const matchingColumns = /\bcolonnes?\b/i.test(question)
+        ? schema.columns
+        : getSchemaColumnMatches(question, schema);
+      const hasMatches = matchingColumns.length > 0;
+      const columnTable = [
+        "| Colonne | Type DuckDB | Exemples |",
+        "|---|---:|---|",
+        ...matchingColumns.map((column) => {
+          const examples = column.examples
+            .slice(0, 3)
+            .map((example) => `\`${String(example)}\``)
+            .join(", ");
+
+          return `| \`${column.name}\` | ${column.type} | ${examples || "-"} |`;
+        }),
+      ].join("\n");
+      const columnNames = matchingColumns
+        .map((column) => `\`${column.name}\``)
+        .join(", ");
+
+      return normalizeRemoteResponse({
+        intent: "explain_structure",
+        answer: hasMatches
+          ? /\bcolonnes?\b/i.test(question)
+            ? `Ce jeu de données contient ${schema.columns.length} colonnes.\n\n${columnTable}`
+            : `Oui, le schéma contient ${matchingColumns.length} colonne${matchingColumns.length > 1 ? "s" : ""} qui semble${matchingColumns.length > 1 ? "nt" : ""} correspondre à cette information.\n\n${columnTable}`
+          : "Je n’ai pas trouvé de colonne correspondant clairement à cette information dans le schéma inspecté.",
+        reasoning:
+          hasMatches
+            ? `La question porte sur la présence d’une information dans le fichier. J’ai vérifié la structure disponible, puis j’ai recherché les colonnes dont le nom ou les exemples correspondent aux termes de la demande. J’ai présenté les résultats sous forme de tableau, car cette réponse est naturellement structurée en colonnes. Je n’ai pas calculé de valeur : ici, il s’agit seulement de vérifier si l’information existe dans le fichier. Colonnes retenues : ${columnNames}.`
+            : "La question porte sur la présence d’une information dans le fichier. J’ai vérifié les colonnes disponibles et leurs exemples de valeurs. Aucune colonne ne correspond clairement aux termes de la demande, donc je l’indique sans inventer de champ.",
+        toolTrace,
+        proposedAction: { type: "none" },
+        usage: plan.usage,
+        status: "success",
+      });
+    }
+
     const sqlEvidence: SqlExecutionEvidence[] = [];
     let finalModel = plan.model;
+    let totalUsage = plan.usage;
 
     for (let queryIndex = 0; queryIndex < 3; queryIndex += 1) {
       const sqlPlan = await callAgentPhase({
@@ -4108,6 +4586,7 @@ function ChatSidebar({
       });
 
       finalModel = sqlPlan.model ?? finalModel;
+      totalUsage = mergeTokenUsage(totalUsage, sqlPlan.usage);
 
       if (sqlPlan.toolCall?.tool !== "execute_sql") {
         throw new Error("Le modèle doit appeler execute_sql après inspection du schéma.");
@@ -4128,7 +4607,7 @@ function ChatSidebar({
       toolTrace.push({
         tool: "execute_sql",
         description: sqlDescription,
-        summary: `${executionResult.rowCount} lignes retournées par DuckDB-WASM dans le navigateur.`,
+        summary: `${executionResult.rowCount} lignes retournées par l'analyse locale.`,
         show: shouldShow,
       });
 
@@ -4141,6 +4620,41 @@ function ChatSidebar({
 
     if (!finalEvidence) {
       throw new Error("Aucune requête SQL n'a été exécutée.");
+    }
+
+    let generatedChart: AssistantChartSpec | undefined;
+
+    if (shouldCreateChart(question)) {
+      const chartPlan = await callAgentPhase({
+        phase: "create_chart",
+        question,
+        schema,
+        sql: finalEvidence.sql,
+        executionResult: finalEvidence.result,
+      });
+
+      totalUsage = mergeTokenUsage(totalUsage, chartPlan.usage);
+
+      if (chartPlan.toolCall?.tool !== "create_chart") {
+        throw new Error("Le modèle doit appeler create_chart pour produire un graphique.");
+      }
+
+      const chartDescription =
+        chartPlan.toolCall.arguments.description ||
+        "Créer une visualisation à partir du résultat SQL.";
+      const chartData = executionRowsToRecords(finalEvidence.result);
+
+      generatedChart = chartFromVegaSpec(
+        chartPlan.toolCall.arguments.spec,
+        chartData,
+        chartDescription,
+      );
+      toolTrace.push({
+        tool: "create_chart",
+        description: chartDescription,
+        summary: `${generatedChart.data.length} lignes utilisées pour générer le graphique.`,
+        show: true,
+      });
     }
 
     const finalAnswer = await callAgentPhase({
@@ -4158,10 +4672,12 @@ function ChatSidebar({
         "Je n’ai pas reçu de réponse exploitable pour cette question.",
       reasoning: finalAnswer.reasoning,
       sql: finalAnswer.sql ?? finalEvidence.sql,
+      chart: generatedChart,
       queryRows: executionRowsToRecords(finalEvidence.result).slice(0, 12),
       toolTrace,
       proposedAction: { type: "none" },
       model: finalAnswer.model ?? finalModel,
+      usage: mergeTokenUsage(totalUsage, finalAnswer.usage),
       status: "success",
     });
   }
@@ -4227,11 +4743,11 @@ function ChatSidebar({
         response = {
           intent: "unable",
           answer:
-            "Je n’ai pas pu finaliser l’analyse avec le modèle et DuckDB-WASM.",
+            "Je n’ai pas pu finaliser l’analyse.",
           reasoning:
             error instanceof Error
-              ? `J’ai bien reçu la question et j’ai lancé le flux normal de l’assistant. L’analyse devait d’abord passer par le modèle, puis par les tools locaux si les données étaient nécessaires. Le flux s’est interrompu avant d’obtenir une réponse exploitable : ${error.message}`
-              : "J’ai bien reçu la question et j’ai lancé le flux normal de l’assistant. L’analyse s’est interrompue avant que le modèle ou les tools locaux ne retournent une réponse exploitable.",
+              ? `J’ai bien reçu la question et j’ai lancé l’analyse. Le flux s’est interrompu avant d’obtenir une réponse exploitable : ${error.message}`
+              : "J’ai bien reçu la question et j’ai lancé l’analyse, mais le flux s’est interrompu avant d’obtenir une réponse exploitable.",
           proposedAction: { type: "none" },
           status: "error",
         };
@@ -4251,8 +4767,14 @@ function ChatSidebar({
       if (response.proposedAction.type === "apply_filter") {
         applyResponseAction(response, assistantMessageId);
       }
+      setLastTokenUsage(response.usage);
       setIsAgentLoading(false);
     })();
+  }
+
+  function submitStarterQuestion(question: string) {
+    setAgentQuestion(question);
+    submitAgentQuestion(question);
   }
 
   return (
@@ -4288,26 +4810,28 @@ function ChatSidebar({
           onClick={onClose}
           className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center rounded text-[#161616] transition-colors hover:bg-[#eeeeee]"
         >
-          <Icon path={icons.sidebarFold} className="h-4 w-4" />
+          <Icon path={icons.sidebarUnfold} className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto bg-[#FFFFFF] px-2 py-3">
+      <div
+        ref={chatScrollRef}
+        className="min-h-0 flex-1 overflow-auto bg-[#FFFFFF] px-2 py-3"
+      >
         {messages.length === 0 ? (
           <div className="flex min-h-full flex-col justify-end pb-2">
             <p className="px-1 text-[14px] font-semibold leading-[1.4] text-[#161616]">
               Assistant d’exploration de données
             </p>
             <p className="mt-1 px-1 text-[13px] leading-5 text-[#5d5d5d]">
-              Posez une question sur cette ressource. Les calculs sont exécutés
-              localement avec DuckDB-WASM quand les données sont nécessaires.
+              Posez une question sur ces données.
             </p>
             <div className="mt-2 flex flex-wrap gap-1.5">
               {starterQuestions.map((question) => (
                 <button
                   key={question}
                   type="button"
-                  onClick={() => submitAgentQuestion(question)}
+                  onClick={() => submitStarterQuestion(question)}
                   className="min-h-7 max-w-full cursor-pointer rounded-full border border-[#E5E5E5] bg-[#FFFFFF] px-2.5 py-1 text-left text-[12px] leading-[1.35] text-[#3a3a3a] transition-colors hover:border-[#000091] hover:bg-[#e8edff] hover:text-[#000091]"
                 >
                   {question}
@@ -4325,9 +4849,9 @@ function ChatSidebar({
                   </p>
                 </div>
               ) : (
-                <div key={message.id} className="space-y-2">
+                <div key={message.id} className="flex flex-col gap-2">
                   {message.response?.reasoning ? (
-                    <details className="rounded border border-[#E5E5E5] bg-[#fcfcfc]">
+                    <details className="order-1 rounded border border-[#E5E5E5] bg-[#fcfcfc]">
                       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-[12px] font-medium text-[#3a3a3a] [&::-webkit-details-marker]:hidden">
                         <span className="flex min-w-0 items-center gap-2">
                           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#eeeeee]">
@@ -4345,7 +4869,7 @@ function ChatSidebar({
                     </details>
                   ) : null}
                   {message.response?.toolTrace?.length || message.response?.sql ? (
-                    <details className="rounded border border-[#E5E5E5] bg-[#fcfcfc]">
+                    <details className="order-2 rounded border border-[#E5E5E5] bg-[#fcfcfc]">
                       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-[12px] font-medium text-[#3a3a3a] [&::-webkit-details-marker]:hidden">
                         <span className="flex min-w-0 items-center gap-2">
                           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#eeeeee]">
@@ -4412,17 +4936,7 @@ function ChatSidebar({
                       </div>
                     </details>
                   ) : null}
-                  <div className="rounded border border-[#E5E5E5] bg-[#FFFFFF] p-3 text-[13px] leading-5 text-[#161616] shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
-                    <div className="mb-2 flex items-center justify-between gap-2">
-                      <span className="text-[11px] font-bold uppercase leading-4 text-[#666666]">
-                        Réponse
-                      </span>
-                      {message.response?.model ? (
-                        <span className="max-w-[170px] truncate rounded bg-[#f6f6f6] px-1.5 py-0.5 text-[11px] leading-4 text-[#666666]">
-                          {message.response.model}
-                        </span>
-                      ) : null}
-                    </div>
+                  <div className="order-3 rounded border border-[#E5E5E5] bg-[#FFFFFF] p-3 text-[13px] leading-5 text-[#161616] shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
                     <div className="space-y-2">{renderAssistantMarkdown(message.content)}</div>
                     {message.response?.proposedAction.type === "apply_filter" ? (
                       <div className="mt-3 rounded border border-[#E5E5E5] bg-[#f6f6f6] p-2">
@@ -4530,64 +5044,72 @@ function ChatSidebar({
                     ) : null}
                   </div>
                   {message.response?.chart ? (
-                    <AssistantChart chart={message.response.chart} />
+                    <div className="order-4">
+                      <AssistantChart chart={message.response.chart} />
+                    </div>
                   ) : null}
-                  <div className="flex gap-1">
+                  <div className="order-5 flex gap-1">
                     <button
                       type="button"
                       aria-label="Réponse utile"
                       title="Réponse utile"
+                      onClick={() =>
+                        setMessageFeedback((current) => ({
+                          ...current,
+                          [message.id]: "up",
+                        }))
+                      }
                       className="flex h-6 w-6 items-center justify-center rounded text-[#5d5d5d] hover:bg-[#f6f6f6] hover:text-[#000091]"
                     >
-                      <Icon path={icons.thumbUp} className="h-3.5 w-3.5" />
+                      <Icon
+                        path={icons.thumbUp}
+                        className={`h-3.5 w-3.5 ${
+                          messageFeedback[message.id] === "up"
+                            ? "text-[#161616]"
+                            : ""
+                        }`}
+                      />
                     </button>
                     <button
                       type="button"
                       aria-label="Réponse inutile"
                       title="Réponse inutile"
+                      onClick={() =>
+                        setMessageFeedback((current) => ({
+                          ...current,
+                          [message.id]: "down",
+                        }))
+                      }
                       className="flex h-6 w-6 items-center justify-center rounded text-[#5d5d5d] hover:bg-[#f6f6f6] hover:text-[#000091]"
                     >
-                      <Icon path={icons.thumbDown} className="h-3.5 w-3.5" />
+                      <Icon
+                        path={icons.thumbDown}
+                        className={`h-3.5 w-3.5 ${
+                          messageFeedback[message.id] === "down"
+                            ? "text-[#161616]"
+                            : ""
+                        }`}
+                      />
                     </button>
                   </div>
                 </div>
               ),
             )}
             {isAgentLoading ? (
-              <div className="rounded border border-[#E5E5E5] bg-[#f6f6f6] p-3">
-                <p className="mb-2 text-[12px] font-bold uppercase leading-4 text-[#666666]">
-                  Analyse en cours
-                </p>
-                <div className="space-y-2">
-                  {assistantLoadingSteps.map((step, index) => (
-                    <div
-                      key={step.label}
-                      className={`grid grid-cols-[8px_minmax(0,1fr)] gap-2 text-[13px] leading-5 ${
-                        index <= loadingStepIndex
-                          ? "text-[#000091]"
-                          : "text-[#666666]"
-                      }`}
-                    >
-                      <span
-                        className={`mt-1.5 h-2 w-2 rounded-full ${
-                          index < loadingStepIndex
-                            ? "bg-[#18753c]"
-                            : index === loadingStepIndex
-                              ? "bg-[#000091]"
-                              : "bg-[#CECECE]"
-                        }`}
-                      />
-                      <span>
-                        <span className="block font-medium">{step.label}</span>
-                        {index === loadingStepIndex ? (
-                          <span className="block text-[12px] leading-4 text-[#666666]">
-                            {step.detail}
-                          </span>
-                        ) : null}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+              <div className="flex flex-col gap-1 px-1">
+                {assistantLoadingSteps.map((step, index) => (
+                  <p
+                    key={step.label}
+                    className={`text-[13px] font-medium leading-5 ${
+                      index === loadingStepIndex
+                        ? "t-shimmer"
+                        : "text-[#9c9c9c]"
+                    }`}
+                    data-text={index === loadingStepIndex ? step.label : undefined}
+                  >
+                    {step.label}
+                  </p>
+                ))}
               </div>
             ) : null}
           </div>
@@ -4595,7 +5117,7 @@ function ChatSidebar({
       </div>
 
       <form
-        className="shrink-0 bg-[#FFFFFF] px-2 pb-1"
+        className="shrink-0 bg-[#FFFFFF] px-2"
         onSubmit={(event) => {
           event.preventDefault();
           submitAgentQuestion();
@@ -4622,7 +5144,10 @@ function ChatSidebar({
             className="min-h-0 flex-1 resize-none bg-transparent text-[13px] leading-[1.4] text-[#161616] outline-none placeholder:text-[#6a6a6a]"
           />
           <div className="flex items-center justify-between">
-            <ModelTokenUsage model="gpt-oss-120b" used={18320} limit={32000} />
+            <div className="flex min-w-0 items-center gap-1">
+              <TokenUsageToggle usage={lastTokenUsage} />
+              <ModelInfoChip />
+            </div>
             <button
               type="submit"
               aria-label="Envoyer la question"
@@ -4633,7 +5158,7 @@ function ChatSidebar({
             </button>
           </div>
         </div>
-        <div className="flex min-h-5 items-center justify-end gap-1 pt-1 text-right text-[11px] leading-none text-[#5d5d5d]">
+        <div className="-mx-2 mt-1 flex min-h-6 items-center justify-end gap-1 bg-[#FFFFFF] px-2 pb-1 text-right text-[11px] leading-none text-[#5d5d5d]">
           <span>L’assistant peut faire des erreurs.</span>
           <Link
             href="/a-propos"
@@ -4655,7 +5180,7 @@ export default function ExplorateurSqlEtIaPage() {
   );
   const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false);
   const [activeResourceId, setActiveResourceId] = useState("catalogue_datasets");
-  const [resourceSearchQuery, setResourceSearchQuery] = useState("");
+  const [parquetFileUrl, setParquetFileUrl] = useState(defaultParquetFileUrl);
   const [activeFilter, setActiveFilter] = useState<ColumnKey | null>(null);
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
   const [activeTab, setActiveTab] = useState<ExplorerTab>("Aperçu");
@@ -4748,20 +5273,7 @@ export default function ExplorateurSqlEtIaPage() {
     resources.find((resource) => resource.id === activeResourceId) ??
     resources[0];
 
-  const filteredResources = useMemo(() => {
-    const normalizedQuery = resourceSearchQuery.trim().toLowerCase();
-
-    if (!normalizedQuery) {
-      return resources;
-    }
-
-    return resources.filter((resource) =>
-      [resource.name, resource.format, resource.type]
-        .join(" ")
-        .toLowerCase()
-        .includes(normalizedQuery),
-    );
-  }, [resourceSearchQuery]);
+  const filteredResources = resources;
 
   const mainResources = filteredResources.filter(
     (resource) => resource.type !== "documentation",
@@ -5288,6 +5800,22 @@ export default function ExplorateurSqlEtIaPage() {
     window.setTimeout(() => setIsFilterFeedbackVisible(false), 1200);
   }
 
+  function toggleChatSidebar() {
+    setIsChatSidebarOpen((current) => {
+      const nextIsOpen = !current;
+
+      if (nextIsOpen) {
+        setIsSidebarCollapsed(true);
+      }
+
+      return nextIsOpen;
+    });
+    setIsDownloadMenuOpen(false);
+    setIsColumnSelectorOpen(false);
+    setActiveFilter(null);
+    setActiveCell(null);
+  }
+
   return (
     <main
       className={`relative h-dvh overflow-hidden text-[#161616] ${
@@ -5348,16 +5876,10 @@ export default function ExplorateurSqlEtIaPage() {
                     <DownloadMenu onClose={() => setIsDownloadMenuOpen(false)} />
                   ) : null}
                 </div>
-                <button
+                  <button
                   type="button"
                   aria-expanded={isChatSidebarOpen}
-                  onClick={() => {
-                    setIsChatSidebarOpen((current) => !current);
-                    setIsDownloadMenuOpen(false);
-                    setIsColumnSelectorOpen(false);
-                    setActiveFilter(null);
-                    setActiveCell(null);
-                  }}
+                  onClick={toggleChatSidebar}
                   className={`flex h-8 items-center gap-2 border px-3 text-[13px] font-medium ${
                     isChatSidebarOpen
                       ? "border-[#000091] bg-[#e8edff] text-[#000091]"
@@ -5431,12 +5953,13 @@ export default function ExplorateurSqlEtIaPage() {
               }`}
             >
               <label className="flex h-8 items-center gap-1 rounded border border-[#E5E5E5] bg-[#f6f6f6] px-2">
-                <Icon path={icons.search} className="h-3.5 w-3.5 text-[#3a3a3a]" />
+                <Icon path={icons.file} className="h-3.5 w-3.5 text-[#3a3a3a]" />
                 <input
-                  value={resourceSearchQuery}
-                  onChange={(event) => setResourceSearchQuery(event.target.value)}
-                  aria-label="Rechercher une ressource"
-                  placeholder="Rechercher une ressource"
+                  type="url"
+                  value={parquetFileUrl}
+                  onChange={(event) => setParquetFileUrl(event.target.value)}
+                  aria-label="Lien vers un fichier Parquet"
+                  placeholder="Coller un lien Parquet"
                   className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
                 />
               </label>
@@ -5457,21 +5980,23 @@ export default function ExplorateurSqlEtIaPage() {
                 ))}
               </section>
 
-              <section className="space-y-0.5">
-                <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
-                  {documentationResources.length} Documentation
-                </p>
-                {documentationResources.map((resource) => (
-                  <ResourceItem
-                    key={resource.id}
-                    resource={resource}
-                    active={resource.id === activeResource.id}
-                    onSelect={() => selectResource(resource)}
-                    onShowTooltip={showResourceTooltip}
-                    onHideTooltip={() => setResourceTooltip(null)}
-                  />
-                ))}
-              </section>
+              {documentationResources.length > 0 ? (
+                <section className="space-y-0.5">
+                  <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
+                    {documentationResources.length} Documentation
+                  </p>
+                  {documentationResources.map((resource) => (
+                    <ResourceItem
+                      key={resource.id}
+                      resource={resource}
+                      active={resource.id === activeResource.id}
+                      onSelect={() => selectResource(resource)}
+                      onShowTooltip={showResourceTooltip}
+                      onHideTooltip={() => setResourceTooltip(null)}
+                    />
+                  ))}
+                </section>
+              ) : null}
             </div>
             {isSidebarCollapsed ? null : (
               <button
@@ -5552,6 +6077,17 @@ export default function ExplorateurSqlEtIaPage() {
                         </button>
                       </div>
                       <div className="max-h-[calc(70dvh-2rem)] overflow-auto p-2">
+                        <label className="mb-3 flex h-8 items-center gap-1 rounded border border-[#E5E5E5] bg-[#f6f6f6] px-2">
+                          <Icon path={icons.file} className="h-3.5 w-3.5 text-[#3a3a3a]" />
+                          <input
+                            type="url"
+                            value={parquetFileUrl}
+                            onChange={(event) => setParquetFileUrl(event.target.value)}
+                            aria-label="Lien vers un fichier Parquet"
+                            placeholder="Coller un lien Parquet"
+                            className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
+                          />
+                        </label>
                         <section className="space-y-0.5">
                           <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
                             {mainResources.length} Fichiers principaux
@@ -5570,24 +6106,26 @@ export default function ExplorateurSqlEtIaPage() {
                             />
                           ))}
                         </section>
-                        <section className="mt-3 space-y-0.5">
-                          <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
-                            {documentationResources.length} Documentation
-                          </p>
-                          {documentationResources.map((resource) => (
-                            <ResourceItem
-                              key={resource.id}
-                              resource={resource}
-                              active={resource.id === activeResource.id}
-                              onSelect={() => {
-                                selectResource(resource);
-                                setIsMobileResourceMenuOpen(false);
-                              }}
-                              onShowTooltip={showResourceTooltip}
-                              onHideTooltip={() => setResourceTooltip(null)}
-                            />
-                          ))}
-                        </section>
+                        {documentationResources.length > 0 ? (
+                          <section className="mt-3 space-y-0.5">
+                            <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
+                              {documentationResources.length} Documentation
+                            </p>
+                            {documentationResources.map((resource) => (
+                              <ResourceItem
+                                key={resource.id}
+                                resource={resource}
+                                active={resource.id === activeResource.id}
+                                onSelect={() => {
+                                  selectResource(resource);
+                                  setIsMobileResourceMenuOpen(false);
+                                }}
+                                onShowTooltip={showResourceTooltip}
+                                onHideTooltip={() => setResourceTooltip(null)}
+                              />
+                            ))}
+                          </section>
+                        ) : null}
                       </div>
                     </div>
                   ) : null}
@@ -5654,13 +6192,7 @@ export default function ExplorateurSqlEtIaPage() {
                   <button
                     type="button"
                     aria-expanded={isChatSidebarOpen}
-                    onClick={() => {
-                      setIsChatSidebarOpen((current) => !current);
-                      setIsDownloadMenuOpen(false);
-                      setIsColumnSelectorOpen(false);
-                      setActiveFilter(null);
-                      setActiveCell(null);
-                    }}
+                    onClick={toggleChatSidebar}
                     className={`flex h-8 items-center gap-2 border px-3 text-[13px] font-medium ${
                       isChatSidebarOpen
                         ? "border-[#000091] bg-[#e8edff] text-[#000091]"
@@ -5801,7 +6333,7 @@ export default function ExplorateurSqlEtIaPage() {
                 </button>
                 <span className="hidden text-[13px] text-[#3a3a3a] lg:inline">
                   {isDuckDbPreviewActive
-                    ? "Aperçu complet via DuckDB-WASM"
+                    ? "Aperçu complet"
                     : "Dernière mise à jour de l’aperçu : 03/07/2026 00:00"}
                 </span>
               </div>
@@ -5959,7 +6491,7 @@ export default function ExplorateurSqlEtIaPage() {
                 ) : null}
                 {isDatasetPreviewLoading ? (
                   <div className="border-b border-[#E5E5E5] bg-[#f6f6f6] px-3 py-2 text-[12px] leading-5 text-[#666666]">
-                    Chargement du fichier Parquet dans DuckDB-WASM...
+                    Chargement du fichier Parquet...
                   </div>
                 ) : null}
                 {visibleColumns.length > 0 && displayedRowCount > 0 ? (
