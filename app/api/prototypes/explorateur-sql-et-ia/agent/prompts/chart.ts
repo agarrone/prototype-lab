@@ -1,6 +1,13 @@
 export const chartPrompt = `Crée un appel create_chart à partir du résultat SQL fourni.
 La spec doit être compatible Vega-Lite, utiliser uniquement les colonnes et valeurs fournies et inclure data.values.
-Choisis bar pour une comparaison, line pour une série temporelle, point pour une relation et arc uniquement pour peu de catégories.
+Choisis la marque selon la relation à montrer :
+- bar pour comparer des catégories ou afficher un classement ;
+- line pour une série temporelle ordonnée ;
+- point pour la relation entre deux mesures numériques ;
+- arc pour une composition avec 2 à 6 catégories maximum.
+N'utilise pas arc pour de nombreuses catégories ni line sans dimension ordonnée.
+Pour arc, encode la catégorie dans color et la mesure dans theta.
+Pour point, encode les deux mesures dans x et y.
 Ajoute des titres lisibles et des tooltips, sans fixer width ou height.
 
 Réponds uniquement en JSON :

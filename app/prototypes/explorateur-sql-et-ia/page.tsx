@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import Chart from "chart.js/auto";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ComponentType,
@@ -3623,7 +3624,7 @@ type SqlExecutionFailure = {
 type VegaLiteSpec = Record<string, unknown>;
 
 type AssistantChartSpec = {
-  type: "bar" | "line" | "histogram" | "map";
+  type: "bar" | "line" | "scatter" | "doughnut";
   title: string;
   xKey: string;
   yKey: string;
@@ -4190,10 +4191,106 @@ async function copyJpgChart(chart: AssistantChartSpec) {
 
 function AssistantChart({ chart }: { chart: AssistantChartSpec }) {
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
-  const values = chart.data
-    .map((item) => Number(item[chart.yKey]))
-    .filter((value) => Number.isFinite(value));
-  const maxValue = Math.max(...values, 1);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const rows = chart.data.slice(0, 30);
+    const labels = rows.map((item, index) =>
+      String(item[chart.xKey] ?? `Valeur ${index + 1}`),
+    );
+    const values = rows.map((item) => Number(item[chart.yKey]));
+    const colors = [
+      "#000091",
+      "#6a6af4",
+      "#009081",
+      "#e1000f",
+      "#a558a0",
+      "#d64d00",
+      "#7d4e24",
+      "#18753c",
+    ];
+    let chartInstance: Chart;
+
+    if (chart.type === "doughnut") {
+      chartInstance = new Chart(canvas, {
+        type: "doughnut",
+        data: {
+          labels,
+          datasets: [
+            {
+              data: values,
+              backgroundColor: labels.map(
+                (_, index) => colors[index % colors.length],
+              ),
+              borderColor: "#ffffff",
+              borderWidth: 2,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: "bottom" } },
+        },
+      });
+    } else if (chart.type === "scatter") {
+      const points = rows
+        .map((item) => ({
+          x: Number(item[chart.xKey]),
+          y: Number(item[chart.yKey]),
+        }))
+        .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+
+      chartInstance = new Chart(canvas, {
+        type: "scatter",
+        data: {
+          datasets: [
+            {
+              label: chart.title,
+              data: points,
+              backgroundColor: "#000091",
+              pointRadius: 4,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+        },
+      });
+    } else {
+      chartInstance = new Chart(canvas, {
+        type: chart.type,
+        data: {
+          labels,
+          datasets: [
+            {
+              label: chart.title,
+              data: values,
+              backgroundColor: "#000091",
+              borderColor: "#000091",
+              borderWidth: 2,
+              borderRadius: chart.type === "bar" ? 3 : undefined,
+              tension: chart.type === "line" ? 0.25 : undefined,
+              fill: false,
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: { y: { beginAtZero: true } },
+        },
+      });
+    }
+
+    return () => chartInstance.destroy();
+  }, [chart]);
 
   async function copyChart(format: "jpg" | "svg") {
     try {
@@ -4221,7 +4318,7 @@ function AssistantChart({ chart }: { chart: AssistantChartSpec }) {
           <span className="rounded bg-[#f6f6f6] px-1.5 py-0.5 text-[11px] text-[#5d5d5d]">
             {chart.type}
           </span>
-          <details className="relative">
+          {chart.type === "bar" ? <details className="relative">
             <summary
               className="flex h-6 w-6 cursor-pointer list-none items-center justify-center rounded text-[#5d5d5d] hover:bg-[#f6f6f6] hover:text-[#161616] [&::-webkit-details-marker]:hidden"
               aria-label="Copier le graphique"
@@ -4250,32 +4347,11 @@ function AssistantChart({ chart }: { chart: AssistantChartSpec }) {
                 </p>
               ) : null}
             </div>
-          </details>
+          </details> : null}
         </div>
       </div>
-      <div className="space-y-2">
-        {chart.data.slice(0, 8).map((item, index) => {
-          const label = String(item[chart.xKey] ?? `Valeur ${index + 1}`);
-          const value = Number(item[chart.yKey]);
-          const percent = Number.isFinite(value)
-            ? Math.max(4, Math.round((value / maxValue) * 100))
-            : 4;
-
-          return (
-            <div key={`${label}-${index}`} className="grid grid-cols-[96px_minmax(0,1fr)_44px] items-center gap-2 text-[11px] leading-4">
-              <span className="truncate text-[#5d5d5d]">{label}</span>
-              <div className="h-1.5 overflow-hidden rounded bg-[#eeeeee]">
-                <div
-                  className="h-full rounded bg-[#000091]"
-                  style={{ width: `${percent}%` }}
-                />
-              </div>
-              <span className="text-right text-[#3a3a3a]">
-                {Number.isFinite(value) ? value.toLocaleString("fr-FR") : "-"}
-              </span>
-            </div>
-          );
-        })}
+      <div className="relative h-[260px] w-full">
+        <canvas ref={canvasRef} aria-label={chart.title} role="img" />
       </div>
     </div>
   );
@@ -4316,11 +4392,11 @@ function getVegaMarkType(mark: unknown): AssistantChartSpec["type"] {
   }
 
   if (markType === "arc") {
-    return "bar";
+    return "doughnut";
   }
 
   if (markType === "point") {
-    return "bar";
+    return "scatter";
   }
 
   return "bar";
@@ -4331,25 +4407,23 @@ function chartFromVegaSpec(
   fallbackData: Record<string, unknown>[],
   fallbackTitle: string,
 ): AssistantChartSpec {
-  const data = spec.data;
-  const values =
-    typeof data === "object" &&
-    data !== null &&
-    "values" in data &&
-    Array.isArray(data.values)
-      ? data.values.filter(
-          (item): item is Record<string, unknown> =>
-            typeof item === "object" && item !== null,
-        )
-      : fallbackData;
+  const values = fallbackData;
   const encoding =
     typeof spec.encoding === "object" && spec.encoding !== null
       ? (spec.encoding as Record<string, unknown>)
       : {};
   const firstRow = values[0] ?? {};
   const fields = Object.keys(firstRow);
-  const xKey = getVegaField(encoding.x) ?? fields[0] ?? "label";
-  const yKey = getVegaField(encoding.y) ?? fields[1] ?? "value";
+  const xKey =
+    getVegaField(encoding.x) ??
+    getVegaField(encoding.color) ??
+    fields[0] ??
+    "label";
+  const yKey =
+    getVegaField(encoding.y) ??
+    getVegaField(encoding.theta) ??
+    fields[1] ??
+    "value";
   const title =
     typeof spec.title === "string" && spec.title.trim()
       ? spec.title.trim()
