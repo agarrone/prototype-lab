@@ -55,9 +55,11 @@ import {
   RiThumbUpLine,
 } from "@remixicon/react";
 import {
+  configureParquetSource,
   executeSql,
-  getDatasetRows,
+  getColumnValueOptions,
   inspectSchema,
+  queryDataset,
   type ExecuteSqlResult,
   type InspectSchemaResult,
 } from "./duckdb-wasm-client";
@@ -73,6 +75,7 @@ type Resource = {
   downloads: number;
   type: ResourceType;
   tabs: ExplorerTab[];
+  sourceUrl?: string;
 };
 
 type ResourceTooltip = {
@@ -124,11 +127,52 @@ const resources: Resource[] = [
     downloads: 0,
     type: "table",
     tabs: ["Aperçu", "Description", "Structure des données", "Métadonnées", "API"],
+    sourceUrl:
+      "https://hydra.s3.rbx.io.cloud.ovh.net/parquet/f868cca6-8da1-4369-a78d-47463f19a9a3.parquet",
+  },
+  {
+    id: "parquet_2876a346",
+    name: "Répertoire national des élus · elus-maires-mai.csv",
+    size: "—",
+    format: "PARQUET",
+    updatedAt: "—",
+    downloads: 0,
+    type: "table",
+    tabs: ["Aperçu", "Structure des données"],
+    sourceUrl:
+      "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/2876a346-d50c-4911-934e-19ee07b0e503.parquet",
+  },
+  {
+    id: "parquet_dfb542cd",
+    name: "Carte des loyers · Indicateurs de loyer maison",
+    size: "—",
+    format: "PARQUET",
+    updatedAt: "—",
+    downloads: 0,
+    type: "table",
+    tabs: ["Aperçu", "Structure des données"],
+    sourceUrl:
+      "https://hydra.s3.rbx.io.cloud.ovh.net/parquet/dfb542cd-a808-41e2-9157-8d39b5c24edb.parquet",
   },
 ];
 
 const defaultParquetFileUrl =
   "https://hydra.s3.rbx.io.cloud.ovh.net/parquet/f868cca6-8da1-4369-a78d-47463f19a9a3.parquet";
+
+const defaultParquetSources = [
+  {
+    label: "Catalogue des jeux de données data.gouv.fr",
+    url: defaultParquetFileUrl,
+  },
+  {
+    label: "Répertoire national des élus · elus-maires-mai.csv",
+    url: "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/2876a346-d50c-4911-934e-19ee07b0e503.parquet",
+  },
+  {
+    label: "Carte des loyers · Indicateurs de loyer maison",
+    url: "https://hydra.s3.rbx.io.cloud.ovh.net/parquet/dfb542cd-a808-41e2-9157-8d39b5c24edb.parquet",
+  },
+] as const;
 
 const downloadGroups = [
   {
@@ -335,6 +379,27 @@ const tableColumns: TableColumn[] = [
 
 type ColumnKey = string;
 type Row = Record<ColumnKey, string>;
+
+function tableColumnFromSchema(
+  column: InspectSchemaResult["columns"][number],
+): TableColumn {
+  const normalizedType = column.type.toUpperCase();
+  const isNumber = /\b(?:TINYINT|SMALLINT|INTEGER|BIGINT|HUGEINT|FLOAT|DOUBLE|DECIMAL|NUMERIC)\b/.test(
+    normalizedType,
+  );
+  const isDate = /\b(?:DATE|TIME|TIMESTAMP|INTERVAL)\b/.test(normalizedType);
+  const isCategory = /\bBOOLEAN\b/.test(normalizedType);
+
+  return {
+    key: column.name,
+    label: column.name,
+    icon: isNumber ? "number" : isDate ? "calendar" : isCategory ? "category" : "text",
+    width: "w-[180px]",
+    widthPx: isNumber ? 136 : isDate ? 160 : 220,
+    filter: isNumber ? "number" : isDate ? "date" : "category",
+    type: isNumber ? "number" : isDate ? "date" : isCategory ? "category" : "text",
+  };
+}
 type SortDirection = "asc" | "desc";
 type SortState = {
   key: ColumnKey;
@@ -383,31 +448,6 @@ function parseNumber(value: string) {
   const parsed = Number(value.replace(/[^\d.-]/g, ""));
 
   return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-function parseDateFilterValue(value: string) {
-  const trimmedValue = value.trim();
-
-  if (!trimmedValue) {
-    return null;
-  }
-
-  const frenchDateMatch = trimmedValue.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-
-  if (frenchDateMatch) {
-    const [, day, month, year] = frenchDateMatch;
-    const timestamp = new Date(
-      Number(year),
-      Number(month) - 1,
-      Number(day),
-    ).getTime();
-
-    return Number.isNaN(timestamp) ? null : timestamp;
-  }
-
-  const timestamp = new Date(trimmedValue).getTime();
-
-  return Number.isNaN(timestamp) ? null : timestamp;
 }
 
 function isDateFilterActive(filter?: DateFilterValue) {
@@ -1201,6 +1241,8 @@ function StructureColumnCard({
   );
 }
 
+// Kept for future prototype variants; this route is intentionally table-only.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function StructurePanel() {
   const [openColumnKey, setOpenColumnKey] = useState<ColumnKey | null>(null);
   const columnTypeCounts = {
@@ -1334,43 +1376,6 @@ function StructurePanel() {
   );
 }
 
-function compareRows(first: Row, second: Row, sortState: NonNullable<SortState>) {
-  const column = tableColumns.find((item) => item.key === sortState.key);
-  const firstValue = getRowValue(first, sortState.key);
-  const secondValue = getRowValue(second, sortState.key);
-  const direction = sortState.direction === "asc" ? 1 : -1;
-
-  if (column?.type === "number") {
-    return (parseNumber(firstValue) - parseNumber(secondValue)) * direction;
-  }
-
-  if (column?.type === "date") {
-    return (
-      (new Date(firstValue).getTime() - new Date(secondValue).getTime()) *
-      direction
-    );
-  }
-
-  return (
-    firstValue.localeCompare(secondValue, "fr", {
-      numeric: true,
-      sensitivity: "base",
-    }) * direction
-  );
-}
-
-function getCategoryOptions(key: ColumnKey) {
-  return Array.from(
-    rows.reduce((counts, row) => {
-      const value = getRowValue(row, key);
-      counts.set(value, (counts.get(value) ?? 0) + 1);
-      return counts;
-    }, new Map<string, number>()),
-  )
-    .map(([label, count]) => ({ label, count }))
-    .slice(0, 8);
-}
-
 type RemixIconComponent = ComponentType<{
   className?: string;
   size?: number | string;
@@ -1502,9 +1507,11 @@ function ResourceItem({
 }
 
 function DatasetContextHeader({
+  title,
   updatedAt,
   actions,
 }: {
+  title: string;
   updatedAt: string;
   actions: ReactNode;
 }) {
@@ -1522,7 +1529,7 @@ function DatasetContextHeader({
           </span>
           <span className="shrink-0 text-[#161616]">/</span>
           <span className="min-w-0 truncate font-bold text-[#161616]">
-            Catalogue des jeux de données
+            {title}
           </span>
           <span className="hidden shrink-0 text-[#3a3a3a] sm:inline">·</span>
           <span className="hidden truncate text-[#3a3a3a] sm:inline">
@@ -1685,12 +1692,14 @@ function FilterOption({
 }
 
 function ColumnSelector({
+  columns,
   selectedColumnKeys,
   onToggleColumn,
   onSelectAll,
   onClearAll,
   onClose,
 }: {
+  columns: TableColumn[];
   selectedColumnKeys: ColumnKey[];
   onToggleColumn: (key: ColumnKey) => void;
   onSelectAll: () => void;
@@ -1701,7 +1710,7 @@ function ColumnSelector({
     <div className="absolute right-0 top-7 z-30 flex w-60 flex-col overflow-hidden rounded border border-[#E5E5E5] bg-[#FFFFFF] shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]">
       <div className="flex h-8 items-center gap-1 border-b border-[#E5E5E5] bg-[#f6f6f6] px-2">
         <p className="min-w-0 flex-1 text-[12px] font-bold text-[#161616]">
-          {selectedColumnKeys.length} sur {tableColumns.length} colonnes visibles
+          {selectedColumnKeys.length} sur {columns.length} colonnes visibles
         </p>
         <button
           type="button"
@@ -1714,7 +1723,7 @@ function ColumnSelector({
       </div>
 
       <div className="max-h-64 overflow-auto border-b border-[#E5E5E5] p-1">
-        {tableColumns.map((column) => {
+        {columns.map((column) => {
           const checked = selectedColumnKeys.includes(column.key);
 
           return (
@@ -1754,9 +1763,9 @@ function ColumnSelector({
 }
 
 function CategoryFilterMenu({
-  id,
-  label,
+  column,
   left,
+  options,
   selectedValues,
   searchValue,
   sortState,
@@ -1765,9 +1774,9 @@ function CategoryFilterMenu({
   onSort,
   onClose,
 }: {
-  id: ColumnKey;
-  label: string;
+  column: TableColumn;
   left: number;
+  options: { label: string; count: number }[];
   selectedValues: string[];
   searchValue: string;
   sortState: SortState;
@@ -1776,15 +1785,12 @@ function CategoryFilterMenu({
   onSort: (key: ColumnKey, direction: SortDirection) => void;
   onClose: () => void;
 }) {
+  const id = column.key;
+  const label = column.label;
   const normalizedSearch = searchValue.trim().toLowerCase();
-  const options = getCategoryOptions(id).filter((option) =>
+  const filteredOptions = options.filter((option) =>
     option.label.toLowerCase().includes(normalizedSearch),
   );
-  const column = tableColumns.find((item) => item.key === id);
-
-  if (!column) {
-    return null;
-  }
 
   return (
     <div
@@ -1820,8 +1826,8 @@ function CategoryFilterMenu({
       </label>
 
       <div className="border-b border-[#E5E5E5] p-1">
-        {options.length > 0 ? (
-          options.map((option) => (
+        {filteredOptions.length > 0 ? (
+          filteredOptions.map((option) => (
             <FilterOption
               key={option.label}
               label={option.label}
@@ -1841,8 +1847,7 @@ function CategoryFilterMenu({
 }
 
 function NumberFilterMenu({
-  id,
-  label,
+  column,
   left,
   range,
   sortState,
@@ -1851,8 +1856,7 @@ function NumberFilterMenu({
   onClear,
   onClose,
 }: {
-  id: ColumnKey;
-  label: string;
+  column: TableColumn;
   left: number;
   range: NumberRange;
   sortState: SortState;
@@ -1861,13 +1865,8 @@ function NumberFilterMenu({
   onClear: (key: ColumnKey) => void;
   onClose: () => void;
 }) {
-  const column = tableColumns.find((item) => item.key === id);
-
-  if (!column) {
-    return null;
-  }
-
-  const bounds = getNumberStats(column);
+  const id = column.key;
+  const label = column.label;
 
   return (
     <div
@@ -1917,7 +1916,7 @@ function NumberFilterMenu({
         <div className="flex items-center gap-3">
           <input
             aria-label="Valeur minimale"
-            placeholder={String(bounds.min)}
+            placeholder="Min"
             className="h-6 w-20 rounded border border-[#E5E5E5] px-2 text-[12px] placeholder:text-[#3a3a3a]"
             value={range.min}
             onChange={(event) =>
@@ -1927,7 +1926,7 @@ function NumberFilterMenu({
           <span className="h-px w-10 bg-[#CECECE]" />
           <input
             aria-label="Valeur maximale"
-            placeholder={String(bounds.max)}
+            placeholder="Max"
             className="h-6 w-20 rounded border border-[#E5E5E5] px-2 text-[12px] placeholder:text-[#3a3a3a]"
             value={range.max}
             onChange={(event) =>
@@ -1949,8 +1948,7 @@ function NumberFilterMenu({
 }
 
 function DateFilterMenu({
-  id,
-  label,
+  column,
   left,
   filter,
   sortState,
@@ -1959,8 +1957,7 @@ function DateFilterMenu({
   onClear,
   onClose,
 }: {
-  id: ColumnKey;
-  label: string;
+  column: TableColumn;
   left: number;
   filter: DateFilterValue;
   sortState: SortState;
@@ -1969,8 +1966,9 @@ function DateFilterMenu({
   onClear: (key: ColumnKey) => void;
   onClose: () => void;
 }) {
+  const id = column.key;
+  const label = column.label;
   const [isModeMenuOpen, setIsModeMenuOpen] = useState(false);
-  const column = tableColumns.find((item) => item.key === id);
   const weekDays = ["Lu", "Ma", "Me", "Je", "Ve", "Sa", "Di"];
   const calendarDays = [
     "29",
@@ -2009,10 +2007,6 @@ function DateFilterMenu({
     "1",
     "2",
   ];
-
-  if (!column) {
-    return null;
-  }
 
   return (
     <div
@@ -2173,6 +2167,7 @@ function FilterMenus({
   visibleColumns,
   sortState,
   categoryFilters,
+  categoryOptions,
   filterSearches,
   numberRanges,
   dateFilters,
@@ -2189,6 +2184,9 @@ function FilterMenus({
   visibleColumns: readonly TableColumn[];
   sortState: SortState;
   categoryFilters: Partial<Record<ColumnKey, string[]>>;
+  categoryOptions: Partial<
+    Record<ColumnKey, { label: string; count: number }[]>
+  >;
   filterSearches: Partial<Record<ColumnKey, string>>;
   numberRanges: Partial<Record<ColumnKey, NumberRange>>;
   dateFilters: Partial<Record<ColumnKey, DateFilterValue>>;
@@ -2201,7 +2199,7 @@ function FilterMenus({
   onClearDate: (key: ColumnKey) => void;
   onClose: () => void;
 }) {
-  const column = tableColumns.find((item) => item.key === activeFilter);
+  const column = visibleColumns.find((item) => item.key === activeFilter);
 
   if (!column) {
     return null;
@@ -2219,8 +2217,7 @@ function FilterMenus({
   if (column.filter === "number") {
     return (
       <NumberFilterMenu
-        id={column.key}
-        label={column.label}
+        column={column}
         left={left}
         range={range}
         sortState={sortState}
@@ -2235,8 +2232,7 @@ function FilterMenus({
   if (column.filter === "date") {
     return (
       <DateFilterMenu
-        id={column.key}
-        label={column.label}
+        column={column}
         left={left}
         filter={dateFilters[column.key] ?? emptyDateFilter}
         sortState={sortState}
@@ -2250,9 +2246,9 @@ function FilterMenus({
 
   return (
     <CategoryFilterMenu
-      id={column.key}
-      label={column.label}
+      column={column}
       left={left}
+      options={categoryOptions[column.key] ?? []}
       selectedValues={categoryFilters[column.key] ?? []}
       searchValue={filterSearches[column.key] ?? ""}
       sortState={sortState}
@@ -2568,6 +2564,7 @@ function MobileDataCard({
 
 function MobileFilterColumn({
   column,
+  options,
   isOpen,
   sortState,
   categoryFilters,
@@ -2584,6 +2581,7 @@ function MobileFilterColumn({
   onClearDate,
 }: {
   column: TableColumn;
+  options: { label: string; count: number }[];
   isOpen: boolean;
   sortState: SortState;
   categoryFilters: Partial<Record<ColumnKey, string[]>>;
@@ -2603,12 +2601,10 @@ function MobileFilterColumn({
   const normalizedSearch = (filterSearches[column.key] ?? "")
     .trim()
     .toLowerCase();
-  const categoryOptions = getCategoryOptions(column.key).filter((option) =>
+  const categoryOptions = options.filter((option) =>
     option.label.toLowerCase().includes(normalizedSearch),
   );
   const range = numberRanges[column.key] ?? { min: "", max: "" };
-  const bounds =
-    column.filter === "number" ? getNumberStats(column) : { min: 0, max: 0 };
   const dateFilter = dateFilters[column.key] ?? emptyDateFilter;
 
   return (
@@ -2647,7 +2643,7 @@ function MobileFilterColumn({
               <div className="flex items-center gap-3">
                 <input
                   aria-label={`Valeur minimale pour ${column.label}`}
-                  placeholder={String(bounds.min)}
+                  placeholder="Min"
                   className="h-8 min-w-0 flex-1 rounded border border-[#E5E5E5] px-2 text-[12px] placeholder:text-[#3a3a3a]"
                   value={range.min}
                   onChange={(event) =>
@@ -2660,7 +2656,7 @@ function MobileFilterColumn({
                 <span className="h-px w-6 bg-[#CECECE]" />
                 <input
                   aria-label={`Valeur maximale pour ${column.label}`}
-                  placeholder={String(bounds.max)}
+                  placeholder="Max"
                   className="h-8 min-w-0 flex-1 rounded border border-[#E5E5E5] px-2 text-[12px] placeholder:text-[#3a3a3a]"
                   value={range.max}
                   onChange={(event) =>
@@ -2780,6 +2776,7 @@ function MobileFiltersPanel({
   visibleColumns,
   sortState,
   categoryFilters,
+  categoryOptions,
   filterSearches,
   numberRanges,
   dateFilters,
@@ -2791,12 +2788,16 @@ function MobileFiltersPanel({
   onChangeDate,
   onClearDate,
   onClearAll,
+  onOpenColumn,
   onClose,
 }: {
   isOpen: boolean;
   visibleColumns: readonly TableColumn[];
   sortState: SortState;
   categoryFilters: Partial<Record<ColumnKey, string[]>>;
+  categoryOptions: Partial<
+    Record<ColumnKey, { label: string; count: number }[]>
+  >;
   filterSearches: Partial<Record<ColumnKey, string>>;
   numberRanges: Partial<Record<ColumnKey, NumberRange>>;
   dateFilters: Partial<Record<ColumnKey, DateFilterValue>>;
@@ -2808,6 +2809,7 @@ function MobileFiltersPanel({
   onChangeDate: (key: ColumnKey, value: DateFilterValue) => void;
   onClearDate: (key: ColumnKey) => void;
   onClearAll: () => void;
+  onOpenColumn: (key: ColumnKey) => void;
   onClose: () => void;
 }) {
   const [openColumnKey, setOpenColumnKey] = useState<ColumnKey | null>(null);
@@ -2852,17 +2854,19 @@ function MobileFiltersPanel({
               <MobileFilterColumn
                 key={column.key}
                 column={column}
+                options={categoryOptions[column.key] ?? []}
                 isOpen={openColumnKey === column.key}
                 sortState={sortState}
                 categoryFilters={categoryFilters}
                 filterSearches={filterSearches}
                 numberRanges={numberRanges}
                 dateFilters={dateFilters}
-                onToggleOpen={() =>
+                onToggleOpen={() => {
+                  onOpenColumn(column.key);
                   setOpenColumnKey((current) =>
                     current === column.key ? null : column.key,
-                  )
-                }
+                  );
+                }}
                 onToggleCategory={onToggleCategory}
                 onSearchFilter={onSearchFilter}
                 onChangeRange={onChangeRange}
@@ -3049,6 +3053,7 @@ function ActiveFiltersBar({
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function DescriptionPanel() {
   return (
     <div className="min-h-0 flex-1 overflow-auto bg-[#FFFFFF]">
@@ -3164,6 +3169,7 @@ function MetadataValue({
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function MetadataPanel() {
   return (
     <div className="min-h-0 flex-1 overflow-auto bg-[#FFFFFF] p-4">
@@ -3271,6 +3277,7 @@ function ApiModelRow({ name }: { name: string }) {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function ApiPanel() {
   return (
     <div className="min-h-0 flex-1 overflow-auto bg-[#FFFFFF] px-3 py-4">
@@ -3343,6 +3350,7 @@ function ApiPanel() {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function MapPanel() {
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-[#FFFFFF]">
@@ -3364,6 +3372,7 @@ function MapPanel() {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function PdfPreviewPanel() {
   return (
     <div className="min-h-0 flex-1 overflow-auto bg-[#f6f6f6]">
@@ -3389,6 +3398,7 @@ const codePreviewRows = [
   { chefLieu: "75056", code: "11", nom: "Île-de-France", typeLiaison: 1, zone: "metro" },
 ];
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function CodePreviewPanel() {
   return (
     <div className="min-h-0 flex-1 overflow-auto border-t border-[#E5E5E5] bg-[#FFFFFF] p-4 font-mono text-[14px] leading-5">
@@ -3424,6 +3434,7 @@ function CodePreviewPanel() {
   );
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function PreviewUnavailablePanel() {
   return (
     <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 bg-[#FFFFFF] py-[30px] text-center">
@@ -4441,11 +4452,13 @@ function chartFromVegaSpec(
 
 function ChatSidebar({
   activeResource,
+  sourceName,
   onApplyFilter,
   onApplySort,
   onClose,
 }: {
   activeResource: Resource;
+  sourceName: string;
   onApplyFilter: AssistantActionHandlers["onApplyFilter"];
   onApplySort: AssistantActionHandlers["onApplySort"];
   onClose: () => void;
@@ -4540,7 +4553,7 @@ function ChatSidebar({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          resourceName: activeResource.name,
+          resourceName: sourceName,
           tableName: "data",
           conversationHistory: messages.slice(-8).map((message) => ({
             role: message.role,
@@ -4963,15 +4976,12 @@ function ChatSidebar({
                 <div key={message.id} className="flex flex-col gap-2">
                   {message.response?.reasoning ? (
                     <details className="order-1 rounded border border-[#E5E5E5] bg-[#fcfcfc]">
-                      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-[12px] font-medium text-[#3a3a3a] [&::-webkit-details-marker]:hidden">
+                      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[12px] font-medium text-[#3a3a3a] [&::-webkit-details-marker]:hidden">
                         <span className="flex min-w-0 items-center gap-2">
                           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#eeeeee]">
                             <Icon path={icons.brain} className="h-3.5 w-3.5 text-[#3a3a3a]" />
                           </span>
                           <span>Raisonnement</span>
-                        </span>
-                        <span className="shrink-0 text-[11px] text-[#666666]">
-                          décision du modèle
                         </span>
                       </summary>
                       <p className="border-t border-[#E5E5E5] px-3 py-2 text-[12px] leading-5 text-[#3a3a3a]">
@@ -4981,15 +4991,12 @@ function ChatSidebar({
                   ) : null}
                   {message.response?.toolTrace?.length || message.response?.sql ? (
                     <details className="order-2 rounded border border-[#E5E5E5] bg-[#fcfcfc]">
-                      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-[12px] font-medium text-[#3a3a3a] [&::-webkit-details-marker]:hidden">
+                      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[12px] font-medium text-[#3a3a3a] [&::-webkit-details-marker]:hidden">
                         <span className="flex min-w-0 items-center gap-2">
                           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#eeeeee]">
                             <Icon path={icons.code} className="h-3.5 w-3.5 text-[#3a3a3a]" />
                           </span>
                           <span>Tools utilisés</span>
-                        </span>
-                        <span className="shrink-0 text-[11px] text-[#666666]">
-                          preuves + SQL
                         </span>
                       </summary>
                       <div className="border-t border-[#E5E5E5]">
@@ -5292,9 +5299,10 @@ export default function ExplorateurSqlEtIaPage() {
   const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false);
   const [activeResourceId, setActiveResourceId] = useState("catalogue_datasets");
   const [parquetFileUrl, setParquetFileUrl] = useState(defaultParquetFileUrl);
+  const [activeParquetUrl, setActiveParquetUrl] = useState(defaultParquetFileUrl);
+  const [parquetReloadVersion, setParquetReloadVersion] = useState(0);
   const [activeFilter, setActiveFilter] = useState<ColumnKey | null>(null);
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
-  const [activeTab, setActiveTab] = useState<ExplorerTab>("Aperçu");
   const [isColumnSelectorOpen, setIsColumnSelectorOpen] = useState(false);
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [isMobileResourceMenuOpen, setIsMobileResourceMenuOpen] = useState(false);
@@ -5310,12 +5318,16 @@ export default function ExplorateurSqlEtIaPage() {
       ) as Record<ColumnKey, number>,
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [sortState, setSortState] = useState<SortState>(null);
   const [categoryFilters, setCategoryFilters] = useState<
     Partial<Record<ColumnKey, string[]>>
   >({});
   const [filterSearches, setFilterSearches] = useState<
     Partial<Record<ColumnKey, string>>
+  >({});
+  const [categoryOptions, setCategoryOptions] = useState<
+    Partial<Record<ColumnKey, { label: string; count: number }[]>>
   >({});
   const [numberRanges, setNumberRanges] = useState<
     Partial<Record<ColumnKey, NumberRange>>
@@ -5330,20 +5342,37 @@ export default function ExplorateurSqlEtIaPage() {
   const tableViewportRef = useRef<HTMLDivElement | null>(null);
   const pendingDatasetPagesRef = useRef<Set<number>>(new Set());
   const [datasetRowCount, setDatasetRowCount] = useState<number | null>(null);
+  const [datasetFilteredRowCount, setDatasetFilteredRowCount] = useState<
+    number | null
+  >(null);
   const [datasetColumnNames, setDatasetColumnNames] = useState<string[]>([]);
+  const [datasetSchemaColumns, setDatasetSchemaColumns] = useState<
+    InspectSchemaResult["columns"]
+  >([]);
   const [datasetRowsByIndex, setDatasetRowsByIndex] = useState<Record<number, Row>>({});
   const [datasetPreviewError, setDatasetPreviewError] = useState<string | null>(null);
   const [isDatasetPreviewLoading, setIsDatasetPreviewLoading] = useState(true);
   const [resourceTooltip, setResourceTooltip] = useState<ResourceTooltip>(null);
 
+  const availableTableColumns = useMemo(
+    () =>
+      datasetSchemaColumns.length > 0
+        ? datasetSchemaColumns.map((schemaColumn) => {
+            const knownColumn = tableColumns.find(
+              (column) => column.key === schemaColumn.name,
+            );
+            return knownColumn ?? tableColumnFromSchema(schemaColumn);
+          })
+        : tableColumns,
+    [datasetSchemaColumns],
+  );
   const visibleColumns = useMemo(
     () =>
-      tableColumns.filter(
+      availableTableColumns.filter(
         (column) =>
-          visibleColumnKeys.includes(column.key) &&
-          (datasetColumnNames.length === 0 || datasetColumnNames.includes(column.key)),
+          visibleColumnKeys.includes(column.key),
       ),
-    [datasetColumnNames, visibleColumnKeys],
+    [availableTableColumns, visibleColumnKeys],
   );
 
   function startColumnResize(
@@ -5380,9 +5409,81 @@ export default function ExplorateurSqlEtIaPage() {
     window.addEventListener("mouseup", handleMouseUp);
   }
 
+  const customParquetResource = useMemo<Resource>(
+    () => ({
+      id: "custom_parquet",
+      name: activeParquetUrl,
+      size: "—",
+      format: "PARQUET",
+      updatedAt: "—",
+      downloads: 0,
+      type: "table",
+      tabs: ["Aperçu", "Structure des données"],
+      sourceUrl: activeParquetUrl,
+    }),
+    [activeParquetUrl],
+  );
   const activeResource =
-    resources.find((resource) => resource.id === activeResourceId) ??
-    resources[0];
+    activeResourceId === customParquetResource.id
+      ? customParquetResource
+      : resources.find((resource) => resource.id === activeResourceId) ??
+        resources[0];
+  const activeParquetName = useMemo(() => {
+    if (activeResource.sourceUrl === activeParquetUrl) {
+      return activeResource.name;
+    }
+
+    try {
+      return decodeURIComponent(
+        new URL(activeParquetUrl).pathname.split("/").filter(Boolean).at(-1) ??
+          "Fichier Parquet",
+      );
+    } catch {
+      return "Fichier Parquet";
+    }
+  }, [activeParquetUrl, activeResource]);
+
+  function loadParquetFileUrl(value: string, isCustomResource = true) {
+    const nextUrl = value.trim();
+
+    try {
+      const parsedUrl = new URL(nextUrl);
+      if (
+        (parsedUrl.protocol !== "https:" && parsedUrl.protocol !== "http:") ||
+        !parsedUrl.pathname.toLowerCase().endsWith(".parquet")
+      ) {
+        throw new Error();
+      }
+    } catch {
+      setDatasetPreviewError(
+        "Collez une URL HTTP ou HTTPS ciblant un fichier .parquet.",
+      );
+      return;
+    }
+
+    setDatasetPreviewError(null);
+    if (isCustomResource) {
+      setActiveResourceId("custom_parquet");
+    }
+    setIsDatasetPreviewLoading(true);
+    setDatasetColumnNames([]);
+    setDatasetSchemaColumns([]);
+    setDatasetRowCount(null);
+    setDatasetFilteredRowCount(null);
+    setDatasetRowsByIndex({});
+    pendingDatasetPagesRef.current.clear();
+
+    if (nextUrl === activeParquetUrl) {
+      setParquetReloadVersion((current) => current + 1);
+    } else {
+      setActiveParquetUrl(nextUrl);
+    }
+    setIsMobileResourceMenuOpen(false);
+  }
+
+  function submitParquetFileUrl() {
+    loadParquetFileUrl(parquetFileUrl);
+  }
 
   const filteredResources = resources;
 
@@ -5448,94 +5549,6 @@ export default function ExplorateurSqlEtIaPage() {
     window.addEventListener("mouseup", handleMouseUp);
   }
 
-  const filteredRows = useMemo(() => {
-    const normalizedQuery = searchQuery.trim().toLowerCase();
-    const filtered = rows.filter((row) => {
-      const searchableContent = tableColumns
-        .map((column) => getRowValue(row, column.key))
-        .join(" ")
-        .toLowerCase();
-
-      if (normalizedQuery && !searchableContent.includes(normalizedQuery)) {
-        return false;
-      }
-
-      const matchesCategories = Object.entries(categoryFilters).every(
-        ([key, selectedValues]) => {
-          if (!selectedValues?.length) {
-            return true;
-          }
-
-          return selectedValues.includes(getRowValue(row, key as ColumnKey));
-        },
-      );
-
-      if (!matchesCategories) {
-        return false;
-      }
-
-      const matchesDates = Object.entries(dateFilters).every(([key, filter]) => {
-        if (!filter || !isDateFilterActive(filter)) {
-          return true;
-        }
-
-        const rowTimestamp = parseDateFilterValue(getRowValue(row, key as ColumnKey));
-        const startTimestamp = parseDateFilterValue(filter.value);
-        const endTimestamp = parseDateFilterValue(filter.endValue);
-
-        if (rowTimestamp === null) {
-          return false;
-        }
-
-        if (filter.mode === "before") {
-          return startTimestamp === null ? true : rowTimestamp < startTimestamp;
-        }
-
-        if (filter.mode === "after") {
-          return startTimestamp === null ? true : rowTimestamp > startTimestamp;
-        }
-
-        if (filter.mode === "between") {
-          const isAfterStart =
-            startTimestamp === null ? true : rowTimestamp >= startTimestamp;
-          const isBeforeEnd =
-            endTimestamp === null ? true : rowTimestamp <= endTimestamp;
-
-          return isAfterStart && isBeforeEnd;
-        }
-
-        if (startTimestamp === null) {
-          return true;
-        }
-
-        return rowTimestamp === startTimestamp;
-      });
-
-      if (!matchesDates) {
-        return false;
-      }
-
-      return Object.entries(numberRanges).every(([key, range]) => {
-        if (!range?.min && !range?.max) {
-          return true;
-        }
-
-        const value = parseNumber(getRowValue(row, key as ColumnKey));
-        const min = range.min ? Number(range.min) : Number.NEGATIVE_INFINITY;
-        const max = range.max ? Number(range.max) : Number.POSITIVE_INFINITY;
-
-        return value >= min && value <= max;
-      });
-    });
-
-    if (!sortState) {
-      return filtered;
-    }
-
-    return [...filtered].sort((first, second) =>
-      compareRows(first, second, sortState),
-    );
-  }, [categoryFilters, dateFilters, numberRanges, searchQuery, sortState]);
   const totalVisibleColumnWidth = useMemo(
     () =>
       visibleColumns.reduce(
@@ -5544,8 +5557,15 @@ export default function ExplorateurSqlEtIaPage() {
       ),
     [columnWidths, visibleColumns],
   );
-  const displayedRowCount = datasetRowCount ?? filteredRows.length;
-  const isDuckDbPreviewActive = datasetRowCount !== null && !datasetPreviewError;
+  const displayedRowCount = datasetFilteredRowCount ?? datasetRowCount ?? 0;
+  const hasActiveDatasetFilters = Boolean(
+    debouncedSearchQuery.trim() ||
+      Object.values(categoryFilters).some((values) => values?.length) ||
+      Object.values(numberRanges).some((range) => range?.min || range?.max) ||
+      Object.values(dateFilters).some((filter) =>
+        isDateFilterActive(filter),
+      ),
+  );
   const virtualizedRows = useMemo(() => {
     const rowCount = displayedRowCount;
     const firstVisibleRow = Math.max(
@@ -5579,8 +5599,8 @@ export default function ExplorateurSqlEtIaPage() {
       ).filter(Boolean);
     }
 
-    return filteredRows.slice(0, mobilePreviewRowLimit);
-  }, [datasetRowCount, datasetRowsByIndex, filteredRows]);
+    return [];
+  }, [datasetRowCount, datasetRowsByIndex]);
   const loadDatasetRows = useCallback(
     async (startIndex: number, requestedLimit = duckdbPreviewPageSize) => {
       const pageOffset =
@@ -5596,7 +5616,7 @@ export default function ExplorateurSqlEtIaPage() {
         return;
       }
 
-      const columnsToFetch = tableColumns
+      const columnsToFetch = availableTableColumns
         .map((column) => column.key)
         .filter(
           (column) =>
@@ -5611,18 +5631,35 @@ export default function ExplorateurSqlEtIaPage() {
       setDatasetPreviewError(null);
 
       try {
-        const result = await getDatasetRows({
+        const result = await queryDataset({
           columns: columnsToFetch,
+          search: debouncedSearchQuery,
+          categoryFilters: Object.fromEntries(
+            Object.entries(categoryFilters).filter(([, values]) => values?.length),
+          ) as Record<string, string[]>,
+          numberRanges: Object.fromEntries(
+            Object.entries(numberRanges).filter(
+              (entry): entry is [string, NumberRange] => Boolean(entry[1]),
+            ),
+          ),
+          dateFilters: Object.fromEntries(
+            Object.entries(dateFilters).filter(
+              (entry): entry is [string, DateFilterValue] => Boolean(entry[1]),
+            ),
+          ),
+          sort: sortState,
           limit: Math.max(requestedLimit, duckdbPreviewPageSize),
           offset: pageOffset,
         });
+
+        setDatasetFilteredRowCount(result.totalRows);
 
         setDatasetRowsByIndex((current) => {
           const nextRows = { ...current };
 
           result.rows.forEach((row, index) => {
             nextRows[result.offset + index] = Object.fromEntries(
-              tableColumns.map((column) => [
+              availableTableColumns.map((column) => [
                 column.key,
                 normalizePreviewValue(row[column.key]),
               ]),
@@ -5642,7 +5679,16 @@ export default function ExplorateurSqlEtIaPage() {
         setIsDatasetPreviewLoading(false);
       }
     },
-    [datasetColumnNames, datasetRowsByIndex],
+    [
+      availableTableColumns,
+      categoryFilters,
+      datasetColumnNames,
+      datasetRowsByIndex,
+      dateFilters,
+      debouncedSearchQuery,
+      numberRanges,
+      sortState,
+    ],
   );
 
   useEffect(() => {
@@ -5669,6 +5715,7 @@ export default function ExplorateurSqlEtIaPage() {
 
     async function initializeDatasetPreview() {
       try {
+        await configureParquetSource(activeParquetUrl);
         const schema = await inspectSchema();
 
         if (isCancelled) {
@@ -5679,8 +5726,19 @@ export default function ExplorateurSqlEtIaPage() {
           typeof schema.rows === "number" ? schema.rows : Number(schema.rows);
         const schemaColumnNames = schema.columns.map((column) => column.name);
 
+        setDatasetSchemaColumns(schema.columns);
         setDatasetColumnNames(schemaColumnNames);
-        setDatasetRowCount(Number.isFinite(rowCount) ? rowCount : rows.length);
+        setVisibleColumnKeys(schemaColumnNames);
+        setColumnWidths(
+          Object.fromEntries(
+            schema.columns.map((column) => {
+              const tableColumn = tableColumnFromSchema(column);
+              return [column.name, tableColumn.widthPx];
+            }),
+          ),
+        );
+        setDatasetRowCount(Number.isFinite(rowCount) ? rowCount : 0);
+        setDatasetFilteredRowCount(Number.isFinite(rowCount) ? rowCount : 0);
         setDatasetPreviewError(null);
       } catch (error) {
         if (isCancelled) {
@@ -5692,7 +5750,8 @@ export default function ExplorateurSqlEtIaPage() {
             ? error.message
             : "Impossible d'inspecter le fichier Parquet.",
         );
-        setDatasetRowCount(rows.length);
+        setDatasetRowCount(null);
+        setDatasetFilteredRowCount(null);
         setIsDatasetPreviewLoading(false);
       }
     }
@@ -5702,7 +5761,65 @@ export default function ExplorateurSqlEtIaPage() {
     return () => {
       isCancelled = true;
     };
-  }, []);
+  }, [activeParquetUrl, parquetReloadVersion]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    if (!activeFilter) return;
+    const column = availableTableColumns.find(
+      (item) => item.key === activeFilter,
+    );
+    if (!column || column.filter !== "category") return;
+
+    let isCancelled = false;
+    const timeout = window.setTimeout(() => {
+      void getColumnValueOptions(
+        column.key,
+        filterSearches[column.key] ?? "",
+      ).then((options) => {
+        if (!isCancelled) {
+          setCategoryOptions((current) => ({
+            ...current,
+            [column.key]: options,
+          }));
+        }
+      });
+    }, 200);
+
+    return () => {
+      isCancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [activeFilter, availableTableColumns, filterSearches]);
+
+  useEffect(() => {
+    if (datasetRowCount === null) return;
+
+    const timeout = window.setTimeout(() => {
+      pendingDatasetPagesRef.current.clear();
+      setDatasetRowsByIndex({});
+      setDatasetFilteredRowCount(null);
+      setIsDatasetPreviewLoading(true);
+      setTableScrollTop(0);
+      tableViewportRef.current?.scrollTo({ top: 0 });
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [
+    categoryFilters,
+    dateFilters,
+    debouncedSearchQuery,
+    numberRanges,
+    sortState,
+    datasetRowCount,
+  ]);
 
   useEffect(() => {
     if (datasetColumnNames.length === 0 || datasetRowCount === null) {
@@ -5760,13 +5877,16 @@ export default function ExplorateurSqlEtIaPage() {
 
   function selectResource(resource: Resource) {
     setActiveResourceId(resource.id);
-    setActiveTab(resource.tabs[0]);
     setActiveFilter(null);
     setActiveCell(null);
     setIsColumnSelectorOpen(false);
     setIsMobileFiltersOpen(false);
     setIsMobileResourceMenuOpen(false);
     setIsDownloadMenuOpen(false);
+    if (resource.sourceUrl) {
+      setParquetFileUrl(resource.sourceUrl);
+      loadParquetFileUrl(resource.sourceUrl, false);
+    }
   }
 
   function openCell(cell: NonNullable<ActiveCell>) {
@@ -5891,7 +6011,6 @@ export default function ExplorateurSqlEtIaPage() {
 
       return nextFilters;
     });
-    setActiveTab("Aperçu");
     setActiveFilter(null);
     setActiveCell(null);
     setIsMobileFiltersOpen(false);
@@ -5902,7 +6021,6 @@ export default function ExplorateurSqlEtIaPage() {
 
   function applyAssistantSort(sort: AssistantSortPayload) {
     setSortState({ key: sort.key, direction: sort.direction });
-    setActiveTab("Aperçu");
     setActiveFilter(null);
     setActiveCell(null);
     setIsMobileFiltersOpen(false);
@@ -5953,6 +6071,7 @@ export default function ExplorateurSqlEtIaPage() {
       >
         {!isExplorerMinimized ? (
           <DatasetContextHeader
+            title={activeResource.name}
             updatedAt={activeResource.updatedAt}
             actions={
               <>
@@ -6063,21 +6182,9 @@ export default function ExplorateurSqlEtIaPage() {
                 isSidebarCollapsed ? "hidden" : ""
               }`}
             >
-              <label className="flex h-8 items-center gap-1 rounded border border-[#E5E5E5] bg-[#f6f6f6] px-2">
-                <Icon path={icons.file} className="h-3.5 w-3.5 text-[#3a3a3a]" />
-                <input
-                  type="url"
-                  value={parquetFileUrl}
-                  onChange={(event) => setParquetFileUrl(event.target.value)}
-                  aria-label="Lien vers un fichier Parquet"
-                  placeholder="Coller un lien Parquet"
-                  className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
-                />
-              </label>
-
               <section className="space-y-0.5">
-                <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
-                  {mainResources.length} Fichiers principaux
+                <p className="px-1 pb-2 text-[12px] font-medium leading-4 text-[#3a3a3a]">
+                  Jeux de données d’exemple
                 </p>
                 {mainResources.map((resource) => (
                   <ResourceItem
@@ -6089,6 +6196,37 @@ export default function ExplorateurSqlEtIaPage() {
                     onHideTooltip={() => setResourceTooltip(null)}
                   />
                 ))}
+              </section>
+
+              <section className="space-y-2 border-t border-[#E5E5E5] pt-3">
+                <p className="px-1 text-[12px] font-medium leading-4 text-[#3a3a3a]">
+                  Ou charger un jeu de données Parquet
+                </p>
+                <div className="flex gap-1">
+                  <label className="flex h-8 min-w-0 flex-1 items-center gap-1 rounded border border-[#E5E5E5] bg-[#f6f6f6] px-2">
+                    <Icon path={icons.file} className="h-3.5 w-3.5 text-[#3a3a3a]" />
+                    <input
+                      type="url"
+                      list="default-parquet-sources"
+                      value={parquetFileUrl}
+                      onChange={(event) => setParquetFileUrl(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") submitParquetFileUrl();
+                      }}
+                      aria-label="Lien vers un fichier Parquet"
+                      placeholder="Coller un lien Parquet S3"
+                      className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={submitParquetFileUrl}
+                    disabled={isDatasetPreviewLoading}
+                    className="h-8 shrink-0 rounded bg-[#000091] px-2 text-[12px] font-medium text-white disabled:cursor-wait disabled:opacity-50"
+                  >
+                    Charger
+                  </button>
+                </div>
               </section>
 
               {documentationResources.length > 0 ? (
@@ -6188,20 +6326,9 @@ export default function ExplorateurSqlEtIaPage() {
                         </button>
                       </div>
                       <div className="max-h-[calc(70dvh-2rem)] overflow-auto p-2">
-                        <label className="mb-3 flex h-8 items-center gap-1 rounded border border-[#E5E5E5] bg-[#f6f6f6] px-2">
-                          <Icon path={icons.file} className="h-3.5 w-3.5 text-[#3a3a3a]" />
-                          <input
-                            type="url"
-                            value={parquetFileUrl}
-                            onChange={(event) => setParquetFileUrl(event.target.value)}
-                            aria-label="Lien vers un fichier Parquet"
-                            placeholder="Coller un lien Parquet"
-                            className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
-                          />
-                        </label>
                         <section className="space-y-0.5">
-                          <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
-                            {mainResources.length} Fichiers principaux
+                          <p className="px-1 pb-2 text-[12px] font-medium leading-4 text-[#3a3a3a]">
+                            Jeux de données d’exemple
                           </p>
                           {mainResources.map((resource) => (
                             <ResourceItem
@@ -6216,6 +6343,36 @@ export default function ExplorateurSqlEtIaPage() {
                               onHideTooltip={() => setResourceTooltip(null)}
                             />
                           ))}
+                        </section>
+                        <section className="mt-3 space-y-2 border-t border-[#E5E5E5] pt-3">
+                          <p className="px-1 text-[12px] font-medium leading-4 text-[#3a3a3a]">
+                            Ou charger un jeu de données Parquet
+                          </p>
+                          <div className="flex gap-1">
+                          <label className="flex h-8 min-w-0 flex-1 items-center gap-1 rounded border border-[#E5E5E5] bg-[#f6f6f6] px-2">
+                            <Icon path={icons.file} className="h-3.5 w-3.5 text-[#3a3a3a]" />
+                          <input
+                              type="url"
+                              list="default-parquet-sources"
+                              value={parquetFileUrl}
+                              onChange={(event) => setParquetFileUrl(event.target.value)}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") submitParquetFileUrl();
+                              }}
+                              aria-label="Lien vers un fichier Parquet"
+                              placeholder="Coller un lien Parquet S3"
+                              className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
+                            />
+                          </label>
+                          <button
+                            type="button"
+                            onClick={submitParquetFileUrl}
+                            disabled={isDatasetPreviewLoading}
+                            className="h-8 shrink-0 rounded bg-[#000091] px-2 text-[12px] font-medium text-white disabled:cursor-wait disabled:opacity-50"
+                          >
+                            Charger
+                          </button>
+                          </div>
                         </section>
                         {documentationResources.length > 0 ? (
                           <section className="mt-3 space-y-0.5">
@@ -6341,76 +6498,7 @@ export default function ExplorateurSqlEtIaPage() {
               ) : null}
             </header>
 
-            <div className="mobile-explorer-only h-12 items-center border-b border-[#E5E5E5] bg-[#FFFFFF] px-2">
-              <label className="flex h-9 w-full items-center gap-2 rounded border border-[#E5E5E5] bg-[#FFFFFF] px-2">
-                <select
-                  value={activeTab}
-                  onChange={(event) => {
-                    setActiveTab(event.target.value as ExplorerTab);
-                    setActiveFilter(null);
-                    setActiveCell(null);
-                    setIsColumnSelectorOpen(false);
-                    setIsMobileFiltersOpen(false);
-                    setIsDownloadMenuOpen(false);
-                  }}
-                  aria-label="Choisir une vue"
-                  className="min-w-0 flex-1 appearance-none bg-transparent text-[13px] font-medium text-[#161616] outline-none"
-                >
-                  {activeResource.tabs.map((tab) => (
-                    <option key={tab} value={tab}>
-                      {tab}
-                    </option>
-                  ))}
-                </select>
-                <Icon path={icons.arrowDownS} className="h-4 w-4 shrink-0 text-[#3a3a3a]" />
-              </label>
-            </div>
-
-            <div className="desktop-explorer-only h-12 items-center border-b border-[#E5E5E5] bg-[#FFFFFF] px-2">
-              <div className="flex flex-wrap items-center rounded border border-[#E5E5E5]">
-                {activeResource.tabs.map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => {
-                      setActiveTab(tab);
-                      setActiveFilter(null);
-                      setActiveCell(null);
-                      setIsColumnSelectorOpen(false);
-                      setIsMobileFiltersOpen(false);
-                      setIsDownloadMenuOpen(false);
-                    }}
-                    className={`h-7 rounded px-2.5 text-[12px] font-medium leading-6 ${
-                      tab === activeTab
-                        ? "border border-[#000091] text-[#000091]"
-                        : "text-[#161616]"
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {activeTab === "Description" ? (
-              <DescriptionPanel />
-            ) : activeTab === "Carte" ? (
-              <MapPanel />
-            ) : activeTab === "Structure des données" ? (
-              <StructurePanel />
-            ) : activeTab === "Métadonnées" ? (
-              <MetadataPanel />
-            ) : activeTab === "API" ? (
-              <ApiPanel />
-            ) : activeTab === "Aperçu" && activeResource.id === "guides" ? (
-              <PdfPreviewPanel />
-            ) : activeTab === "Aperçu" &&
-              (activeResource.id === "schema" || activeResource.id === "addition") ? (
-              <CodePreviewPanel />
-            ) : activeTab === "Aperçu" && activeResource.id === "resultats" ? (
-              <PreviewUnavailablePanel />
-            ) : (
-              <>
+            <>
             <div className="flex min-h-12 flex-wrap items-center gap-2 border-b border-[#E5E5E5] bg-[#FFFFFF] px-2 py-2 lg:flex-nowrap lg:py-0">
               <div className="flex shrink-0 items-center gap-2">
                 <label className="flex h-8 w-[220px] min-w-0 items-center gap-1 rounded border border-[#E5E5E5] bg-[#f6f6f6] px-2">
@@ -6418,34 +6506,26 @@ export default function ExplorateurSqlEtIaPage() {
                   <input
                     value={searchQuery}
                     onChange={(event) => setSearchQuery(event.target.value)}
-                    disabled={isDuckDbPreviewActive}
                     aria-label="Rechercher une valeur"
-                    placeholder={
-                      isDuckDbPreviewActive
-                        ? "Recherche SQL à venir"
-                        : "Rechercher une valeur"
-                    }
-                    className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a] disabled:cursor-not-allowed disabled:text-[#929292]"
+                    placeholder="Rechercher dans les données"
+                    className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
                   />
                 </label>
                 <button
                   type="button"
-                  disabled={isDuckDbPreviewActive}
                   onClick={() => {
                     setIsMobileFiltersOpen(true);
                     setActiveFilter(null);
                     setActiveCell(null);
                     setIsColumnSelectorOpen(false);
                   }}
-                  className="mobile-explorer-only h-8 items-center gap-1 rounded bg-[#FFFFFF] px-3 text-[13px] font-medium text-[#161616] hover:bg-[#f6f6f6] disabled:cursor-not-allowed disabled:text-[#929292]"
+                  className="mobile-explorer-only h-8 items-center gap-1 rounded bg-[#FFFFFF] px-3 text-[13px] font-medium text-[#161616] hover:bg-[#f6f6f6]"
                 >
                   <Icon path={icons.filter} className="h-3.5 w-3.5 text-[#3a3a3a]" />
                   Filtres
                 </button>
                 <span className="hidden text-[13px] text-[#3a3a3a] lg:inline">
-                  {isDuckDbPreviewActive
-                    ? "Aperçu complet"
-                    : "Dernière mise à jour de l’aperçu : 03/07/2026 00:00"}
+                  Recherche et filtres exécutés localement
                 </span>
               </div>
               <div className="ml-auto flex min-w-0 shrink-0 items-center gap-3 text-[12px] text-[#3a3a3a] lg:gap-4 lg:text-[13px]">
@@ -6470,19 +6550,22 @@ export default function ExplorateurSqlEtIaPage() {
                   >
                     <Icon path={icons.columns} className="h-3.5 w-3.5 text-[#3a3a3a]" />
                     <span className="hidden whitespace-nowrap sm:inline">
-                      Colonnes {visibleColumns.length} sur {tableColumns.length}
+                      Colonnes {isDatasetPreviewLoading ? "—" : `${visibleColumns.length} sur ${availableTableColumns.length}`}
                     </span>
                     <span className="whitespace-nowrap sm:hidden">
-                      {visibleColumns.length}/{tableColumns.length}
+                      {isDatasetPreviewLoading ? "—" : `${visibleColumns.length}/${availableTableColumns.length}`}
                     </span>
                     <Icon path={icons.arrowDownS} className="h-4 w-4 text-[#3a3a3a]" />
                   </button>
                   {isColumnSelectorOpen ? (
                     <ColumnSelector
+                      columns={availableTableColumns}
                       selectedColumnKeys={visibleColumnKeys}
                       onToggleColumn={toggleVisibleColumn}
                       onSelectAll={() =>
-                        setVisibleColumnKeys(tableColumns.map((column) => column.key))
+                        setVisibleColumnKeys(
+                          availableTableColumns.map((column) => column.key),
+                        )
                       }
                       onClearAll={() => setVisibleColumnKeys([])}
                       onClose={() => setIsColumnSelectorOpen(false)}
@@ -6492,12 +6575,16 @@ export default function ExplorateurSqlEtIaPage() {
                 <span className="flex items-center gap-1">
                   <Icon path={icons.rows} className="h-3.5 w-3.5 text-[#3a3a3a]" />
                   <span className="hidden whitespace-nowrap lg:inline">
-                    Lignes {displayedRowCount.toLocaleString("fr-FR")} sur{" "}
-                    {(datasetRowCount ?? rows.length).toLocaleString("fr-FR")}
+                    {isDatasetPreviewLoading
+                      ? "Lignes —"
+                      : hasActiveDatasetFilters
+                        ? `Lignes ${displayedRowCount.toLocaleString("fr-FR")} sur ${(datasetRowCount ?? 0).toLocaleString("fr-FR")}`
+                        : `${displayedRowCount.toLocaleString("fr-FR")} lignes`}
                   </span>
                   <span className="whitespace-nowrap lg:hidden">
-                    {displayedRowCount.toLocaleString("fr-FR")}/
-                    {(datasetRowCount ?? rows.length).toLocaleString("fr-FR")}
+                    {isDatasetPreviewLoading
+                      ? "—"
+                      : displayedRowCount.toLocaleString("fr-FR")}
                   </span>
                 </span>
               </div>
@@ -6545,6 +6632,7 @@ export default function ExplorateurSqlEtIaPage() {
                   visibleColumns={visibleColumns}
                   sortState={sortState}
                   categoryFilters={categoryFilters}
+                  categoryOptions={categoryOptions}
                   filterSearches={filterSearches}
                   numberRanges={numberRanges}
                   dateFilters={dateFilters}
@@ -6556,6 +6644,7 @@ export default function ExplorateurSqlEtIaPage() {
                   onChangeDate={updateDateFilter}
                   onClearDate={clearDateFilter}
                   onClearAll={clearAllFilters}
+                  onOpenColumn={setActiveFilter}
                   onClose={() => {
                     setIsMobileFiltersOpen(false);
                     setActiveFilter(null);
@@ -6567,6 +6656,7 @@ export default function ExplorateurSqlEtIaPage() {
                 visibleColumns={visibleColumns}
                 sortState={sortState}
                 categoryFilters={categoryFilters}
+                categoryOptions={categoryOptions}
                 filterSearches={filterSearches}
                 numberRanges={numberRanges}
                 dateFilters={dateFilters}
@@ -6585,7 +6675,7 @@ export default function ExplorateurSqlEtIaPage() {
 
               <div
                 ref={tableViewportRef}
-                className="h-full overflow-auto"
+                className="relative h-full overflow-auto"
                 onScroll={(event: UIEvent<HTMLDivElement>) => {
                   const isScrolled = event.currentTarget.scrollTop > 0;
 
@@ -6595,14 +6685,50 @@ export default function ExplorateurSqlEtIaPage() {
                   );
                 }}
               >
-                {datasetPreviewError ? (
-                  <div className="border-b border-[#E5E5E5] bg-[#fff4f4] px-3 py-2 text-[12px] leading-5 text-[#ce0500]">
-                    {datasetPreviewError}
+                {isDatasetPreviewLoading ? (
+                  <div className="absolute inset-0 z-20 min-h-[360px] bg-[#FFFFFF] p-3" aria-label="Chargement de l’aperçu">
+                    <div className="animate-pulse space-y-2">
+                      <div className="grid h-10 grid-cols-5 gap-px overflow-hidden rounded border border-[#E5E5E5] bg-[#E5E5E5]">
+                        {Array.from({ length: 5 }, (_, index) => (
+                          <div key={`skeleton-header-${index}`} className="bg-[#f6f6f6] p-3">
+                            <div className="h-3 w-2/3 rounded bg-[#dddddd]" />
+                          </div>
+                        ))}
+                      </div>
+                      <div className="overflow-hidden rounded border border-[#E5E5E5]">
+                        {Array.from({ length: 9 }, (_, rowIndex) => (
+                          <div
+                            key={`skeleton-row-${rowIndex}`}
+                            className="grid h-8 grid-cols-5 gap-px border-b border-[#eeeeee] last:border-b-0"
+                          >
+                            {Array.from({ length: 5 }, (_, cellIndex) => (
+                              <div key={`skeleton-cell-${rowIndex}-${cellIndex}`} className="px-3 py-2">
+                                <div
+                                  className="h-2.5 rounded bg-[#eeeeee]"
+                                  style={{ width: `${45 + ((rowIndex + cellIndex) % 4) * 12}%` }}
+                                />
+                              </div>
+                            ))}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <p className="mt-3 text-center text-[12px] leading-5 text-[#666666]">
+                      Chargement du fichier Parquet…
+                    </p>
                   </div>
                 ) : null}
-                {isDatasetPreviewLoading ? (
-                  <div className="border-b border-[#E5E5E5] bg-[#f6f6f6] px-3 py-2 text-[12px] leading-5 text-[#666666]">
-                    Chargement du fichier Parquet...
+                {datasetPreviewError && !isDatasetPreviewLoading ? (
+                  <div className="absolute inset-0 z-20 flex min-h-[360px] flex-col items-center justify-center gap-2 bg-[#f6f6f6] p-6 text-center">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#fff4f4]">
+                      <Icon path={icons.missing} className="h-5 w-5 text-[#ce0500]" />
+                    </span>
+                    <p className="text-[14px] font-medium leading-5 text-[#161616]">
+                      Impossible de charger ce fichier Parquet
+                    </p>
+                    <p className="max-w-[520px] text-[12px] leading-5 text-[#666666]">
+                      {datasetPreviewError}
+                    </p>
                   </div>
                 ) : null}
                 {visibleColumns.length > 0 && displayedRowCount > 0 ? (
@@ -6645,10 +6771,6 @@ export default function ExplorateurSqlEtIaPage() {
                           : undefined
                       }
                       onOpen={() => {
-                        if (isDuckDbPreviewActive) {
-                          return;
-                        }
-
                         setIsColumnSelectorOpen(false);
                         setActiveCell(null);
                         setActiveFilter((current) =>
@@ -6670,7 +6792,9 @@ export default function ExplorateurSqlEtIaPage() {
                     <button
                       type="button"
                       onClick={() =>
-                        setVisibleColumnKeys(tableColumns.map((column) => column.key))
+                        setVisibleColumnKeys(
+                          availableTableColumns.map((column) => column.key),
+                        )
                       }
                       className="cursor-pointer text-[#000091] underline decoration-solid underline-offset-2"
                     >
@@ -6694,9 +6818,7 @@ export default function ExplorateurSqlEtIaPage() {
                       }}
                     >
                       {virtualizedRows.indexes.map((rowIndex) => {
-                        const row = datasetRowCount === null
-                          ? filteredRows[rowIndex]
-                          : datasetRowsByIndex[rowIndex];
+                        const row = datasetRowsByIndex[rowIndex];
 
                         return (
                         <div
@@ -6754,26 +6876,39 @@ export default function ExplorateurSqlEtIaPage() {
                   </div>
                 ) : (
                   <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-2 bg-[#f6f6f6] p-4 text-center text-[16px] leading-6">
-                    <p className="text-[#3a3a3a]">
-                      Il n’y a pas de résultats pour ces critères
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#eeeeee]">
+                      <Icon path={icons.table} className="h-5 w-5 text-[#666666]" />
+                    </span>
+                    <p className="font-medium text-[#3a3a3a]">
+                      {datasetRowCount === 0
+                        ? "Ce fichier Parquet ne contient aucune ligne"
+                        : "Il n’y a pas de résultats pour ces critères"}
                     </p>
-                    <button
-                      type="button"
-                      onClick={clearAllFilters}
-                      className="cursor-pointer text-[#000091] underline decoration-solid underline-offset-2"
-                    >
-                      Réinitialiser les filtres
-                    </button>
+                    <p className="max-w-[420px] text-[12px] leading-5 text-[#666666]">
+                      {datasetRowCount === 0
+                        ? "Choisissez un autre jeu de données d’exemple ou chargez une autre URL Parquet."
+                        : "Modifiez ou réinitialisez les filtres pour afficher des lignes."}
+                    </p>
+                    {datasetRowCount === 0 ? null : (
+                      <button
+                        type="button"
+                        onClick={clearAllFilters}
+                        className="cursor-pointer text-[13px] text-[#000091] underline decoration-solid underline-offset-2"
+                      >
+                        Réinitialiser les filtres
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
             </div>
               </>
-            )}
           </section>
           {isChatSidebarOpen ? (
             <ChatSidebar
+              key={`${activeParquetUrl}-${parquetReloadVersion}`}
               activeResource={activeResource}
+              sourceName={activeParquetName}
               onApplyFilter={applyAssistantFilters}
               onApplySort={applyAssistantSort}
               onClose={() => setIsChatSidebarOpen(false)}
@@ -6814,6 +6949,11 @@ export default function ExplorateurSqlEtIaPage() {
           </dl>
         </div>
       ) : null}
+      <datalist id="default-parquet-sources">
+        {defaultParquetSources.map((source) => (
+          <option key={source.url} value={source.url} label={source.label} />
+        ))}
+      </datalist>
     </main>
   );
 }
