@@ -1,18 +1,13 @@
-import { execFile } from "node:child_process";
-import { stat, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { promisify } from "node:util";
-
 export const runtime = "nodejs";
 
 type AgentRequest = {
+  phase?: "plan" | "generate_sql" | "synthesize";
   question?: string;
-  resourceId?: string;
   resourceName?: string;
   tableName?: string;
-  columns?: string[];
-  previewRows?: Record<string, string>[];
+  schema?: InspectSchemaResult;
+  sql?: string;
+  executionResult?: ExecuteSqlResult;
   conversationHistory?: {
     role: "user" | "assistant";
     content: string;
@@ -27,414 +22,221 @@ type AlbertChatResponse = {
   }[];
 };
 
+type InspectSchemaResult = {
+  table: string;
+  rows: number | string;
+  columns: {
+    name: string;
+    type: string;
+    examples: unknown[];
+  }[];
+};
+
+type ExecuteSqlResult = {
+  columns: string[];
+  rows: unknown[][];
+  rowCount: number;
+};
+
+type AssistantToolCall =
+  | {
+      tool: "inspect_schema";
+      arguments?: Record<string, never>;
+    }
+  | {
+      tool: "execute_sql";
+      arguments: {
+        sql: string;
+      };
+    };
+
+type PlannerDecision =
+  | {
+      action: "use_tools";
+      toolCall: AssistantToolCall;
+    }
+  | {
+      action: "answer_direct";
+      answer: string;
+      reasoning?: string;
+    };
+
 type StructuredAgentAnswer = {
   answer: string;
   reasoning?: string;
   sql?: string;
-  chart?: ChartSpec;
-};
-
-type SqlGeneration = {
-  sql: string;
-  reasoning?: string;
-  chart?: ChartSpec;
-};
-
-type ChartSpec = {
-  type: "bar" | "line" | "histogram" | "map";
-  title: string;
-  xKey: string;
-  yKey: string;
-  data: Record<string, unknown>[];
-};
-
-type ToolTraceItem = {
-  tool: "get_resource_context" | "execute_query" | "create_chart";
-  summary: string;
-  show?: boolean;
-};
-
-type ProposedAction =
-  | {
-      type: "apply_filter";
-      payload: {
-        filters: ProposedFilter[];
-      };
-    }
-  | {
-      type: "none";
-    };
-
-type ProposedFilter = {
-  key: string;
-  label: string;
-  value: string;
-  type: string;
-  count: number;
 };
 
 const defaultAlbertApiUrl =
   "https://albert.api.etalab.gouv.fr/v1/chat/completions";
-const resourceConfigs = {
-  resultats_electoraux: {
-    tableName: "resultats_electoraux",
-    url: "https://www.data.gouv.fr/api/1/datasets/r/ff16d511-10c0-405e-9b35-511723948fce",
-    cacheFileName: "prototype-lab-resultats-electoraux.parquet",
-  },
-  deces: {
-    tableName: "deces",
-    url: "https://www.data.gouv.fr/api/1/datasets/r/d7aed239-8dc1-46dd-bc66-3d18097cb7ea",
-    cacheFileName: "prototype-lab-deces.parquet",
-  },
-} satisfies Record<
-  string,
-  {
-    tableName: string;
-    url: string;
-    cacheFileName: string;
-  }
->;
-const resultLimit = 50;
-const execFileAsync = promisify(execFile);
 
-const datasetMetadata = {
-  resultats_electoraux: {
-    title: "Résultats électoraux consolidés",
-    description:
-      "Ressource de résultats électoraux consolidés par élection, département, commune et bureau de vote.",
-    tags: ["élections", "résultats", "communes", "départements"],
-    producer: "data.gouv.fr",
-    updateFrequency: "Ponctuelle",
-  },
-  deces: {
-    title: "Fichier des personnes décédées",
-    description:
-      "Fichier national des personnes décédées, distribué sous forme de ressource Parquet.",
-    tags: ["décès", "état civil", "personnes"],
-    producer: "INSEE",
-    updateFrequency: "Mensuelle",
-  },
-};
+const datasetAssistantSystemPrompt = `Tu es un assistant d'exploration de données pour data.gouv.fr.
+Tu es un Dataset Viewer Assistant spécialisé, pas un assistant généraliste.
+Tu aides l'utilisateur à explorer et analyser un fichier tabulaire chargé localement dans DuckDB-WASM.
+Tu disposes uniquement de deux tools :
+- inspect_schema
+- execute_sql
 
-const resourceSchemas = {
-  resultats_electoraux: [
-  { key: "id_election", type: "identifier", description: "Identifiant de l’élection" },
-  { key: "id_brut_miom", type: "identifier", description: "Identifiant source MIOM" },
-  { key: "code_departement", type: "referenceData", description: "Code département" },
-  { key: "libelle_departement", type: "reference", description: "Nom du département" },
-  { key: "code_commune", type: "identifier", description: "Code commune" },
-  { key: "libelle_commune", type: "reference", description: "Nom de la commune" },
-  { key: "code_bv", type: "identifier", description: "Code bureau de vote" },
-  { key: "inscrits", type: "number", description: "Nombre d’inscrits" },
-  { key: "abstentions", type: "number", description: "Nombre d’abstentions" },
-  { key: "votants", type: "number", description: "Nombre de votants" },
-  { key: "blancs", type: "number", description: "Nombre de bulletins blancs" },
-  { key: "nuls", type: "number", description: "Nombre de bulletins nuls" },
-  { key: "exprimes", type: "number", description: "Nombre de suffrages exprimés" },
-  {
-    key: "ratio_abstentions_inscrits",
-    type: "number",
-    description: "Part des abstentions parmi les inscrits",
-  },
-  {
-    key: "ratio_votants_inscrits",
-    type: "number",
-    description: "Part des votants parmi les inscrits",
-  },
-  {
-    key: "ratio_exprimes_votants",
-    type: "number",
-    description: "Part des exprimés parmi les votants",
-  },
-  ],
-  deces: [
-    { key: "nomprenom", type: "text", description: "Nom et prénoms de la personne décédée" },
-    { key: "sexe", type: "category", description: "Sexe" },
-    { key: "datenaiss", type: "date", description: "Date de naissance" },
-    { key: "codelieunaiss", type: "identifier", description: "Code du lieu de naissance" },
-    { key: "lieunaiss", type: "reference", description: "Lieu de naissance" },
-    { key: "paysnaiss", type: "reference", description: "Pays de naissance" },
-    { key: "datedeces", type: "date", description: "Date de décès" },
-    { key: "codelieudeces", type: "identifier", description: "Code du lieu de décès" },
-    { key: "lieudeces", type: "reference", description: "Lieu de décès" },
-    { key: "actedeces", type: "identifier", description: "Numéro d’acte de décès" },
-  ],
-} satisfies Record<
-  string,
-  {
-    key: string;
-    type: string;
-    description: string;
-  }[]
->;
+Principes fixes :
+- Tool-aware : tu raisonnes d'abord sur la demande, puis tu utilises les tools seulement quand ils sont nécessaires.
+- Evidence-first : toute réponse factuelle sur les données doit venir du contexte de ressource, du schéma inspecté ou du résultat execute_sql.
+- Pas d'invention : tu ne devines jamais un nombre, un nom de colonne, une valeur ou une table.
+- Concision : tu réponds brièvement, avec des puces si la réponse a plusieurs parties.
+- Sécurité : tu ne modifies jamais les données.
 
-const datasetAssistantSystemPrompt = `You are a dataset exploration assistant embedded in the data.gouv.fr tabular explorer.
-You help users understand, explore, query and visualise a single tabular resource.
-You are not a general-purpose assistant.
-You only operate on the currently opened resource.
-Your answers must always be grounded in:
-- resource context
-- profiling
-- dataset metadata
-- query results
-Never invent data, columns, values or counts.
-Core principles:
-- evidence-first
-- tool-driven
-- profiling-assisted
-You have access to these tools:
-- get_resource_context
-- execute_query
-- create_chart
-Use them whenever necessary.
-Use profiling to guide query planning.
-Use SQL to obtain final evidence.
-If ambiguous, ask.
-If empty, explain.
-If impossible, say so.
-Be concise, factual and pedagogical.
+Tu ne connais jamais le schéma à l'avance.
+Tu dois appeler inspect_schema avant d'écrire une requête SQL si la question nécessite les données et que le schéma n'est pas encore connu.
+Tu écris uniquement du SQL compatible DuckDB.
+Tu privilégies des requêtes simples, lisibles, efficaces, et fondées sur les colonnes présentes dans le schéma.
+Quand tu réponds à une question :
+1. Comprends la demande.
+2. Décide si les tools sont nécessaires.
+3. Si la réponse dépend des données, inspecte le schéma si nécessaire.
+4. Génère puis exécute une requête SQL si nécessaire.
+5. Explique brièvement le résultat ou la réponse directe.
+Ne fais jamais d'hypothèse sur les noms de colonnes.
+Si une information n'existe pas dans le fichier ou n'est pas prouvée par la requête, indique-le clairement.
+Si l'utilisateur demande une visualisation, produis d'abord une requête SQL qui prépare les données au bon grain. Ne produis pas de spécification graphique : aucun tool de graphique n'est disponible dans ce POC.`;
 
-Tool prompt — get_resource_context
-Use get_resource_context when:
-- you are unsure about the schema
-- you need profiling information
-- you need metadata context
-- you need to generate starter questions
-The resource context includes:
-- schema
-- profiling
-- metadata
-Use profiling to:
-- detect null-heavy columns
-- detect high-cardinality columns
-- identify common values
-- identify date ranges
-- identify geographic dimensions
-- guide SQL query design
-Do not use profiling as final evidence.
+const sqlPlannerPrompt = `Tu décides de la prochaine action.
+Tu peux répondre directement uniquement si la question porte sur :
+- ton fonctionnement ;
+- les principes du POC ;
+- les tools disponibles ;
+- la confidentialité ;
+- les limites générales ;
+- une clarification qui ne nécessite pas de lire les données.
 
-Tool prompt — execute_query
-Use execute_query whenever the answer requires actual data.
-This includes:
-- counts
-- samples
-- filtering
-- sorting
-- aggregations
-- rankings
-- distributions
-Rules:
-- never use SELECT *
-- select only needed columns
-- always LIMIT raw row outputs
-- aggregate in SQL whenever possible
-- filter NULL values explicitly when relevant
-- use ORDER BY for rankings
-- limit high-cardinality outputs to top-N
-Use:
-show=false for exploratory queries
-show=true only for final queries
-Exploratory queries may be used to:
-- inspect distinct values
-- inspect distributions
-- validate assumptions
-- inspect samples
-Final queries must directly answer the user’s question.
+Si la question demande une valeur, un comptage, une liste, une distribution, un résumé du fichier, des colonnes présentes, ou toute information factuelle sur les données :
+→ utilise les tools.
 
-Tool prompt — create_chart
-Use create_chart when:
-- the user explicitly asks for a chart
-- the result is easier to understand visually
-- the question concerns trends, distributions, rankings or geography
-Always prepare data first with SQL.
-Rules:
-- aggregate before charting
-- filter NULL values
-- limit categories to top-N when necessary
-- sort values appropriately
-Use:
-- bar charts for categories
-- line charts for time
-- histograms for distributions
-- maps for geographic data
-Prefer maps when the user asks about location, spatial distribution, or geographic coverage.`;
+Si le schéma n'est pas disponible et que les tools sont nécessaires :
+→ appelle inspect_schema.
+Sinon, si le schéma est disponible et que les tools sont nécessaires :
+→ appelle execute_sql avec une requête SQL DuckDB répondant à la question.
+Pour chaque requête, vise le minimum nécessaire : colonnes explicites, agrégations SQL, filtres sur les valeurs non nulles si nécessaire, LIMIT pour les listes ou échantillons.
 
-function parseNumericCell(row: Record<string, string>, key: string) {
-  const value = Number(row[key]);
+Réponds uniquement avec du JSON valide :
+{"action":"answer_direct","answer":"...","reasoning":"..."}
+ou
+{"action":"use_tools","tool":"inspect_schema","arguments":{}}
+ou
+{"action":"use_tools","tool":"execute_sql","arguments":{"sql":"SELECT ..."}}`;
 
-  return Number.isFinite(value) ? value : 0;
+const sqlGeneratorPrompt = `Tu génères une requête SQL DuckDB.
+Contraintes :
+- utiliser uniquement les colonnes présentes dans le schéma ;
+- produire une seule requête SQL ;
+- uniquement SELECT ou WITH ;
+- sélectionner uniquement les colonnes nécessaires, éviter SELECT * sauf demande d'échantillon brut ;
+- ajouter LIMIT 10 à 50 pour les échantillons et listes, et ne pas dépasser 100 lignes pour un résultat final ;
+- pré-agréger en SQL avec GROUP BY, COUNT, AVG, MEDIAN ou autres agrégats quand la question demande un résumé ;
+- filtrer les valeurs NULL qui fausseraient un calcul ou une visualisation demandée ;
+- trier les classements avec ORDER BY explicite ;
+- utiliser des alias explicites ;
+- utiliser la table data ;
+- entourer avec des guillemets doubles les noms de colonnes qui contiennent un point ou un caractère spécial ;
+- ne produire aucun texte autour du SQL.`;
+
+function stripCodeFence(content: string) {
+  return content
+    .trim()
+    .replace(/^```(?:json|sql)?\s*/i, "")
+    .replace(/```$/i, "")
+    .trim();
 }
 
-function buildPreviewContext(previewRows: Record<string, string>[] = []) {
-  const numericTotals = ["inscrits", "abstentions", "votants", "blancs", "nuls", "exprimes"].map(
-    (key) => ({
-      key,
-      total: previewRows.reduce((sum, row) => sum + parseNumericCell(row, key), 0),
-    }),
-  );
-  const byDepartment = previewRows.reduce<Record<string, number>>((accumulator, row) => {
-    const label = row.libelle_departement || row.code_departement || "Non renseigné";
-    accumulator[label] = (accumulator[label] ?? 0) + parseNumericCell(row, "votants");
+function parseJsonObject<T>(content: string) {
+  const cleanedContent = stripCodeFence(content);
 
-    return accumulator;
-  }, {});
-  const byElection = previewRows.reduce<Record<string, number>>((accumulator, row) => {
-    const label = row.id_election || "Non renseigné";
-    accumulator[label] = (accumulator[label] ?? 0) + 1;
+  try {
+    return JSON.parse(cleanedContent) as T;
+  } catch {
+    const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
 
-    return accumulator;
-  }, {});
-
-  return {
-    rowCount: previewRows.length,
-    numericTotals,
-    byDepartment,
-    byElection,
-    sampleRows: previewRows.slice(0, 8),
-  };
-}
-
-function normalizePreviewRow(row: Record<string, string>) {
-  return {
-    id_election: row.id_election ?? row.idElection ?? "",
-    id_brut_miom: row.id_brut_miom ?? row.idBrutMiom ?? "",
-    code_departement: row.code_departement ?? row.codeDepartement ?? "",
-    libelle_departement: row.libelle_departement ?? row.libelleDepartement ?? "",
-    code_commune: row.code_commune ?? row.codeCommune ?? "",
-    libelle_commune: row.libelle_commune ?? row.libelleCommune ?? "",
-    code_bv: row.code_bv ?? row.codeBv ?? "",
-    inscrits: row.inscrits ?? "",
-    abstentions: row.abstentions ?? "",
-    votants: row.votants ?? "",
-    blancs: row.blancs ?? "",
-    nuls: row.nuls ?? "",
-    exprimes: row.exprimes ?? "",
-    ratio_abstentions_inscrits:
-      row.ratio_abstentions_inscrits ?? row.ratioAbstentionsInscrits ?? "",
-    ratio_votants_inscrits:
-      row.ratio_votants_inscrits ?? row.ratioVotantsInscrits ?? "",
-    ratio_exprimes_votants:
-      row.ratio_exprimes_votants ?? row.ratioExprimesVotants ?? "",
-  };
-}
-
-function getFrequentValues(
-  previewRows: Record<string, string>[],
-  key: string,
-) {
-  const counts = previewRows.reduce<Map<string, number>>((accumulator, row) => {
-    const value = row[key];
-
-    if (!value) {
-      return accumulator;
+    if (!jsonMatch) {
+      throw new Error("Le modèle n'a pas retourné de JSON exploitable.");
     }
 
-    accumulator.set(value, (accumulator.get(value) ?? 0) + 1);
-    return accumulator;
-  }, new Map<string, number>());
-
-  return Array.from(counts.entries())
-    .sort((first, second) => second[1] - first[1])
-    .slice(0, 5)
-    .map(([value, count]) => ({ value, count }));
+    return JSON.parse(jsonMatch[0]) as T;
+  }
 }
 
-function getResourceSchema(resourceId: string) {
-  return (
-    resourceSchemas[resourceId as keyof typeof resourceSchemas] ??
-    resourceSchemas.resultats_electoraux
-  );
-}
+function parseToolCall(content: string): AssistantToolCall {
+  const parsed = parseJsonObject<Partial<AssistantToolCall>>(content);
 
-function getResourceMetadata(resourceId: string) {
-  return (
-    datasetMetadata[resourceId as keyof typeof datasetMetadata] ??
-    datasetMetadata.resultats_electoraux
-  );
-}
+  if (parsed.tool === "inspect_schema") {
+    return { tool: "inspect_schema", arguments: {} };
+  }
 
-function getResourceContext(resourceId: string, previewRows: Record<string, string>[] = []) {
-  const schema = getResourceSchema(resourceId);
-  const profiling = schema.map((column) => {
-    const values = previewRows.map((row) => row[column.key]).filter(Boolean);
-    const numericValues = values
-      .map((value) => Number(value))
-      .filter((value) => Number.isFinite(value));
-
+  if (
+    parsed.tool === "execute_sql" &&
+    typeof parsed.arguments === "object" &&
+    parsed.arguments !== null &&
+    "sql" in parsed.arguments &&
+    typeof parsed.arguments.sql === "string"
+  ) {
     return {
-      key: column.key,
-      type: column.type,
-      nullCount: Math.max(0, previewRows.length - values.length),
-      cardinality: new Set(values).size,
-      frequentValues: getFrequentValues(previewRows, column.key),
-      min:
-        numericValues.length > 0
-          ? Math.min(...numericValues)
-          : values.slice().sort()[0],
-      max:
-        numericValues.length > 0
-          ? Math.max(...numericValues)
-          : values.slice().sort().at(-1),
+      tool: "execute_sql",
+      arguments: { sql: sanitizeSelectSql(parsed.arguments.sql) },
     };
-  });
+  }
+
+  throw new Error("Le modèle n'a pas appelé un tool autorisé.");
+}
+
+function parsePlannerDecision(content: string): PlannerDecision {
+  const parsed = parseJsonObject<
+    Partial<{
+      action: "use_tools" | "answer_direct";
+      answer: string;
+      reasoning: string;
+    }> &
+      Partial<AssistantToolCall>
+  >(content);
+
+  if (parsed.action === "answer_direct") {
+    return {
+      action: "answer_direct",
+      answer: parsed.answer?.trim() || "Je peux répondre sans interroger les données.",
+      reasoning: parsed.reasoning?.trim(),
+    };
+  }
 
   return {
-    schema,
-    profiling: {
-      rowCount: previewRows.length,
-      columns: profiling,
-      geographicDimensions: [
-        "code_departement",
-        "libelle_departement",
-        "code_commune",
-        "libelle_commune",
-      ],
-    },
-    metadata: getResourceMetadata(resourceId),
+    action: "use_tools",
+    toolCall: parseToolCall(content),
   };
 }
 
 function parseStructuredAnswer(content: string): StructuredAgentAnswer {
-  const cleanedContent = content
-    .trim()
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/```$/i, "")
-    .trim();
-
   try {
-    const parsed = JSON.parse(cleanedContent) as Partial<StructuredAgentAnswer>;
+    const parsed = parseJsonObject<Partial<StructuredAgentAnswer>>(content);
 
     return {
-      answer: parsed.answer?.trim() || content,
+      answer: parsed.answer?.trim() || stripCodeFence(content),
       reasoning: parsed.reasoning?.trim(),
       sql: parsed.sql?.trim(),
-      chart: parsed.chart,
     };
   } catch {
-    return { answer: content };
+    return { answer: stripCodeFence(content) };
   }
 }
 
-function parseSqlGeneration(content: string): SqlGeneration {
-  const cleanedContent = content
-    .trim()
-    .replace(/^```json\s*/i, "")
-    .replace(/^```\s*/i, "")
-    .replace(/```$/i, "")
-    .trim();
+function sanitizeSelectSql(sql: string) {
+  const trimmedSql = stripCodeFence(sql).replace(/;+\s*$/g, "");
+  const forbiddenPattern =
+    /\b(insert|update|delete|drop|alter|create|copy|attach|detach|install|load|pragma|call)\b/i;
 
-  try {
-    const parsed = JSON.parse(cleanedContent) as Partial<SqlGeneration>;
-
-    return {
-      sql: parsed.sql?.trim() ?? "",
-      reasoning: parsed.reasoning?.trim(),
-      chart: parsed.chart,
-    };
-  } catch {
-    return { sql: cleanedContent };
+  if (!/^(select|with)\b/i.test(trimmedSql) || forbiddenPattern.test(trimmedSql)) {
+    throw new Error("La requête générée n'est pas une requête SELECT autorisée.");
   }
+
+  if (trimmedSql.includes(";")) {
+    throw new Error("Une seule requête SQL est autorisée.");
+  }
+
+  return trimmedSql;
 }
 
 async function callAlbert({
@@ -473,163 +275,11 @@ async function callAlbert({
   return data.choices?.[0]?.message?.content?.trim() ?? "";
 }
 
-async function ensureParquetFile(resourceId: string) {
-  const resourceConfig =
-    resourceConfigs[resourceId as keyof typeof resourceConfigs] ??
-    resourceConfigs.resultats_electoraux;
-  const parquetPath = path.join(tmpdir(), resourceConfig.cacheFileName);
-
-  try {
-    const file = await stat(parquetPath);
-
-    if (file.size > 0) {
-      return parquetPath;
-    }
-  } catch {
-    // The first query downloads the parquet file into the system temp folder.
-  }
-
-  const response = await fetch(resourceConfig.url);
-
-  if (!response.ok) {
-    throw new Error(`Impossible de télécharger le fichier Parquet (${response.status}).`);
-  }
-
-  const parquetBuffer = Buffer.from(await response.arrayBuffer());
-  await writeFile(parquetPath, parquetBuffer);
-
-  return parquetPath;
-}
-
-function sanitizeSelectSql(sql: string) {
-  const trimmedSql = sql.trim().replace(/;+\s*$/g, "");
-  const forbiddenPattern =
-    /\b(insert|update|delete|drop|alter|create|attach|detach|copy|install|load|pragma|call)\b/i;
-
-  if (!/^(select|with)\b/i.test(trimmedSql) || forbiddenPattern.test(trimmedSql)) {
-    throw new Error("La requête générée n'est pas une requête SELECT autorisée.");
-  }
-
-  return trimmedSql;
-}
-
-async function runDuckDbQuery({
-  sql,
-  resourceId,
-  tableName,
-}: {
-  sql: string;
-  resourceId: string;
-  tableName: string;
-}) {
-  const localParquetPath = await ensureParquetFile(resourceId);
-  const safeSql = sanitizeSelectSql(sql);
-  const scriptPath = path.join(process.cwd(), "scripts", "run-duckdb-query.cjs");
-  const { stdout } = await execFileAsync(
-    process.execPath,
-    [scriptPath, localParquetPath, safeSql, String(resultLimit), tableName],
-    { maxBuffer: 1024 * 1024 * 10 },
-  );
-
-  return JSON.parse(stdout) as Record<string, unknown>[];
-}
-
-async function executeQuery({
-  sql,
-  show,
-  resourceId,
-  tableName,
-}: {
-  sql: string;
-  show: boolean;
-  resourceId: string;
-  tableName: string;
-}) {
-  return {
-    tool: "execute_query" as const,
-    show,
-    sql: sanitizeSelectSql(sql),
-    rows: await runDuckDbQuery({ sql, resourceId, tableName }),
-  };
-}
-
-function createChart({
-  chart,
-  rows,
-}: {
-  chart?: ChartSpec;
-  rows: Record<string, unknown>[];
-}) {
-  if (!chart) {
-    return undefined;
-  }
-
-  return {
-    ...chart,
-    data: rows.slice(0, 12),
-  };
-}
-
-const sqlColumnToClientKey: Record<string, string> = {
-  id_election: "idElection",
-  id_brut_miom: "idBrutMiom",
-  code_departement: "codeDepartement",
-  libelle_departement: "libelleDepartement",
-  code_commune: "codeCommune",
-  libelle_commune: "libelleCommune",
-  code_bv: "codeBv",
-  inscrits: "inscrits",
-  abstentions: "abstentions",
-  votants: "votants",
-  blancs: "blancs",
-  nuls: "nuls",
-  exprimes: "exprimes",
-  ratio_abstentions_inscrits: "ratioAbstentionsInscrits",
-  ratio_votants_inscrits: "ratioVotantsInscrits",
-  ratio_exprimes_votants: "ratioExprimesVotants",
-};
-
-function inferProposedActionFromSql({
-  sql,
-  previewRows,
-  resourceId,
-}: {
-  sql: string;
-  previewRows: Record<string, string>[];
-  resourceId: string;
-}): ProposedAction {
-  const schema = getResourceSchema(resourceId);
-  const filters = Array.from(
-    sql.matchAll(/\b([a-z_]+)\s*=\s*'([^']+)'/gi),
-  )
-    .map((match) => {
-      const sqlKey = match[1].toLowerCase();
-      const clientKey = sqlColumnToClientKey[sqlKey];
-      const column = schema.find((item) => item.key === sqlKey);
-
-      if (!clientKey || !column) {
-        return null;
-      }
-
-      const value = match[2].replace(/''/g, "'");
-      const count = previewRows.filter((row) => row[sqlKey] === value).length;
-
-      return {
-        key: clientKey,
-        label: sqlKey,
-        value,
-        type: column.type,
-        count,
-      };
-    })
-    .filter(Boolean) as ProposedFilter[];
-
-  return filters.length > 0
-    ? {
-        type: "apply_filter",
-        payload: { filters },
-      }
-    : { type: "none" };
+function getConversationHistory(body: AgentRequest) {
+  return (body.conversationHistory ?? []).slice(-8).map((message) => ({
+    role: message.role,
+    content: message.content.slice(0, 1200),
+  }));
 }
 
 export async function POST(request: Request) {
@@ -648,6 +298,7 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json()) as AgentRequest;
+  const phase = body.phase ?? "plan";
   const question = body.question?.trim();
 
   if (!question) {
@@ -657,163 +308,161 @@ export async function POST(request: Request) {
     );
   }
 
-  const resourceId =
-    body.resourceId && body.resourceId in resourceConfigs
-      ? body.resourceId
-      : "resultats_electoraux";
-  const resourceConfig =
-    resourceConfigs[resourceId as keyof typeof resourceConfigs];
-  const columns = body.columns?.length ? body.columns.join(", ") : "non renseignées";
-  const tableName = body.tableName ?? resourceConfig.tableName;
-  const resourceName = body.resourceName ?? "Résultats électoraux consolidés";
-  const previewRows = (body.previewRows ?? []).map(normalizePreviewRow);
-  const conversationHistory = (body.conversationHistory ?? [])
-    .slice(-8)
-    .map((message) => ({
-      role: message.role,
-      content: message.content.slice(0, 1200),
-    }));
-  const previewContext = buildPreviewContext(previewRows);
-  const resourceContext = getResourceContext(resourceId, previewRows);
-  const toolTrace: ToolTraceItem[] = [
-    {
-      tool: "get_resource_context",
-      summary: "Schéma, profiling et métadonnées de la ressource active lus.",
-    },
-  ];
-  let generatedSql = "";
-  let generatedReasoning = "";
-  let queryRows: Record<string, unknown>[] = [];
-  let chart: ChartSpec | undefined;
-  let proposedAction: ProposedAction = { type: "none" };
+  const resourceName = body.resourceName ?? "Catalogue des jeux de données data.gouv.fr";
+  const tableName = body.tableName ?? "data";
+  const conversationHistory = getConversationHistory(body);
 
   try {
-    const sqlGenerationContent = await callAlbert({
-      apiKey,
-      apiUrl,
-      model,
-      messages: [
-        {
-          role: "system",
-          content: `${datasetAssistantSystemPrompt}
+    if (phase === "plan") {
+      const plannerContent = await callAlbert({
+        apiKey,
+        apiUrl,
+        model,
+        messages: [
+          {
+            role: "system",
+            content: `${datasetAssistantSystemPrompt}
 
-You are now planning the tool use. Return only valid JSON with:
-{
-  "sql": "final SQL for execute_query with show=true",
-  "reasoning": "short planning note",
-  "chart": optional {"type":"bar|line|histogram|map","title":"...","xKey":"...","yKey":"...","data":[]}
-}
-Do not answer the user yet. Use table ${tableName}. SQL column names are snake_case.`,
-        },
-        {
-          role: "user",
-          content: `Ressource: ${resourceName}
-Table SQL: ${tableName}
-Colonnes disponibles: ${columns}
-Tool get_resource_context output:
-${JSON.stringify(resourceContext, null, 2)}
-
-Contexte calculé sur l'aperçu courant:
-${JSON.stringify(previewContext, null, 2)}
-
+${sqlPlannerPrompt}`,
+          },
+          {
+            role: "user",
+            content: `Ressource: ${resourceName}
+Table attendue après chargement: ${tableName}
+Schéma disponible: non
 Historique de discussion récent:
 ${JSON.stringify(conversationHistory, null, 2)}
 
 Question utilisateur: ${question}`,
-        },
-      ],
-    });
-    const sqlGeneration = parseSqlGeneration(sqlGenerationContent);
-    generatedSql = sqlGeneration.sql;
-    generatedReasoning = sqlGeneration.reasoning ?? "";
-    const queryResult = await executeQuery({
-      sql: generatedSql,
-      show: true,
-      resourceId,
-      tableName,
-    });
-    queryRows = queryResult.rows;
-    proposedAction = inferProposedActionFromSql({
-      sql: generatedSql,
-      previewRows,
-      resourceId,
-    });
-    chart = createChart({ chart: sqlGeneration.chart, rows: queryRows });
-    toolTrace.push({
-      tool: "execute_query",
-      summary: `${queryRows.length} lignes retournées pour la requête finale.`,
-      show: true,
-    });
-    if (chart) {
-      toolTrace.push({
-        tool: "create_chart",
-        summary: `Visualisation ${chart.type} préparée à partir du résultat SQL.`,
+          },
+        ],
+      });
+      const plannerDecision = parsePlannerDecision(plannerContent);
+
+      if (plannerDecision.action === "answer_direct") {
+        return Response.json({
+          answer: plannerDecision.answer,
+          reasoning: plannerDecision.reasoning,
+          model,
+        });
+      }
+
+      return Response.json({
+        toolCall: plannerDecision.toolCall,
+        model,
       });
     }
+
+    if (phase === "generate_sql") {
+      if (!body.schema) {
+        return Response.json(
+          { error: "Le schéma inspecté est obligatoire." },
+          { status: 400 },
+        );
+      }
+
+      const sqlContent = await callAlbert({
+        apiKey,
+        apiUrl,
+        model,
+        messages: [
+          {
+            role: "system",
+            content: `${datasetAssistantSystemPrompt}
+
+${sqlPlannerPrompt}
+
+${sqlGeneratorPrompt}`,
+          },
+          {
+            role: "user",
+            content: `Ressource: ${resourceName}
+Tool inspect_schema output:
+${JSON.stringify(body.schema, null, 2)}
+
+Historique de discussion récent:
+${JSON.stringify(conversationHistory, null, 2)}
+
+Question utilisateur: ${question}
+
+Réponds uniquement avec un appel tool execute_sql en JSON.`,
+          },
+        ],
+      });
+
+      return Response.json({
+        toolCall: parseToolCall(sqlContent),
+        model,
+      });
+    }
+
+    if (phase === "synthesize") {
+      if (!body.schema || !body.executionResult || !body.sql) {
+        return Response.json(
+          { error: "Le schéma, le SQL et le résultat SQL sont obligatoires." },
+          { status: 400 },
+        );
+      }
+
+      const safeSql = sanitizeSelectSql(body.sql);
+      const rawAnswer = await callAlbert({
+        apiKey,
+        apiUrl,
+        model,
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content: `${datasetAssistantSystemPrompt}
+
+La requête a déjà été exécutée avec execute_sql dans le navigateur de l'utilisateur.
+Réponds uniquement en JSON valide avec les clés :
+- answer: réponse concise dans la langue de la question utilisateur
+- reasoning: méthode courte, indiquant les preuves utilisées : inspect_schema puis execute_sql local
+- sql: SQL exécuté
+Règles de synthèse :
+- commence par le résultat concret ;
+- ne mentionne que les nombres et valeurs présents dans execute_sql output ;
+- si le résultat est limité, dis que la sortie affichée est limitée ;
+- si la question ne peut pas être tranchée avec les colonnes disponibles, dis-le clairement ;
+- n'invente aucune valeur en dehors des résultats fournis.`,
+          },
+          {
+            role: "user",
+            content: `Question utilisateur: ${question}
+Tool inspect_schema output:
+${JSON.stringify(body.schema, null, 2)}
+
+SQL exécuté:
+${safeSql}
+
+Tool execute_sql output:
+${JSON.stringify(body.executionResult, null, 2)}`,
+          },
+        ],
+      });
+      const structuredAnswer = rawAnswer
+        ? parseStructuredAnswer(rawAnswer)
+        : {
+            answer: "Albert n'a pas retourné de réponse exploitable.",
+          };
+
+      return Response.json({
+        ...structuredAnswer,
+        sql: structuredAnswer.sql ?? safeSql,
+        model,
+      });
+    }
+
+    return Response.json({ error: "Phase agent inconnue." }, { status: 400 });
   } catch (error) {
     return Response.json(
       {
-        answer:
-          "Je n'ai pas réussi à exécuter une requête sur le fichier complet.",
-        reasoning:
+        error:
           error instanceof Error ? error.message : "Erreur inconnue pendant l'analyse.",
-        sql: generatedSql,
         model,
-        toolTrace,
-        proposedAction,
       },
       { status: 200 },
     );
   }
-
-  const rawAnswer = await callAlbert({
-    apiKey,
-    apiUrl,
-    model,
-    temperature: 0.2,
-    messages: [
-      {
-        role: "system",
-        content: `${datasetAssistantSystemPrompt}
-
-You are now writing the final answer. Return only valid JSON with keys:
-- answer: concise answer in the language of the user question
-- reasoning: short method summary
-- sql: the final SQL that was executed
-If the result is empty, explain clearly and suggest a reformulation. Do not invent values.`,
-      },
-      {
-        role: "user",
-        content: `Question utilisateur: ${question}
-Ressource: ${resourceName}
-Table SQL: ${tableName}
-Tool get_resource_context output:
-${JSON.stringify(resourceContext, null, 2)}
-
-Requête exécutée:
-${generatedSql}
-Raisonnement de génération:
-${generatedReasoning}
-Historique de discussion récent:
-${JSON.stringify(conversationHistory, null, 2)}
-
-Résultats DuckDB (${queryRows.length} lignes maximum):
-${JSON.stringify(queryRows, null, 2)}`,
-      },
-    ],
-  });
-  const structuredAnswer = rawAnswer
-    ? parseStructuredAnswer(rawAnswer)
-    : {
-        answer: "Albert n'a pas retourné de réponse exploitable.",
-      };
-
-  return Response.json({
-    ...structuredAnswer,
-    chart,
-    queryRows: queryRows.slice(0, 12),
-    toolTrace,
-    proposedAction,
-    model,
-  });
 }

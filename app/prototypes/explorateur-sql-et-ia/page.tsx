@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   ComponentType,
   KeyboardEvent,
@@ -51,6 +51,13 @@ import {
   RiThumbDownLine,
   RiThumbUpLine,
 } from "@remixicon/react";
+import {
+  executeSql,
+  getDatasetRows,
+  inspectSchema,
+  type ExecuteSqlResult,
+  type InspectSchemaResult,
+} from "./duckdb-wasm-client";
 
 type ResourceType = "table" | "code" | "geodata" | "documentation";
 
@@ -67,19 +74,9 @@ type Resource = {
 
 const resources: Resource[] = [
   {
-    id: "resultats_electoraux",
-    name: "Résultats électoraux consolidés",
-    size: "67,5 Mo",
-    format: "PARQUET",
-    updatedAt: "1 juillet 2026",
-    downloads: 0,
-    type: "table",
-    tabs: ["Aperçu", "Description", "Structure des données", "Métadonnées", "API"],
-  },
-  {
-    id: "deces",
-    name: "Fichier des personnes décédées",
-    size: "657,9 Mo",
+    id: "catalogue_datasets",
+    name: "Catalogue des jeux de données data.gouv.fr",
+    size: "31,5 Mo",
     format: "PARQUET",
     updatedAt: "3 juillet 2026",
     downloads: 0,
@@ -92,16 +89,14 @@ const downloadGroups = [
   {
     title: "FORMAT ORIGINAL",
     items: [
-      { label: "Résultats électoraux consolidés", size: "67,5 Mo" },
-      { label: "Fichier des personnes décédées", size: "657,9 Mo" },
+      { label: "Catalogue des jeux de données data.gouv.fr", size: "31,5 Mo" },
     ],
     closable: true,
   },
   {
     title: "LIEN SOURCE",
     items: [
-      { label: "data.gouv.fr/api/1/datasets/r/ff16d511...", size: "Parquet" },
-      { label: "data.gouv.fr/api/1/datasets/r/d7aed239...", size: "Parquet" },
+      { label: "hydra.s3.rbx.io.cloud.ovh.net/parquet/f868cca6...", size: "Parquet" },
     ],
     closable: false,
   },
@@ -130,134 +125,125 @@ type TableColumn = {
 
 const tableColumns: TableColumn[] = [
   {
-    key: "idElection",
-    label: "id_election",
+    key: "id",
+    label: "id",
     icon: "identifier",
+    width: "w-[176px]",
+    widthPx: 176,
+    filter: "category",
+    type: "identifier",
+  },
+  {
+    key: "title",
+    label: "title",
+    icon: "text",
+    width: "w-[320px]",
+    widthPx: 320,
+    filter: "category",
+    type: "text",
+  },
+  {
+    key: "slug",
+    label: "slug",
+    icon: "identifier",
+    width: "w-[280px]",
+    widthPx: 280,
+    filter: "category",
+    type: "identifier",
+  },
+  {
+    key: "acronym",
+    label: "acronym",
+    icon: "text",
+    width: "w-[112px]",
+    widthPx: 112,
+    filter: "category",
+    type: "text",
+  },
+  {
+    key: "url",
+    label: "url",
+    icon: "text",
+    width: "w-[280px]",
+    widthPx: 280,
+    filter: "category",
+    type: "text",
+  },
+  {
+    key: "organization",
+    label: "organization",
+    icon: "reference",
+    width: "w-[220px]",
+    widthPx: 220,
+    filter: "category",
+    type: "reference",
+  },
+  {
+    key: "frequency",
+    label: "frequency",
+    icon: "category",
     width: "w-[136px]",
     widthPx: 136,
     filter: "category",
-    type: "identifier",
+    type: "category",
   },
   {
-    key: "idBrutMiom",
-    label: "id_brut_miom",
-    icon: "identifier",
-    width: "w-[132px]",
-    widthPx: 132,
+    key: "license",
+    label: "license",
+    icon: "category",
+    width: "w-[220px]",
+    widthPx: 220,
     filter: "category",
-    type: "identifier",
+    type: "category",
   },
   {
-    key: "codeDepartement",
-    label: "code_departement",
-    icon: "referenceData",
+    key: "spatial.granularity",
+    label: "spatial.granularity",
+    icon: "geodata",
+    width: "w-[152px]",
+    widthPx: 152,
+    filter: "category",
+    type: "category",
+  },
+  {
+    key: "featured",
+    label: "featured",
+    icon: "category",
+    width: "w-[104px]",
+    widthPx: 104,
+    filter: "category",
+    type: "category",
+  },
+  {
+    key: "created_at",
+    label: "created_at",
+    icon: "calendar",
     width: "w-[144px]",
     widthPx: 144,
-    filter: "category",
-    type: "referenceData",
+    filter: "date",
+    type: "date",
   },
   {
-    key: "libelleDepartement",
-    label: "libelle_departement",
-    icon: "reference",
-    width: "w-[168px]",
-    widthPx: 168,
-    filter: "category",
-    type: "reference",
+    key: "last_modified",
+    label: "last_modified",
+    icon: "calendar",
+    width: "w-[144px]",
+    widthPx: 144,
+    filter: "date",
+    type: "date",
   },
   {
-    key: "codeCommune",
-    label: "code_commune",
-    icon: "identifier",
-    width: "w-[132px]",
-    widthPx: 132,
-    filter: "category",
-    type: "identifier",
-  },
-  {
-    key: "libelleCommune",
-    label: "libelle_commune",
-    icon: "reference",
-    width: "w-[168px]",
-    widthPx: 168,
-    filter: "category",
-    type: "reference",
-  },
-  {
-    key: "codeBv",
-    label: "code_bv",
-    icon: "identifier",
-    width: "w-[104px]",
-    widthPx: 104,
-    filter: "category",
-    type: "identifier",
-  },
-  {
-    key: "inscrits",
-    label: "inscrits",
+    key: "resources_count",
+    label: "resources_count",
     icon: "number",
-    width: "w-[104px]",
-    widthPx: 104,
+    width: "w-[136px]",
+    widthPx: 136,
     filter: "number",
     type: "number",
   },
   {
-    key: "abstentions",
-    label: "abstentions",
-    icon: "number",
-    width: "w-[116px]",
-    widthPx: 116,
-    filter: "number",
-    type: "number",
-  },
-  {
-    key: "votants",
-    label: "votants",
-    icon: "number",
-    width: "w-[104px]",
-    widthPx: 104,
-    filter: "number",
-    type: "number",
-  },
-  {
-    key: "blancs",
-    label: "blancs",
-    icon: "number",
-    width: "w-[96px]",
-    widthPx: 96,
-    filter: "number",
-    type: "number",
-  },
-  {
-    key: "nuls",
-    label: "nuls",
-    icon: "number",
-    width: "w-[88px]",
-    widthPx: 88,
-    filter: "number",
-    type: "number",
-  },
-  {
-    key: "exprimes",
-    label: "exprimes",
-    icon: "number",
-    width: "w-[104px]",
-    widthPx: 104,
-    filter: "number",
-    type: "number",
-  },
-  {
-    key: "ratioAbstentionsInscrits",
-    label: "ratio_abstentions_inscrits",
-    icon: "number",
-    width: "w-[196px]",
-    widthPx: 196,
-    filter: "number",
-    type: "number",
-  },
-  {
-    key: "ratioVotantsInscrits",
-    label: "ratio_votants_inscrits",
+    key: "main_resources_count",
+    label: "main_resources_count",
     icon: "number",
     width: "w-[176px]",
     widthPx: 176,
@@ -265,11 +251,38 @@ const tableColumns: TableColumn[] = [
     type: "number",
   },
   {
-    key: "ratioExprimesVotants",
-    label: "ratio_exprimes_votants",
+    key: "resources_formats",
+    label: "resources_formats",
+    icon: "category",
+    width: "w-[180px]",
+    widthPx: 180,
+    filter: "category",
+    type: "category",
+  },
+  {
+    key: "quality_score",
+    label: "quality_score",
     icon: "number",
-    width: "w-[184px]",
-    widthPx: 184,
+    width: "w-[128px]",
+    widthPx: 128,
+    filter: "number",
+    type: "number",
+  },
+  {
+    key: "metric.views",
+    label: "metric.views",
+    icon: "number",
+    width: "w-[120px]",
+    widthPx: 120,
+    filter: "number",
+    type: "number",
+  },
+  {
+    key: "metric.resources_downloads",
+    label: "metric.resources_downloads",
+    icon: "number",
+    width: "w-[196px]",
+    widthPx: 196,
     filter: "number",
     type: "number",
   },
@@ -370,77 +383,251 @@ function getDateFilterChipValue(filter: DateFilterValue) {
   return `${dateFilterModeLabels[filter.mode]} ${filter.value}`;
 }
 
-const departmentReferences = [
-  { code: "01", label: "Ain" },
-  { code: "02", label: "Aisne" },
-  { code: "59", label: "Nord" },
-  { code: "75", label: "Paris" },
-  { code: "971", label: "Guadeloupe" },
-  { code: "976", label: "Mayotte" },
-  { code: "ZZ", label: "Français établis hors de France" },
+const rows: Row[] = [
+  {
+    id: "6a49d1551d9a958fd2b55a2d",
+    title: "Empreinte du classement sonore routier révisé en 2020 sur le département de la Sarthe.",
+    slug: "empreinte-du-classement-sonore-routier-revise-en-2020-sur-le-departement-de-la-sarthe-1",
+    acronym: "",
+    url: "https://www.data.gouv.fr/datasets/empreinte-du-classement-sonore-routier-revise-en-2020-sur-le-departement-de-la-sarthe-1",
+    organization: "Direction Départementale des Territoires de la Sarthe",
+    frequency: "",
+    license: "Licence Ouverte / Open Licence version 2.0",
+    "spatial.granularity": "other",
+    featured: "false",
+    created_at: "2025-08-26",
+    last_modified: "2025-08-19",
+    resources_count: "6",
+    main_resources_count: "2",
+    resources_formats: "wms,esri shapefile (shp),wfs",
+    quality_score: "0.56",
+    "metric.views": "0",
+    "metric.resources_downloads": "0",
+  },
+  {
+    id: "6a4885d38637ecc0d6b55a21",
+    title: "Déclaration de l'acquisition de biens issus du réemploi, de la réutilisation ou intégrant des matières recyclées",
+    slug: "declaration-de-lacquisition-de-biens-issus-du-reemploi-de-la-reutilisation-ou-integrant-des-matieres-recyclees-8",
+    acronym: "",
+    url: "https://www.data.gouv.fr/datasets/declaration-de-lacquisition-de-biens-issus-du-reemploi-de-la-reutilisation-ou-integrant-des-matieres-recyclees-8",
+    organization: "Angers Loire Métropole",
+    frequency: "annual",
+    license: "Licence Ouverte / Open Licence version 2.0",
+    "spatial.granularity": "",
+    featured: "false",
+    created_at: "2025-06-29",
+    last_modified: "2026-07-03",
+    resources_count: "2",
+    main_resources_count: "2",
+    resources_formats: "json,csv",
+    quality_score: "0.89",
+    "metric.views": "0",
+    "metric.resources_downloads": "0",
+  },
+  {
+    id: "6a487806f3c8dc19c7398ec0",
+    title: "Programme de la fête de la Science 2026",
+    slug: "programme-de-la-fete-de-la-science-2026",
+    acronym: "",
+    url: "https://www.data.gouv.fr/datasets/programme-de-la-fete-de-la-science-2026",
+    organization: "Ministère de l'Enseignement supérieur, de la Recherche et de l'Espace",
+    frequency: "",
+    license: "Licence Ouverte / Open Licence version 2.0",
+    "spatial.granularity": "",
+    featured: "false",
+    created_at: "2026-07-03",
+    last_modified: "2026-07-03",
+    resources_count: "4",
+    main_resources_count: "4",
+    resources_formats: "zip,json,csv",
+    quality_score: "0.56",
+    "metric.views": "0",
+    "metric.resources_downloads": "0",
+  },
+  {
+    id: "6a484e8377fe8edd90b55a12",
+    title: "Dernier prix des services de l'eau",
+    slug: "dernier-prix-des-services-de-leau",
+    acronym: "",
+    url: "https://www.data.gouv.fr/datasets/dernier-prix-des-services-de-leau",
+    organization: "Office Français de la Biodiversité",
+    frequency: "",
+    license: "Licence Ouverte / Open Licence version 2.0",
+    "spatial.granularity": "other",
+    featured: "false",
+    created_at: "2026-07-03",
+    last_modified: "2026-07-04",
+    resources_count: "3",
+    main_resources_count: "2",
+    resources_formats: "wfs,autre",
+    quality_score: "0.67",
+    "metric.views": "0",
+    "metric.resources_downloads": "0",
+  },
+  {
+    id: "6a484e7a77fe8edd90b55a11",
+    title: "Habitats marins du site Natura 2000 FR5300011 Cap d'Erquy-Cap Fréhel",
+    slug: "habitats-marins-du-site-natura-2000-fr5300011-cap-derquy-cap-frehel-etat-1979-2023-synthese-ofb-multisource-version-2026-polygones-point",
+    acronym: "",
+    url: "https://www.data.gouv.fr/datasets/habitats-marins-du-site-natura-2000-fr5300011-cap-derquy-cap-frehel-etat-1979-2023-synthese-ofb-multisource-version-2026-polygones-point",
+    organization: "Office Français de la Biodiversité",
+    frequency: "irregular",
+    license: "Licence Ouverte / Open Licence version 2.0",
+    "spatial.granularity": "other",
+    featured: "false",
+    created_at: "2025-07-05",
+    last_modified: "2026-07-04",
+    resources_count: "1",
+    main_resources_count: "1",
+    resources_formats: "ogc:ows-c",
+    quality_score: "1",
+    "metric.views": "0",
+    "metric.resources_downloads": "0",
+  },
+  {
+    id: "6a484dde87aaebee80398e9c",
+    title: "Sites économiques",
+    slug: "sites-economiques-2",
+    acronym: "",
+    url: "https://www.data.gouv.fr/datasets/sites-economiques-2",
+    organization: "Géo2France",
+    frequency: "severalTimesADay",
+    license: "License Not Specified",
+    "spatial.granularity": "other",
+    featured: "false",
+    created_at: "2024-02-19",
+    last_modified: "2026-07-04",
+    resources_count: "1",
+    main_resources_count: "1",
+    resources_formats: "ogc:wms",
+    quality_score: "0.89",
+    "metric.views": "0",
+    "metric.resources_downloads": "0",
+  },
+  {
+    id: "6a477136bf5a20ae0375c229",
+    title: "Conseils Municipaux 2025",
+    slug: "conseils-municipaux-2025",
+    acronym: "",
+    url: "https://www.data.gouv.fr/datasets/conseils-municipaux-2025",
+    organization: "Commune de TEMPLEMARS",
+    frequency: "continuous",
+    license: "Licence Ouverte / Open Licence version 2.0",
+    "spatial.granularity": "fr:commune",
+    featured: "false",
+    created_at: "2026-07-03",
+    last_modified: "2026-07-03",
+    resources_count: "6",
+    main_resources_count: "6",
+    resources_formats: "pdf",
+    quality_score: "0.89",
+    "metric.views": "0",
+    "metric.resources_downloads": "0",
+  },
+  {
+    id: "6a484dd38637ecc0d6b559f6",
+    title: "Trajectoires passées des bénéficiaires de minima sociaux et Sortie des minima sociaux",
+    slug: "trajectoires-passees-des-beneficiaires-de-minima-sociaux-et-sortie-des-minima-sociaux",
+    acronym: "",
+    url: "https://www.data.gouv.fr/datasets/trajectoires-passees-des-beneficiaires-de-minima-sociaux-et-sortie-des-minima-sociaux",
+    organization: "Ministère des Solidarités et de la Santé",
+    frequency: "",
+    license: "License Not Specified",
+    "spatial.granularity": "",
+    featured: "false",
+    created_at: "2026-07-02",
+    last_modified: "2026-07-02",
+    resources_count: "2",
+    main_resources_count: "0",
+    resources_formats: "xlsx",
+    quality_score: "0.44",
+    "metric.views": "0",
+    "metric.resources_downloads": "0",
+  },
+  {
+    id: "6a483641bb48c96e60ad5f3e",
+    title: "Annuaire des écoles de danse en France",
+    slug: "annuaire-des-ecoles-de-danse-en-france",
+    acronym: "",
+    url: "https://www.data.gouv.fr/datasets/annuaire-des-ecoles-de-danse-en-france",
+    organization: "",
+    frequency: "weekly",
+    license: "Licence Ouverte / Open Licence version 2.0",
+    "spatial.granularity": "fr:commune",
+    featured: "false",
+    created_at: "2026-07-03",
+    last_modified: "2026-07-03",
+    resources_count: "1",
+    main_resources_count: "1",
+    resources_formats: "csv",
+    quality_score: "0.89",
+    "metric.views": "0",
+    "metric.resources_downloads": "0",
+  },
+  {
+    id: "6a47ce03313cca990f3ef6df",
+    title: "1 700 rivières contaminées - jeu de données des moyennes par station et substance",
+    slug: "1-700-rivieres-contaminees-jeu-de-donnees-des-moyennes-par-station-et-substance",
+    acronym: "",
+    url: "https://www.data.gouv.fr/datasets/1-700-rivieres-contaminees-jeu-de-donnees-des-moyennes-par-station-et-substance",
+    organization: "",
+    frequency: "notPlanned",
+    license: "Licence Ouverte / Open Licence version 2.0",
+    "spatial.granularity": "other",
+    featured: "false",
+    created_at: "2026-07-03",
+    last_modified: "2026-07-03",
+    resources_count: "1",
+    main_resources_count: "1",
+    resources_formats: "csv",
+    quality_score: "1",
+    "metric.views": "0",
+    "metric.resources_downloads": "0",
+  },
+  {
+    id: "6a47ac61e410ffaf0d3e6d1c",
+    title: "IRVE_STatique_ENGIE_Vianeo_All_Juillet 2026",
+    slug: "irve-statique-engie-vianeo-all-juillet-2026",
+    acronym: "EME_Juillet2026",
+    url: "https://www.data.gouv.fr/datasets/irve-statique-engie-vianeo-all-juillet-2026",
+    organization: "Engie Mobilités Electriques",
+    frequency: "monthly",
+    license: "Licence Ouverte / Open Licence version 2.0",
+    "spatial.granularity": "fr:commune",
+    featured: "false",
+    created_at: "2026-07-03",
+    last_modified: "2026-07-03",
+    resources_count: "1",
+    main_resources_count: "1",
+    resources_formats: "csv",
+    quality_score: "0.78",
+    "metric.views": "0",
+    "metric.resources_downloads": "0",
+  },
+  {
+    id: "6a47864eb28c51db7a844d08",
+    title: "SMIC historique France 2001-2026 (brut horaire et mensuel, 34 revalorisations)",
+    slug: "smic-historique-france-2001-2026-brut-horaire-et-mensuel-34-revalorisations",
+    acronym: "",
+    url: "https://www.data.gouv.fr/datasets/smic-historique-france-2001-2026-brut-horaire-et-mensuel-34-revalorisations",
+    organization: "MaCalculatriceEnLigne",
+    frequency: "annual",
+    license: "Creative Commons Attribution",
+    "spatial.granularity": "",
+    featured: "false",
+    created_at: "2026-07-03",
+    last_modified: "2026-07-03",
+    resources_count: "2",
+    main_resources_count: "2",
+    resources_formats: "png,csv",
+    quality_score: "0.67",
+    "metric.views": "0",
+    "metric.resources_downloads": "0",
+  },
 ];
-
-const electionIds = [
-  "2002_pres_t1",
-  "2002_pres_t2",
-  "2007_pres_t1",
-  "2007_pres_t2",
-  "2012_pres_t1",
-  "2014_muni_t1",
-  "2015_dpmt_t2",
-  "2026_muni_t212_pres_t1",
-];
-
-const electoralCommunes = [
-  { code: "01001", label: "Abergement-Clémenciat", department: "01" },
-  { code: "01004", label: "Ambérieu-en-Bugey", department: "01" },
-  { code: "02722", label: "Soissons", department: "02" },
-  { code: "59350", label: "Lille", department: "59" },
-  { code: "75056", label: "Paris", department: "75" },
-  { code: "97105", label: "Basse-Terre", department: "971" },
-  { code: "97617", label: "Mamoudzou", department: "976" },
-  { code: "ZZ011", label: "A?Cirits-Camou-Suhast", department: "ZZ" },
-];
-
-const rows: Row[] = Array.from({ length: 30 }, (_, index) => {
-  const rank = index + 1;
-  const electionId = electionIds[index % electionIds.length];
-  const commune = electoralCommunes[index % electoralCommunes.length];
-  const departmentReference =
-    departmentReferences.find((department) => department.code === commune.department) ??
-    departmentReferences[0];
-  const inscrits = 420 + index * 137;
-  const abstentions = Math.round(inscrits * (0.18 + (index % 7) * 0.025));
-  const votants = inscrits - abstentions;
-  const blancs = Math.round(votants * (0.012 + (index % 3) * 0.004));
-  const nuls = Math.round(votants * (0.008 + (index % 4) * 0.003));
-  const exprimes = votants - blancs - nuls;
-
-  return {
-    idElection: electionId,
-    idBrutMiom: `${commune.code}_${String(rank).padStart(4, "0")}`,
-    codeDepartement: departmentReference.code,
-    libelleDepartement: departmentReference.label,
-    codeCommune: commune.code,
-    libelleCommune: commune.label,
-    codeBv: String((rank % 32) + 1).padStart(4, "0"),
-    inscrits: String(inscrits),
-    abstentions: String(abstentions),
-    votants: String(votants),
-    blancs: String(blancs),
-    nuls: String(nuls),
-    exprimes: String(exprimes),
-    ratioAbstentionsInscrits: ((abstentions / inscrits) * 100).toFixed(2),
-    ratioVotantsInscrits: ((votants / inscrits) * 100).toFixed(2),
-    ratioExprimesVotants: ((exprimes / votants) * 100).toFixed(2),
-  };
-});
 
 function getDepartmentReferenceLabel(value: string) {
-  return (
-    departmentReferences.find((department) => department.code === value)?.label ??
-    "Département"
-  );
+  return value || "Donnée de référence";
 }
 
 function getRowValue(row: Row, key: ColumnKey) {
@@ -1269,11 +1456,11 @@ function DatasetContextHeader({
         </div>
         <div className="flex min-w-0 items-center gap-1 text-[13px] leading-[1.4] sm:text-[16px]">
           <span className="min-w-0 truncate text-[#161616]">
-            Direction interministérielle du numérique
+            data.gouv.fr
           </span>
           <span className="shrink-0 text-[#161616]">/</span>
           <span className="min-w-0 truncate font-bold text-[#161616]">
-            Annuaire de l’éducation
+            Catalogue des jeux de données
           </span>
           <span className="hidden shrink-0 text-[#3a3a3a] sm:inline">·</span>
           <span className="hidden truncate text-[#3a3a3a] sm:inline">
@@ -2078,7 +2265,7 @@ function CellActionMenu({
           </div>
           <div className="text-[13px] leading-[1.4] text-[#3a3a3a]">
             <p>Il semblerait que ce champ soit un</p>
-            <p className="font-bold">Code de département.</p>
+            <p className="font-bold">Identifiant de référence.</p>
             <p>
               {value} : {referenceLabel}
             </p>
@@ -2116,7 +2303,7 @@ function DataCell({
     }
   }
 
-  const cellClassName = `relative flex h-8 shrink-0 cursor-pointer items-center border-b border-r border-[#E5E5E5] px-2 text-left hover:bg-[#f6f6f6] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091] ${
+  const cellClassName = `relative flex h-7 shrink-0 cursor-pointer items-center border-b border-r border-[#E5E5E5] px-2 text-left hover:bg-[#f6f6f6] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091] ${
     isActive ? "bg-[#e8edff]" : ""
   }`;
   const cellStyle = { width };
@@ -3099,7 +3286,7 @@ function MapPanel() {
     <div className="flex min-h-0 flex-1 flex-col bg-[#FFFFFF]">
       <div className="flex h-10 items-center border-b border-[#E5E5E5] px-2">
         <p className="text-[13px] leading-[1.4] text-[#3a3a3a]">
-          Dernière mise à jour de l’aperçu : 13/06/2024 17:51
+          Dernière mise à jour de l’aperçu : 03/07/2026 00:00
         </p>
       </div>
       <div className="relative min-h-0 flex-1 overflow-hidden bg-[#f6f6f6]">
@@ -3310,7 +3497,7 @@ type AgentResponse = {
   chart?: AssistantChartSpec;
   queryRows?: Record<string, unknown>[];
   toolTrace?: {
-    tool: "get_resource_context" | "execute_query" | "create_chart";
+    tool: "inspect_schema" | "execute_sql" | "get_resource_context" | "execute_query" | "create_chart";
     summary: string;
     show?: boolean;
   }[];
@@ -3319,6 +3506,27 @@ type AgentResponse = {
   clarificationOptions?: AssistantFilterPayload[];
   model?: string;
   status: "success" | "ambiguous" | "empty" | "unable" | "error";
+};
+
+type AssistantToolCall =
+  | {
+      tool: "inspect_schema";
+      arguments?: Record<string, never>;
+    }
+  | {
+      tool: "execute_sql";
+      arguments: {
+        sql: string;
+      };
+    };
+
+type AgentPhaseResponse = {
+  toolCall?: AssistantToolCall;
+  answer?: string;
+  reasoning?: string;
+  sql?: string;
+  model?: string;
+  error?: string;
 };
 
 type AssistantChartSpec = {
@@ -3336,370 +3544,53 @@ type AssistantMessage = {
   response?: AgentResponse;
 };
 
-type AssistantConversationContext = {
-  filters: AssistantFilterPayload[];
-  lastIntent?: AssistantIntent;
-};
-
 type AssistantActionHandlers = {
   onApplyFilter: (filters: AssistantFilterPayload[]) => void;
   onApplySort: (sort: AssistantSortPayload) => void;
 };
 
 function getAssistantStarterQuestions() {
-  const hasGeography = tableColumns.some((column) =>
-    ["codeDepartement", "libelleDepartement", "codeCommune", "libelleCommune"].includes(
-      column.key,
-    ),
-  );
-  const hasElectionYears = rows.some((row) => /\b(19|20)\d{2}\b/.test(row.idElection));
-  const hasCategories = tableColumns.some((column) =>
-    ["category", "reference", "referenceData", "identifier"].includes(column.type),
-  );
-
   return [
     "Explique-moi la structure du dataset",
-    "Quelles sont les colonnes importantes ?",
-    hasElectionYears ? "Quelle période couvre ce jeu de données ?" : null,
-    hasGeography ? "Quels territoires sont couverts ?" : null,
-    hasCategories ? "Quelles sont les valeurs les plus fréquentes ?" : null,
-    "Quelles colonnes contiennent le plus de valeurs manquantes ?",
-    hasCategories ? "Fais un graphique des principales catégories" : null,
-  ].filter(Boolean) as string[];
+    "Quelles sont les valeurs les plus fréquentes ?",
+    "Liste les 10 principales catégories",
+  ];
 }
 
 const assistantLoadingSteps = [
-  "Lecture du schéma",
-  "Analyse des valeurs",
-  "Préparation de l’action",
+  {
+    label: "Analyse de la demande",
+    detail: "Le modèle décide si la question nécessite les données.",
+  },
+  {
+    label: "Choix des tools",
+    detail: "inspect_schema ou execute_sql sont préparés si besoin.",
+  },
+  {
+    label: "Exécution locale",
+    detail: "DuckDB-WASM interroge le Parquet dans le navigateur.",
+  },
+  {
+    label: "Rédaction",
+    detail: "La réponse est formulée à partir des preuves disponibles.",
+  },
 ];
+const desktopTableHeaderHeight = 48;
+const desktopTableRowHeight = 28;
+const desktopTableOverscanRows = 24;
+const duckdbPreviewPageSize = 500;
+const mobilePreviewRowLimit = 250;
 
-function normalizeAssistantText(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
-function escapeSqlValue(value: string) {
-  return value.replace(/'/g, "''");
-}
-
-function buildFilterSql(filters: AssistantFilterPayload[]) {
-  return `SELECT *\nFROM resultats_electoraux\nWHERE ${filters
-    .map((filter) => `${filter.label} = '${escapeSqlValue(filter.value)}'`)
-    .join("\n  AND ")};`;
-}
-
-function countRowsMatchingFilters(filters: AssistantFilterPayload[]) {
-  return rows.filter((row) =>
-    filters.every((filter) => getRowValue(row, filter.key) === filter.value),
-  ).length;
-}
-
-function getColumnByLabelOrKey(value: string) {
-  const normalizedValue = normalizeAssistantText(value);
-
-  return tableColumns.find(
-    (column) =>
-      normalizeAssistantText(column.key) === normalizedValue ||
-      normalizeAssistantText(column.label) === normalizedValue,
-  );
-}
-
-function getColumnCoverageSummary() {
-  const typeCounts = tableColumns.reduce<Record<ColumnType, number>>(
-    (accumulator, column) => {
-      accumulator[column.type] = (accumulator[column.type] ?? 0) + 1;
-
-      return accumulator;
-    },
-    {
-      identifier: 0,
-      referenceData: 0,
-      reference: 0,
-      category: 0,
-      number: 0,
-      date: 0,
-      text: 0,
-    },
-  );
-
-  return `${tableColumns.length} colonnes, ${rows.length} lignes disponibles dans l’aperçu, dont ${typeCounts.number} colonnes numériques, ${typeCounts.identifier} identifiants et ${typeCounts.reference + typeCounts.referenceData} colonnes territoriales ou référentielles.`;
-}
-
-function buildStructureAnswer(question: string): AgentResponse {
-  const importantColumns = [
-    "id_election",
-    "libelle_departement",
-    "libelle_commune",
-    "inscrits",
-    "votants",
-    "exprimes",
-    "ratio_abstentions_inscrits",
-  ];
-  const normalizedQuestion = normalizeAssistantText(question);
-  const asksImportantColumns =
-    normalizedQuestion.includes("colonnes importantes") ||
-    normalizedQuestion.includes("importantes");
-  const answer = asksImportantColumns
-    ? `Les colonnes les plus utiles sont ${importantColumns.join(", ")}. Elles permettent d’identifier l’élection, le territoire et les principaux volumes de participation.`
-    : `Cette ressource contient des résultats électoraux consolidés. Elle expose ${getColumnCoverageSummary()}`;
-
-  return {
-    intent: "explain_structure",
-    answer,
-    columnsUsed: asksImportantColumns ? importantColumns : tableColumns.map((column) => column.label),
-    proposedAction: { type: "none" },
-    status: "success",
-  };
-}
-
-function buildFrequentValuesAnswer(): AgentResponse {
-  const columns = ["idElection", "libelleDepartement", "libelleCommune"]
-    .map(getColumnByLabelOrKey)
-    .filter(Boolean) as TableColumn[];
-  const summary = columns
-    .map((column) => {
-      const values = getColumnFrequentValues(column)
-        .slice(0, 3)
-        .map((item) => `${item.label} ${item.value}`)
-        .join(", ");
-
-      return `${column.label} : ${values}`;
-    })
-    .join("\n");
-
-  return {
-    intent: "aggregate",
-    answer: `Les valeurs les plus fréquentes dans l’aperçu sont :\n${summary}`,
-    columnsUsed: columns.map((column) => column.label),
-    proposedAction: { type: "none" },
-    status: "success",
-  };
-}
-
-function buildYearsAnswer(): AgentResponse {
-  const years = Array.from(
-    new Set(
-      rows
-        .map((row) => getRowValue(row, "idElection").match(/\d{4}/)?.[0])
-        .filter(Boolean),
-    ),
-  ).sort();
-
-  return {
-    intent: "aggregate",
-    answer: `Les années visibles dans l’aperçu sont ${years.join(", ")}.`,
-    sql: "SELECT DISTINCT regexp_extract(id_election, '\\d{4}') AS annee\nFROM resultats_electoraux\nORDER BY annee;",
-    columnsUsed: ["id_election"],
-    proposedAction: { type: "none" },
-    status: "success",
-  };
-}
-
-function buildTerritoriesAnswer(): AgentResponse {
-  const departments = getColumnFrequentValues(tableColumns[3])
-    .map((item) => item.label)
-    .join(", ");
-  const communes = getColumnFrequentValues(tableColumns[5])
-    .slice(0, 5)
-    .map((item) => item.label)
-    .join(", ");
-
-  return {
-    intent: "aggregate",
-    answer: `Les territoires couverts dans l’aperçu incluent les départements ${departments}. Les communes les plus représentées incluent ${communes}.`,
-    columnsUsed: ["libelle_departement", "libelle_commune"],
-    proposedAction: { type: "none" },
-    status: "success",
-  };
-}
-
-function buildHighestValuesAnswer(): AgentResponse {
-  const numericColumns = tableColumns.filter((column) => column.type === "number");
-  const highest = numericColumns
-    .map((column) => {
-      const stats = getNumberStats(column);
-
-      return `${column.label} : maximum ${stats.max}`;
-    })
-    .slice(0, 6)
-    .join(", ");
-
-  return {
-    intent: "aggregate",
-    answer: `Voici les valeurs les plus élevées observées : ${highest}.`,
-    columnsUsed: numericColumns.slice(0, 6).map((column) => column.label),
-    proposedAction: {
-      type: "apply_sort",
-      payload: {
-        key: "inscrits",
-        label: "inscrits",
-        direction: "desc",
-      },
-    },
-    status: "success",
-  };
-}
-
-function findAssistantMatches(question: string) {
-  const normalizedQuestion = normalizeAssistantText(question);
-  const matches: AssistantFilterPayload[] = [];
-
-  tableColumns
-    .filter((column) => column.type !== "number")
-    .forEach((column) => {
-      const counts = rows.reduce<Map<string, number>>((accumulator, row) => {
-        const value = getRowValue(row, column.key);
-
-        if (normalizedQuestion.includes(normalizeAssistantText(value))) {
-          accumulator.set(value, (accumulator.get(value) ?? 0) + 1);
-        }
-
-        return accumulator;
-      }, new Map<string, number>());
-
-      counts.forEach((count, value) => {
-        matches.push({
-          key: column.key,
-          label: column.label,
-          value,
-          type: column.type,
-          count,
-        });
-      });
-    });
-
-  return matches;
-}
-
-function findYearFilter(question: string): AssistantFilterPayload | null {
-  const year = question.match(/\b(19|20)\d{2}\b/)?.[0];
-
-  if (!year) {
-    return null;
+function normalizePreviewValue(value: unknown) {
+  if (value === null || value === undefined) {
+    return "";
   }
 
-  const count = rows.filter((row) => getRowValue(row, "idElection").includes(year)).length;
-
-  return {
-    key: "idElection",
-    label: "id_election",
-    value: year,
-    type: "identifier",
-    count,
-  };
-}
-
-function answerAssistantQuestion({
-  question,
-  context,
-}: {
-  question: string;
-  context: AssistantConversationContext;
-}): AgentResponse {
-  const startedAt = performance.now();
-  const normalizedQuestion = normalizeAssistantText(question);
-  let response: AgentResponse;
-
-  if (
-    normalizedQuestion.includes("structure") ||
-    normalizedQuestion.includes("colonnes") ||
-    normalizedQuestion.includes("dataset") ||
-    normalizedQuestion.includes("jeu de donnees") ||
-    normalizedQuestion.includes("contient")
-  ) {
-    response = buildStructureAnswer(question);
-  } else if (normalizedQuestion.includes("frequent")) {
-    response = buildFrequentValuesAnswer();
-  } else if (normalizedQuestion.includes("annees") || /\b(19|20)\d{2}\b/.test(question)) {
-    const yearFilter = findYearFilter(question);
-    const filters = yearFilter
-      ? [...context.filters.filter((filter) => filter.key !== yearFilter.key), yearFilter]
-      : context.filters;
-    const count = yearFilter ? countRowsMatchingFilters(filters) : 0;
-
-    response =
-      yearFilter && context.filters.length > 0
-        ? {
-            intent: "search_rows",
-            answer:
-              count > 0
-                ? `J’ai trouvé ${count} lignes correspondant à ${filters.map((filter) => `${filter.label} = ${filter.value}`).join(" et ")}.`
-                : `Je n’ai trouvé aucune ligne correspondant à ${filters.map((filter) => `${filter.label} = ${filter.value}`).join(" et ")}.`,
-            sql: buildFilterSql(filters),
-            columnsUsed: filters.map((filter) => filter.label),
-            proposedAction: { type: "apply_filter", payload: { filters } },
-            status: count > 0 ? "success" : "empty",
-          }
-        : buildYearsAnswer();
-  } else if (
-    normalizedQuestion.includes("territoires") ||
-    normalizedQuestion.includes("departements") ||
-    normalizedQuestion.includes("communes")
-  ) {
-    response = buildTerritoriesAnswer();
-  } else if (
-    normalizedQuestion.includes("plus elevees") ||
-    normalizedQuestion.includes("maximum") ||
-    normalizedQuestion.includes("plus haut")
-  ) {
-    response = buildHighestValuesAnswer();
-  } else {
-    const matches = findAssistantMatches(question);
-
-    if (matches.length > 1 && new Set(matches.map((match) => match.key)).size > 1) {
-      response = {
-        intent: "clarify",
-        answer: `J’ai trouvé des correspondances pour cette question dans plusieurs colonnes. Laquelle voulez-vous explorer ?`,
-        columnsUsed: matches.map((match) => match.label),
-        proposedAction: { type: "none" },
-        needsClarification: true,
-        clarificationOptions: matches,
-        status: "ambiguous",
-      };
-    } else if (matches.length === 1) {
-      const filters = [
-        ...context.filters.filter((filter) => filter.key !== matches[0].key),
-        matches[0],
-      ];
-      const count = countRowsMatchingFilters(filters);
-
-      response = {
-        intent: "search_rows",
-        answer:
-          count > 0
-            ? `J’ai trouvé ${count} lignes correspondant à ${matches[0].value} dans la colonne ${matches[0].label}.`
-            : `Je n’ai trouvé aucune ligne correspondant à ${matches[0].value} dans la colonne ${matches[0].label}.`,
-        sql: buildFilterSql(filters),
-        columnsUsed: filters.map((filter) => filter.label),
-        proposedAction: { type: "apply_filter", payload: { filters } },
-        status: count > 0 ? "success" : "empty",
-      };
-    } else {
-      response = {
-        intent: "unable",
-        answer:
-          "Je n’ai pas trouvé de correspondance exploitable dans les données déjà disponibles. Essayez une commune, un département, une année ou une question sur la structure.",
-        proposedAction: { type: "none" },
-        status: "unable",
-      };
-    }
+  if (typeof value === "object") {
+    return JSON.stringify(value);
   }
 
-  console.info("prototype-assistant-log", {
-    resource_id: "resultats_electoraux",
-    dataset_id: "resultats-electoraux-consolides",
-    question,
-    intent: response.intent,
-    sql: response.sql,
-    status: response.status,
-    duration_ms: Math.round(performance.now() - startedAt),
-  });
-
-  return response;
+  return String(value);
 }
 
 function ModelTokenUsage({
@@ -3793,6 +3684,33 @@ function isMarkdownTableSeparator(line: string) {
   return splitMarkdownTableRow(line).every((cell) => /^:?-{3,}:?$/.test(cell));
 }
 
+function renderInlineMarkdown(text: string) {
+  const parts = text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).filter(Boolean);
+
+  return parts.map((part, index) => {
+    if (part.startsWith("`") && part.endsWith("`")) {
+      return (
+        <code
+          key={`${part}-${index}`}
+          className="rounded bg-[#f6f6f6] px-1 font-mono text-[12px] text-[#161616]"
+        >
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+
+    if (part.startsWith("**") && part.endsWith("**")) {
+      return (
+        <strong key={`${part}-${index}`} className="font-semibold text-[#161616]">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+
+    return <Fragment key={`${part}-${index}`}>{part}</Fragment>;
+  });
+}
+
 function renderAssistantMarkdown(content: string) {
   const lines = content.split("\n");
   const nodes: ReactNode[] = [];
@@ -3801,6 +3719,27 @@ function renderAssistantMarkdown(content: string) {
   while (index < lines.length) {
     const line = lines[index];
     const nextLine = lines[index + 1];
+
+    if (line.trim().startsWith("```")) {
+      const codeLines: string[] = [];
+      index += 1;
+
+      while (index < lines.length && !lines[index].trim().startsWith("```")) {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+
+      nodes.push(
+        <pre
+          key={`code-${index}`}
+          className="overflow-auto rounded border border-[#E5E5E5] bg-[#f6f6f6] p-2 font-mono text-[12px] leading-5 text-[#161616]"
+        >
+          {codeLines.join("\n")}
+        </pre>,
+      );
+      index += 1;
+      continue;
+    }
 
     if (
       line.includes("|") &&
@@ -3827,7 +3766,7 @@ function renderAssistantMarkdown(content: string) {
                     scope="col"
                     className="border-b border-r border-[#E5E5E5] px-2 py-1 font-medium last:border-r-0"
                   >
-                    {header}
+                    {renderInlineMarkdown(header)}
                   </th>
                 ))}
               </tr>
@@ -3840,7 +3779,7 @@ function renderAssistantMarkdown(content: string) {
                       key={`${header}-${cellIndex}`}
                       className="border-b border-r border-[#E5E5E5] px-2 py-1 text-[#3a3a3a] last:border-r-0"
                     >
-                      {row[cellIndex] ?? ""}
+                      {renderInlineMarkdown(row[cellIndex] ?? "")}
                     </td>
                   ))}
                 </tr>
@@ -3852,10 +3791,64 @@ function renderAssistantMarkdown(content: string) {
       continue;
     }
 
+    const bulletMatch = line.match(/^\s*[-*]\s+(.+)$/);
+    if (bulletMatch) {
+      const items: string[] = [];
+
+      while (index < lines.length) {
+        const itemMatch = lines[index].match(/^\s*[-*]\s+(.+)$/);
+
+        if (!itemMatch) {
+          break;
+        }
+
+        items.push(itemMatch[1]);
+        index += 1;
+      }
+
+      nodes.push(
+        <ul key={`ul-${index}`} className="list-disc space-y-1 pl-4">
+          {items.map((item, itemIndex) => (
+            <li key={`${item}-${itemIndex}`} className="pl-1">
+              {renderInlineMarkdown(item)}
+            </li>
+          ))}
+        </ul>,
+      );
+      continue;
+    }
+
+    const numberedMatch = line.match(/^\s*\d+[.)]\s+(.+)$/);
+    if (numberedMatch) {
+      const items: string[] = [];
+
+      while (index < lines.length) {
+        const itemMatch = lines[index].match(/^\s*\d+[.)]\s+(.+)$/);
+
+        if (!itemMatch) {
+          break;
+        }
+
+        items.push(itemMatch[1]);
+        index += 1;
+      }
+
+      nodes.push(
+        <ol key={`ol-${index}`} className="list-decimal space-y-1 pl-4">
+          {items.map((item, itemIndex) => (
+            <li key={`${item}-${itemIndex}`} className="pl-1">
+              {renderInlineMarkdown(item)}
+            </li>
+          ))}
+        </ol>,
+      );
+      continue;
+    }
+
     if (line.trim()) {
       nodes.push(
-        <p key={`p-${index}`} className="whitespace-pre-wrap">
-          {line}
+        <p key={`p-${index}`} className="whitespace-pre-wrap leading-5">
+          {renderInlineMarkdown(line)}
         </p>,
       );
     }
@@ -3912,15 +3905,11 @@ function AssistantChart({ chart }: { chart: AssistantChartSpec }) {
 
 function ChatSidebar({
   activeResource,
-  previewRows,
-  conversationContext,
   onApplyFilter,
   onApplySort,
   onClose,
 }: {
   activeResource: Resource;
-  previewRows: Row[];
-  conversationContext: AssistantConversationContext;
   onApplyFilter: AssistantActionHandlers["onApplyFilter"];
   onApplySort: AssistantActionHandlers["onApplySort"];
   onClose: () => void;
@@ -3932,9 +3921,9 @@ function ChatSidebar({
   >([]);
   const [isAgentLoading, setIsAgentLoading] = useState(false);
   const [loadingStepIndex, setLoadingStepIndex] = useState(0);
-  const [localContext, setLocalContext] =
-    useState<AssistantConversationContext>(conversationContext);
   const starterQuestions = useMemo(() => getAssistantStarterQuestions(), []);
+  const inspectedSchemaRef = useRef<InspectSchemaResult | null>(null);
+  const messageIdCounterRef = useRef(0);
 
   function normalizeRemoteResponse(response: Partial<AgentResponse>): AgentResponse {
     return {
@@ -3956,6 +3945,108 @@ function ChatSidebar({
     };
   }
 
+  function executionRowsToRecords(result: ExecuteSqlResult) {
+    return result.rows.map((row) =>
+      Object.fromEntries(result.columns.map((column, index) => [column, row[index]])),
+    );
+  }
+
+  async function callAgentPhase(payload: Record<string, unknown>) {
+    const apiResponse = await fetch(
+      "/api/prototypes/explorateur-sql-et-ia/agent",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          resourceName: activeResource.name,
+          tableName: "data",
+          conversationHistory: messages.slice(-8).map((message) => ({
+            role: message.role,
+            content: message.content,
+          })),
+          ...payload,
+        }),
+      },
+    );
+    const data = (await apiResponse.json()) as AgentPhaseResponse;
+
+    if (!apiResponse.ok || data.error) {
+      throw new Error(data.error ?? "Impossible d’interroger le modèle.");
+    }
+
+    return data;
+  }
+
+  async function runRemoteAssistant(question: string): Promise<AgentResponse> {
+    const toolTrace: AgentResponse["toolTrace"] = [];
+    const plan = await callAgentPhase({
+      phase: "plan",
+      question,
+    });
+
+    if (plan.answer) {
+      return normalizeRemoteResponse({
+        answer: plan.answer,
+        reasoning: plan.reasoning,
+        proposedAction: { type: "none" },
+        model: plan.model,
+        status: "success",
+      });
+    }
+
+    if (plan.toolCall?.tool !== "inspect_schema") {
+      throw new Error("Le modèle doit appeler inspect_schema avant de générer du SQL.");
+    }
+
+    const schema = inspectedSchemaRef.current ?? (await inspectSchema());
+    inspectedSchemaRef.current = schema;
+    toolTrace.push({
+      tool: "inspect_schema",
+      summary: `${schema.columns.length} colonnes et ${Number(schema.rows).toLocaleString("fr-FR")} lignes inspectées localement.`,
+    });
+
+    const sqlPlan = await callAgentPhase({
+      phase: "generate_sql",
+      question,
+      schema,
+    });
+
+    if (sqlPlan.toolCall?.tool !== "execute_sql") {
+      throw new Error("Le modèle doit appeler execute_sql après inspection du schéma.");
+    }
+
+    const sql = sqlPlan.toolCall.arguments.sql;
+    const executionResult = await executeSql(sql);
+    toolTrace.push({
+      tool: "execute_sql",
+      summary: `${executionResult.rowCount} lignes retournées par DuckDB-WASM dans le navigateur.`,
+      show: true,
+    });
+
+    const finalAnswer = await callAgentPhase({
+      phase: "synthesize",
+      question,
+      schema,
+      sql,
+      executionResult,
+    });
+
+    return normalizeRemoteResponse({
+      answer:
+        finalAnswer.answer ??
+        "Je n’ai pas reçu de réponse exploitable pour cette question.",
+      reasoning: finalAnswer.reasoning,
+      sql: finalAnswer.sql ?? sql,
+      queryRows: executionRowsToRecords(executionResult).slice(0, 12),
+      toolTrace,
+      proposedAction: { type: "none" },
+      model: finalAnswer.model ?? sqlPlan.model ?? plan.model,
+      status: "success",
+    });
+  }
+
   function applyResponseAction(response: AgentResponse, messageId?: string) {
     if (response.proposedAction.type === "apply_filter") {
       onApplyFilter(response.proposedAction.payload.filters);
@@ -3964,10 +4055,6 @@ function ChatSidebar({
           current.includes(messageId) ? current : [...current, messageId],
         );
       }
-      setLocalContext({
-        filters: response.proposedAction.payload.filters,
-        lastIntent: response.intent,
-      });
       return;
     }
 
@@ -3978,10 +4065,6 @@ function ChatSidebar({
           current.includes(messageId) ? current : [...current, messageId],
         );
       }
-      setLocalContext((current) => ({
-        ...current,
-        lastIntent: response.intent,
-      }));
     }
   }
 
@@ -3992,109 +4075,78 @@ function ChatSidebar({
       return;
     }
 
+    messageIdCounterRef.current += 1;
+    const messageId = messageIdCounterRef.current;
     setIsAgentLoading(true);
     setLoadingStepIndex(0);
     setAgentQuestion("");
+    const userMessageId = `user-${messageId}`;
+    const assistantMessageId = `assistant-${messageId}`;
+
+    setMessages((current) => [
+      ...current,
+      {
+        id: userMessageId,
+        role: "user",
+        content: question,
+      },
+    ]);
 
     const loadingInterval = window.setInterval(() => {
       setLoadingStepIndex((current) =>
         current >= assistantLoadingSteps.length - 1 ? current : current + 1,
       );
-    }, 260);
+    }, 900);
 
-    window.setTimeout(() => {
-      window.clearInterval(loadingInterval);
-      void (async () => {
-        let response: AgentResponse;
+    void (async () => {
+      let response: AgentResponse;
 
-        try {
-          const apiResponse = await fetch(
-            "/api/prototypes/explorateur-sql-et-ia/agent",
-            {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify({
-                question,
-                resourceName: activeResource.name,
-                resourceId: activeResource.id,
-                tableName: activeResource.id,
-                columns: tableColumns.map((column) => column.label),
-                previewRows,
-                conversationHistory: messages.slice(-8).map((message) => ({
-                  role: message.role,
-                  content: message.content,
-                })),
-              }),
-            },
-          );
-          const data = (await apiResponse.json()) as Partial<AgentResponse> & {
-            error?: string;
-          };
+      try {
+        response = await runRemoteAssistant(question);
+      } catch (error) {
+        console.error("prototype-assistant-remote-error", error);
+        response = {
+          intent: "unable",
+          answer:
+            "Je n’ai pas pu finaliser l’analyse avec le modèle et DuckDB-WASM.",
+          reasoning:
+            error instanceof Error
+              ? `Erreur du flux tool-driven : ${error.message}`
+              : "Erreur inconnue du flux tool-driven.",
+          proposedAction: { type: "none" },
+          status: "error",
+        };
+      } finally {
+        window.clearInterval(loadingInterval);
+      }
 
-          if (!apiResponse.ok) {
-            throw new Error(data.error ?? "Impossible d’interroger le modèle.");
-          }
-
-          response = normalizeRemoteResponse(data);
-        } catch (error) {
-          const fallbackResponse = answerAssistantQuestion({
-            question,
-            context: localContext,
-          });
-          response = {
-            ...fallbackResponse,
-            reasoning:
-              error instanceof Error
-                ? `Réponse locale de secours : ${error.message}`
-                : "Réponse locale de secours.",
-            status:
-              fallbackResponse.status === "success"
-                ? "success"
-                : fallbackResponse.status,
-          };
-        }
-
-        const userMessageId = `user-${Date.now()}`;
-        const assistantMessageId = `assistant-${Date.now()}`;
-        const nextMessages: AssistantMessage[] = [
-          {
-            id: userMessageId,
-            role: "user",
-            content: question,
-          },
-          {
-            id: assistantMessageId,
-            role: "assistant",
-            content: response.answer,
-            response,
-          },
-        ];
-
-        setMessages((current) => [...current, ...nextMessages]);
-        if (response.proposedAction.type === "apply_filter") {
-          applyResponseAction(response, assistantMessageId);
-        } else {
-          setLocalContext((current) => ({
-            ...current,
-            lastIntent: response.intent,
-          }));
-        }
-        setIsAgentLoading(false);
-      })();
-    }, 500);
+      setMessages((current) => [
+        ...current,
+        {
+          id: assistantMessageId,
+          role: "assistant",
+          content: response.answer,
+          response,
+        },
+      ]);
+      if (response.proposedAction.type === "apply_filter") {
+        applyResponseAction(response, assistantMessageId);
+      }
+      setIsAgentLoading(false);
+    })();
   }
 
   return (
     <aside
-      className="chat-sidebar flex w-[400px] shrink-0 flex-col overflow-hidden border-l border-[#E5E5E5] bg-[#FFFFFF]"
+      className="chat-sidebar flex w-[408px] shrink-0 flex-col overflow-hidden border-l border-[#E5E5E5] bg-[#FFFFFF]"
       data-active-resource={activeResource.id}
     >
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-[#F1F1F1] bg-[#fcfcfc] px-3">
-        <p className="min-w-0 truncate text-[13px] font-medium leading-[1.4] text-[#161616]">
-          Interroger ces données
-        </p>
+      <div className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-[#F1F1F1] bg-[#fcfcfc] px-3 py-2">
+        <div className="min-w-0">
+          <p className="truncate text-[13px] font-semibold leading-[1.4] text-[#161616]">
+            Interroger ces données
+          </p>
+        </div>
         <button
           type="button"
           aria-label="Fermer l’assistant"
@@ -4108,21 +4160,20 @@ function ChatSidebar({
       <div className="min-h-0 flex-1 overflow-auto bg-[#FFFFFF] px-2 py-3">
         {messages.length === 0 ? (
           <div className="flex min-h-full flex-col justify-end pb-2">
-            <p className="px-2 text-[14px] font-medium leading-[1.4] text-[#161616]">
-              Comment puis-je vous aider
+            <p className="px-1 text-[14px] font-semibold leading-[1.4] text-[#161616]">
+              Assistant d’exploration de données
             </p>
-            <p className="mt-1 px-2 text-[13px] leading-[1.4] text-[#5d5d5d]">
-              Vous pouvez poser une question pour retrouver une information,
-              résumer les données, comprendre la structure ou générer une
-              visualisation.
+            <p className="mt-1 px-1 text-[13px] leading-5 text-[#5d5d5d]">
+              Posez une question sur cette ressource. Les calculs sont exécutés
+              localement avec DuckDB-WASM quand les données sont nécessaires.
             </p>
-            <div className="mt-1 flex flex-col items-start gap-0.5">
+            <div className="mt-2 flex flex-wrap gap-1.5">
               {starterQuestions.map((question) => (
                 <button
                   key={question}
                   type="button"
                   onClick={() => submitAgentQuestion(question)}
-                  className="min-h-6 cursor-pointer rounded px-2 py-0.5 text-left text-[14px] leading-[1.4] text-[#5d5d5d] transition-colors hover:bg-[#f6f6f6] hover:text-[#000091]"
+                  className="min-h-7 max-w-full cursor-pointer rounded-full border border-[#E5E5E5] bg-[#FFFFFF] px-2.5 py-1 text-left text-[12px] leading-[1.35] text-[#3a3a3a] transition-colors hover:border-[#000091] hover:bg-[#e8edff] hover:text-[#000091]"
                 >
                   {question}
                 </button>
@@ -4134,28 +4185,77 @@ function ChatSidebar({
             {messages.map((message) =>
               message.role === "user" ? (
                 <div key={message.id} className="flex justify-end">
-                  <p className="max-w-[280px] rounded bg-[#e8edff] px-3 py-2 text-[13px] leading-5 text-[#000091]">
+                  <p className="max-w-[300px] rounded bg-[#e8edff] px-3 py-2 text-[13px] leading-5 text-[#000091]">
                     {message.content}
                   </p>
                 </div>
               ) : (
                 <div key={message.id} className="space-y-2">
-                  {message.response?.sql || message.response?.reasoning ? (
-                    <details className="rounded border border-[#E5E5E5] bg-[#FFFFFF]">
-                      <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-[12px] font-medium text-[#3a3a3a]">
-                        <Icon path={icons.brain} className="h-4 w-4 text-[#3a3a3a]" />
-                        <span>Voir comment cette réponse a été calculée</span>
+                  {message.response?.reasoning ? (
+                    <details className="rounded border border-[#E5E5E5] bg-[#fcfcfc]">
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-[12px] font-medium text-[#3a3a3a] [&::-webkit-details-marker]:hidden">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#eeeeee]">
+                            <Icon path={icons.brain} className="h-3.5 w-3.5 text-[#3a3a3a]" />
+                          </span>
+                          <span>Raisonnement</span>
+                        </span>
+                        <span className="shrink-0 text-[11px] text-[#666666]">
+                          décision du modèle
+                        </span>
+                      </summary>
+                      <p className="border-t border-[#E5E5E5] px-3 py-2 text-[12px] leading-5 text-[#3a3a3a]">
+                        {message.response.reasoning}
+                      </p>
+                    </details>
+                  ) : null}
+                  {message.response?.toolTrace?.length || message.response?.sql ? (
+                    <details className="rounded border border-[#E5E5E5] bg-[#fcfcfc]">
+                      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-3 py-2 text-[12px] font-medium text-[#3a3a3a] [&::-webkit-details-marker]:hidden">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#eeeeee]">
+                            <Icon path={icons.code} className="h-3.5 w-3.5 text-[#3a3a3a]" />
+                          </span>
+                          <span>Tools utilisés</span>
+                        </span>
+                        <span className="shrink-0 text-[11px] text-[#666666]">
+                          preuves + SQL
+                        </span>
                       </summary>
                       <div className="border-t border-[#E5E5E5]">
-                        {message.response.reasoning ? (
-                          <p className="px-3 py-2 text-[12px] leading-5 text-[#3a3a3a]">
-                            {message.response.reasoning}
-                          </p>
-                        ) : null}
+                        <div className="space-y-2 px-3 py-2">
+                          {message.response.toolTrace?.length ? (
+                            message.response.toolTrace.map((trace, index) => (
+                                <div
+                                  key={`${trace.tool}-${index}`}
+                                  className="grid grid-cols-[18px_minmax(0,1fr)] gap-2 text-[12px] leading-5 text-[#3a3a3a]"
+                                >
+                                  <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#e8edff] text-[10px] font-semibold text-[#000091]">
+                                    {index + 1}
+                                  </span>
+                                  <span className="min-w-0">
+                                    <code className="rounded bg-[#FFFFFF] px-1 font-mono text-[11px] text-[#161616]">
+                                      {trace.tool}
+                                    </code>{" "}
+                                    {trace.summary}
+                                  </span>
+                                </div>
+                              ))
+                          ) : (
+                            <p className="text-[12px] leading-5 text-[#666666]">
+                              Aucun tool n’a été nécessaire pour cette réponse.
+                            </p>
+                          )}
+                        </div>
                         {message.response.sql ? (
-                          <pre className="overflow-auto bg-[#f6f6f6] p-3 font-mono text-[12px] leading-5 text-[#161616]">
-                            {message.response.sql}
-                          </pre>
+                          <div className="border-t border-[#E5E5E5]">
+                            <p className="px-3 pt-2 text-[11px] font-bold uppercase leading-4 text-[#666666]">
+                              SQL exécuté
+                            </p>
+                            <pre className="mt-1 max-h-44 overflow-auto bg-[#f6f6f6] p-3 font-mono text-[12px] leading-5 text-[#161616]">
+                              {message.response.sql}
+                            </pre>
+                          </div>
                         ) : null}
                         {message.response.columnsUsed?.length ? (
                           <p className="px-3 pb-3 text-[12px] leading-5 text-[#3a3a3a]">
@@ -4165,7 +4265,17 @@ function ChatSidebar({
                       </div>
                     </details>
                   ) : null}
-                  <div className="rounded border border-[#E5E5E5] bg-[#FFFFFF] p-3 text-[13px] leading-5 text-[#161616]">
+                  <div className="rounded border border-[#E5E5E5] bg-[#FFFFFF] p-3 text-[13px] leading-5 text-[#161616] shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold uppercase leading-4 text-[#666666]">
+                        Réponse
+                      </span>
+                      {message.response?.model ? (
+                        <span className="max-w-[170px] truncate rounded bg-[#f6f6f6] px-1.5 py-0.5 text-[11px] leading-4 text-[#666666]">
+                          {message.response.model}
+                        </span>
+                      ) : null}
+                    </div>
                     <div className="space-y-2">{renderAssistantMarkdown(message.content)}</div>
                     {message.response?.proposedAction.type === "apply_filter" ? (
                       <div className="mt-3 rounded border border-[#E5E5E5] bg-[#f6f6f6] p-2">
@@ -4304,15 +4414,15 @@ function ChatSidebar({
                 <div className="space-y-2">
                   {assistantLoadingSteps.map((step, index) => (
                     <div
-                      key={step}
-                      className={`flex items-center gap-2 text-[13px] leading-5 ${
+                      key={step.label}
+                      className={`grid grid-cols-[8px_minmax(0,1fr)] gap-2 text-[13px] leading-5 ${
                         index <= loadingStepIndex
                           ? "text-[#000091]"
                           : "text-[#666666]"
                       }`}
                     >
                       <span
-                        className={`h-2 w-2 rounded-full ${
+                        className={`mt-1.5 h-2 w-2 rounded-full ${
                           index < loadingStepIndex
                             ? "bg-[#18753c]"
                             : index === loadingStepIndex
@@ -4320,7 +4430,14 @@ function ChatSidebar({
                               : "bg-[#CECECE]"
                         }`}
                       />
-                      {step}
+                      <span>
+                        <span className="block font-medium">{step.label}</span>
+                        {index === loadingStepIndex ? (
+                          <span className="block text-[12px] leading-4 text-[#666666]">
+                            {step.detail}
+                          </span>
+                        ) : null}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -4346,8 +4463,16 @@ function ChatSidebar({
             rows={4}
             value={agentQuestion}
             onChange={(event) => setAgentQuestion(event.target.value)}
-            placeholder="posez une question en langage naturel"
-            className="min-h-0 flex-1 resize-none bg-transparent text-[13px] leading-[1.4] text-[#161616] outline-none placeholder:text-[#3a3a3a]"
+            onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
+              if (event.key !== "Enter" || event.shiftKey) {
+                return;
+              }
+
+              event.preventDefault();
+              submitAgentQuestion();
+            }}
+            placeholder="Posez une question en langage naturel"
+            className="min-h-0 flex-1 resize-none bg-transparent text-[13px] leading-[1.4] text-[#161616] outline-none placeholder:text-[#6a6a6a]"
           />
           <div className="flex items-center justify-between">
             <ModelTokenUsage model="gpt-oss-120b" used={18320} limit={32000} />
@@ -4379,7 +4504,7 @@ function ChatSidebar({
 export default function ExplorateurSqlEtIaPage() {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false);
-  const [activeResourceId, setActiveResourceId] = useState("resultats_electoraux");
+  const [activeResourceId, setActiveResourceId] = useState("catalogue_datasets");
   const [resourceSearchQuery, setResourceSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<ColumnKey | null>(null);
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
@@ -4413,12 +4538,25 @@ export default function ExplorateurSqlEtIaPage() {
     Partial<Record<ColumnKey, DateFilterValue>>
   >({});
   const [hasTableScrolled, setHasTableScrolled] = useState(false);
+  const [tableScrollTop, setTableScrollTop] = useState(0);
+  const [tableViewportHeight, setTableViewportHeight] = useState(640);
   const [isFilterFeedbackVisible, setIsFilterFeedbackVisible] = useState(false);
+  const tableViewportRef = useRef<HTMLDivElement | null>(null);
+  const pendingDatasetPagesRef = useRef<Set<number>>(new Set());
+  const [datasetRowCount, setDatasetRowCount] = useState<number | null>(null);
+  const [datasetColumnNames, setDatasetColumnNames] = useState<string[]>([]);
+  const [datasetRowsByIndex, setDatasetRowsByIndex] = useState<Record<number, Row>>({});
+  const [datasetPreviewError, setDatasetPreviewError] = useState<string | null>(null);
+  const [isDatasetPreviewLoading, setIsDatasetPreviewLoading] = useState(true);
 
   const visibleColumns = useMemo(
     () =>
-      tableColumns.filter((column) => visibleColumnKeys.includes(column.key)),
-    [visibleColumnKeys],
+      tableColumns.filter(
+        (column) =>
+          visibleColumnKeys.includes(column.key) &&
+          (datasetColumnNames.length === 0 || datasetColumnNames.includes(column.key)),
+      ),
+    [datasetColumnNames, visibleColumnKeys],
   );
 
   function startColumnResize(
@@ -4569,6 +4707,209 @@ export default function ExplorateurSqlEtIaPage() {
       compareRows(first, second, sortState),
     );
   }, [categoryFilters, dateFilters, numberRanges, searchQuery, sortState]);
+  const totalVisibleColumnWidth = useMemo(
+    () =>
+      visibleColumns.reduce(
+        (sum, column) => sum + (columnWidths[column.key] ?? column.widthPx),
+        0,
+      ),
+    [columnWidths, visibleColumns],
+  );
+  const displayedRowCount = datasetRowCount ?? filteredRows.length;
+  const isDuckDbPreviewActive = datasetRowCount !== null && !datasetPreviewError;
+  const virtualizedRows = useMemo(() => {
+    const rowCount = displayedRowCount;
+    const firstVisibleRow = Math.max(
+      0,
+      Math.floor(
+        Math.max(0, tableScrollTop - desktopTableHeaderHeight) /
+          desktopTableRowHeight,
+      ) - desktopTableOverscanRows,
+    );
+    const visibleRowCount =
+      Math.ceil(tableViewportHeight / desktopTableRowHeight) +
+      desktopTableOverscanRows * 2;
+    const startIndex = Math.min(rowCount, firstVisibleRow);
+    const endIndex = Math.min(rowCount, startIndex + visibleRowCount);
+
+    return {
+      indexes: Array.from(
+        { length: Math.max(0, endIndex - startIndex) },
+        (_, index) => startIndex + index,
+      ),
+      startIndex,
+      endIndex,
+      totalHeight: rowCount * desktopTableRowHeight,
+    };
+  }, [displayedRowCount, tableScrollTop, tableViewportHeight]);
+  const mobilePreviewRows = useMemo(() => {
+    if (datasetRowCount !== null) {
+      return Array.from(
+        { length: Math.min(mobilePreviewRowLimit, datasetRowCount) },
+        (_, index) => datasetRowsByIndex[index],
+      ).filter(Boolean);
+    }
+
+    return filteredRows.slice(0, mobilePreviewRowLimit);
+  }, [datasetRowCount, datasetRowsByIndex, filteredRows]);
+  const loadDatasetRows = useCallback(
+    async (startIndex: number, requestedLimit = duckdbPreviewPageSize) => {
+      const pageOffset =
+        Math.floor(Math.max(0, startIndex) / duckdbPreviewPageSize) *
+        duckdbPreviewPageSize;
+      const pageKey = pageOffset;
+
+      if (pendingDatasetPagesRef.current.has(pageKey)) {
+        return;
+      }
+
+      if (datasetRowsByIndex[pageOffset]) {
+        return;
+      }
+
+      const columnsToFetch = tableColumns
+        .map((column) => column.key)
+        .filter(
+          (column) =>
+            datasetColumnNames.length === 0 || datasetColumnNames.includes(column),
+        );
+
+      if (columnsToFetch.length === 0) {
+        return;
+      }
+
+      pendingDatasetPagesRef.current.add(pageKey);
+      setDatasetPreviewError(null);
+
+      try {
+        const result = await getDatasetRows({
+          columns: columnsToFetch,
+          limit: Math.max(requestedLimit, duckdbPreviewPageSize),
+          offset: pageOffset,
+        });
+
+        setDatasetRowsByIndex((current) => {
+          const nextRows = { ...current };
+
+          result.rows.forEach((row, index) => {
+            nextRows[result.offset + index] = Object.fromEntries(
+              tableColumns.map((column) => [
+                column.key,
+                normalizePreviewValue(row[column.key]),
+              ]),
+            );
+          });
+
+          return nextRows;
+        });
+      } catch (error) {
+        setDatasetPreviewError(
+          error instanceof Error
+            ? error.message
+            : "Impossible de charger les lignes du fichier.",
+        );
+      } finally {
+        pendingDatasetPagesRef.current.delete(pageKey);
+        setIsDatasetPreviewLoading(false);
+      }
+    },
+    [datasetColumnNames, datasetRowsByIndex],
+  );
+
+  useEffect(() => {
+    const viewport = tableViewportRef.current;
+
+    if (!viewport) {
+      return;
+    }
+
+    function updateViewportHeight() {
+      setTableViewportHeight(viewport?.clientHeight ?? 640);
+    }
+
+    updateViewportHeight();
+
+    const resizeObserver = new ResizeObserver(updateViewportHeight);
+    resizeObserver.observe(viewport);
+
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function initializeDatasetPreview() {
+      try {
+        const schema = await inspectSchema();
+
+        if (isCancelled) {
+          return;
+        }
+
+        const rowCount =
+          typeof schema.rows === "number" ? schema.rows : Number(schema.rows);
+        const schemaColumnNames = schema.columns.map((column) => column.name);
+
+        setDatasetColumnNames(schemaColumnNames);
+        setDatasetRowCount(Number.isFinite(rowCount) ? rowCount : rows.length);
+        setDatasetPreviewError(null);
+      } catch (error) {
+        if (isCancelled) {
+          return;
+        }
+
+        setDatasetPreviewError(
+          error instanceof Error
+            ? error.message
+            : "Impossible d'inspecter le fichier Parquet.",
+        );
+        setDatasetRowCount(rows.length);
+        setIsDatasetPreviewLoading(false);
+      }
+    }
+
+    void initializeDatasetPreview();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (datasetColumnNames.length === 0 || datasetRowCount === null) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void loadDatasetRows(0, duckdbPreviewPageSize);
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [datasetColumnNames.length, datasetRowCount, loadDatasetRows]);
+
+  useEffect(() => {
+    if (datasetColumnNames.length === 0 || datasetRowCount === null) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void loadDatasetRows(
+        virtualizedRows.startIndex,
+        Math.max(
+          duckdbPreviewPageSize,
+          virtualizedRows.endIndex - virtualizedRows.startIndex,
+        ),
+      );
+    }, 0);
+
+    return () => window.clearTimeout(timeout);
+  }, [
+    datasetColumnNames.length,
+    datasetRowCount,
+    loadDatasetRows,
+    virtualizedRows.endIndex,
+    virtualizedRows.startIndex,
+  ]);
 
   function updateSort(key: ColumnKey, direction: SortDirection) {
     setSortState({ key, direction });
@@ -4740,28 +5081,6 @@ export default function ExplorateurSqlEtIaPage() {
     setIsFilterFeedbackVisible(true);
     window.setTimeout(() => setIsFilterFeedbackVisible(false), 1200);
   }
-
-  const assistantConversationContext = useMemo<AssistantConversationContext>(
-    () => ({
-      filters: Object.entries(categoryFilters).flatMap(([key, values]) => {
-        const column = tableColumns.find((item) => item.key === key);
-
-        if (!column || !values?.length) {
-          return [];
-        }
-
-        return values.map((value) => ({
-          key,
-          label: column.label,
-          value,
-          type: column.type,
-          count: rows.filter((row) => getRowValue(row, key) === value).length,
-        }));
-      }),
-      lastIntent: undefined,
-    }),
-    [categoryFilters],
-  );
 
   return (
     <main
@@ -5223,26 +5542,34 @@ export default function ExplorateurSqlEtIaPage() {
                   <input
                     value={searchQuery}
                     onChange={(event) => setSearchQuery(event.target.value)}
+                    disabled={isDuckDbPreviewActive}
                     aria-label="Rechercher une valeur"
-                    placeholder="Rechercher une valeur"
-                    className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
+                    placeholder={
+                      isDuckDbPreviewActive
+                        ? "Recherche SQL à venir"
+                        : "Rechercher une valeur"
+                    }
+                    className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a] disabled:cursor-not-allowed disabled:text-[#929292]"
                   />
                 </label>
                 <button
                   type="button"
+                  disabled={isDuckDbPreviewActive}
                   onClick={() => {
                     setIsMobileFiltersOpen(true);
                     setActiveFilter(null);
                     setActiveCell(null);
                     setIsColumnSelectorOpen(false);
                   }}
-                  className="mobile-explorer-only h-8 items-center gap-1 rounded bg-[#FFFFFF] px-3 text-[13px] font-medium text-[#161616] hover:bg-[#f6f6f6]"
+                  className="mobile-explorer-only h-8 items-center gap-1 rounded bg-[#FFFFFF] px-3 text-[13px] font-medium text-[#161616] hover:bg-[#f6f6f6] disabled:cursor-not-allowed disabled:text-[#929292]"
                 >
                   <Icon path={icons.filter} className="h-3.5 w-3.5 text-[#3a3a3a]" />
                   Filtres
                 </button>
                 <span className="hidden text-[13px] text-[#3a3a3a] lg:inline">
-                  Dernière mise à jour de l’aperçu : 13/06/2024 17:51
+                  {isDuckDbPreviewActive
+                    ? "Aperçu complet via DuckDB-WASM"
+                    : "Dernière mise à jour de l’aperçu : 03/07/2026 00:00"}
                 </span>
               </div>
               <div className="ml-auto flex min-w-0 shrink-0 items-center gap-3 text-[12px] text-[#3a3a3a] lg:gap-4 lg:text-[13px]">
@@ -5289,10 +5616,12 @@ export default function ExplorateurSqlEtIaPage() {
                 <span className="flex items-center gap-1">
                   <Icon path={icons.rows} className="h-3.5 w-3.5 text-[#3a3a3a]" />
                   <span className="hidden whitespace-nowrap lg:inline">
-                    Lignes {filteredRows.length} sur {rows.length}
+                    Lignes {displayedRowCount.toLocaleString("fr-FR")} sur{" "}
+                    {(datasetRowCount ?? rows.length).toLocaleString("fr-FR")}
                   </span>
                   <span className="whitespace-nowrap lg:hidden">
-                    {filteredRows.length}/{rows.length}
+                    {displayedRowCount.toLocaleString("fr-FR")}/
+                    {(datasetRowCount ?? rows.length).toLocaleString("fr-FR")}
                   </span>
                 </span>
               </div>
@@ -5379,18 +5708,35 @@ export default function ExplorateurSqlEtIaPage() {
               />
 
               <div
+                ref={tableViewportRef}
                 className="h-full overflow-auto"
                 onScroll={(event: UIEvent<HTMLDivElement>) => {
                   const isScrolled = event.currentTarget.scrollTop > 0;
 
+                  setTableScrollTop(event.currentTarget.scrollTop);
                   setHasTableScrolled((current) =>
                     current === isScrolled ? current : isScrolled,
                   );
                 }}
               >
-                {visibleColumns.length > 0 && filteredRows.length > 0 ? (
+                {datasetPreviewError ? (
+                  <div className="border-b border-[#E5E5E5] bg-[#fff4f4] px-3 py-2 text-[12px] leading-5 text-[#ce0500]">
+                    {datasetPreviewError}
+                  </div>
+                ) : null}
+                {isDatasetPreviewLoading ? (
+                  <div className="border-b border-[#E5E5E5] bg-[#f6f6f6] px-3 py-2 text-[12px] leading-5 text-[#666666]">
+                    Chargement du fichier Parquet dans DuckDB-WASM...
+                  </div>
+                ) : null}
+                {visibleColumns.length > 0 && displayedRowCount > 0 ? (
                   <div className="mobile-data-cards space-y-2 p-2">
-                    {filteredRows.map((row) => (
+                    {displayedRowCount > mobilePreviewRows.length ? (
+                      <p className="rounded border border-[#E5E5E5] bg-[#f6f6f6] px-2 py-1 text-[12px] leading-5 text-[#666666]">
+                        Aperçu mobile limité aux {mobilePreviewRowLimit} premières lignes.
+                      </p>
+                    ) : null}
+                    {mobilePreviewRows.map((row) => (
                       <MobileDataCard
                         key={row.id}
                         row={row}
@@ -5423,6 +5769,10 @@ export default function ExplorateurSqlEtIaPage() {
                           : undefined
                       }
                       onOpen={() => {
+                        if (isDuckDbPreviewActive) {
+                          return;
+                        }
+
                         setIsColumnSelectorOpen(false);
                         setActiveCell(null);
                         setActiveFilter((current) =>
@@ -5451,45 +5801,81 @@ export default function ExplorateurSqlEtIaPage() {
                       Cocher toutes les colonnes
                     </button>
                   </div>
-                ) : filteredRows.length > 0 ? (
-                  filteredRows.map((row) => (
+                ) : displayedRowCount > 0 ? (
+                  <div
+                    className="desktop-data-table relative w-max min-w-full bg-[#FFFFFF]"
+                    style={{
+                      height: virtualizedRows.totalHeight,
+                      minWidth: totalVisibleColumnWidth,
+                    }}
+                  >
                     <div
-                      key={row.id}
-                      className="desktop-data-table h-8 w-max min-w-full bg-[#FFFFFF]"
+                      className="absolute left-0 top-0"
+                      style={{
+                        transform: `translateY(${
+                          virtualizedRows.startIndex * desktopTableRowHeight
+                        }px)`,
+                      }}
                     >
-                      {visibleColumns.map((column) => (
-                        <DataCell
-                          key={column.key}
-                          id={`${row.id}-${column.key}`}
-                          value={getRowValue(row, column.key)}
-                          type={column.type}
-                          width={columnWidths[column.key] ?? column.widthPx}
-                          isActive={
-                            activeCell?.id === `${row.id}-${column.key}`
-                          }
-                          onOpen={() =>
-                            openCell({
-                              id: `${row.id}-${column.key}`,
-                              key: column.key,
-                              value: getRowValue(row, column.key),
-                              type: column.type,
-                            })
-                          }
-                          onCopy={() =>
-                            copyCellValue(getRowValue(row, column.key))
-                          }
-                          onFilter={() =>
-                            filterByCellValue({
-                              id: `${row.id}-${column.key}`,
-                              key: column.key,
-                              value: getRowValue(row, column.key),
-                              type: column.type,
-                            })
-                          }
-                        />
-                      ))}
+                      {virtualizedRows.indexes.map((rowIndex) => {
+                        const row = datasetRowCount === null
+                          ? filteredRows[rowIndex]
+                          : datasetRowsByIndex[rowIndex];
+
+                        return (
+                        <div
+                          key={row?.id || `row-${rowIndex}`}
+                          className="desktop-data-table h-7 w-max min-w-full bg-[#FFFFFF]"
+                        >
+                          {visibleColumns.map((column) => {
+                            const cellId = `${row?.id || `row-${rowIndex}`}-${column.key}`;
+                            const value = row ? getRowValue(row, column.key) : "Chargement...";
+
+                            return (
+                              <DataCell
+                                key={column.key}
+                                id={cellId}
+                                value={value}
+                                type={column.type}
+                                width={columnWidths[column.key] ?? column.widthPx}
+                                isActive={activeCell?.id === cellId}
+                                onOpen={() => {
+                                  if (!row) {
+                                    return;
+                                  }
+
+                                  openCell({
+                                    id: cellId,
+                                    key: column.key,
+                                    value,
+                                    type: column.type,
+                                  });
+                                }}
+                                onCopy={() => {
+                                  if (row) {
+                                    void copyCellValue(value);
+                                  }
+                                }}
+                                onFilter={() => {
+                                  if (!row) {
+                                    return;
+                                  }
+
+                                  filterByCellValue({
+                                    id: cellId,
+                                    key: column.key,
+                                    value,
+                                    type: column.type,
+                                  });
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
+                        );
+                      })}
                     </div>
-                  ))
+                  </div>
                 ) : (
                   <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-2 bg-[#f6f6f6] p-4 text-center text-[16px] leading-6">
                     <p className="text-[#3a3a3a]">
@@ -5512,8 +5898,6 @@ export default function ExplorateurSqlEtIaPage() {
           {isChatSidebarOpen ? (
             <ChatSidebar
               activeResource={activeResource}
-              previewRows={filteredRows.slice(0, 30)}
-              conversationContext={assistantConversationContext}
               onApplyFilter={applyAssistantFilters}
               onApplySort={applyAssistantSort}
               onClose={() => setIsChatSidebarOpen(false)}
