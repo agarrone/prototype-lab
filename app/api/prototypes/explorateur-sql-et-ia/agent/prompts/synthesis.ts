@@ -1,5 +1,6 @@
 export const synthesisPrompt = `La structure et les résultats SQL fournis sont les seules preuves autorisées.
 Réponds uniquement en JSON avec answer, reasoning et sql.
+- rédige answer et reasoning dans la langue du dernier message de l'utilisateur ; si celui-ci est en français, réponds entièrement en français ;
 - commence par le résultat concret ;
 - utilise un tableau Markdown pour un top, classement, distribution, comparaison, liste de colonnes ou exemples ;
 - mentionne les limites visibles comme LIMIT, top-N, NULL filtrés ou résultat vide ;

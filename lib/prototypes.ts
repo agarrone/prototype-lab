@@ -9,6 +9,25 @@ export type Prototype = {
 
 export const prototypes: Prototype[] = [
   {
+    slug: "assistant",
+    title: "Assistant",
+    description:
+      "Laboratoire visuel des composants, états et interactions de l'assistant de données.",
+    status: "exploration",
+    tags: ["assistant", "ui", "composants"],
+    figmaUrl: "",
+  },
+  {
+    slug: "animation",
+    title: "Animation",
+    description:
+      "Laboratoire d'animations autour de l'identité visuelle modulaire de data.gouv.fr.",
+    status: "exploration",
+    tags: ["animation", "identité", "motion"],
+    figmaUrl:
+      "https://www.figma.com/design/Ls2Jp3zrmCpPEqvckjcYtJ/%F0%9F%94%A5-BRAND-DATAGOUV?node-id=3506-27&m=dev",
+  },
+  {
     slug: "explorateur",
     title: "Explorateur de données",
     description:

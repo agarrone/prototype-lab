@@ -53,6 +53,7 @@ import {
   RiText,
   RiThumbDownLine,
   RiThumbUpLine,
+  RiWrenchLine,
 } from "@remixicon/react";
 import {
   configureParquetSource,
@@ -1431,6 +1432,7 @@ const icons = {
   sidebarUnfold: RiSidebarUnfoldLine,
   text: RiText,
   brain: RiBrainLine,
+  wrench: RiWrenchLine,
   thumbUp: RiThumbUpLine,
   thumbDown: RiThumbDownLine,
 } satisfies Record<string, RemixIconComponent>;
@@ -3735,12 +3737,32 @@ function getTokenTotal(usage?: TokenUsage) {
   return computedTotal > 0 ? computedTotal : null;
 }
 
+function useCloseDetailsOnOutside() {
+  const detailsRef = useRef<HTMLDetailsElement | null>(null);
+
+  useEffect(() => {
+    function closeOnOutsideClick(event: PointerEvent) {
+      const details = detailsRef.current;
+
+      if (details?.open && !details.contains(event.target as Node)) {
+        details.open = false;
+      }
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsideClick);
+    return () => document.removeEventListener("pointerdown", closeOnOutsideClick);
+  }, []);
+
+  return detailsRef;
+}
+
 function TokenUsageToggle({ usage }: { usage?: TokenUsage }) {
   const totalTokens = getTokenTotal(usage);
+  const detailsRef = useCloseDetailsOnOutside();
 
   return (
     <div className="flex h-6 items-center gap-1 text-[12px] leading-[1.4] text-[#5d5d5d]">
-      <details className="relative">
+      <details ref={detailsRef} className="relative">
         <summary
           className="flex h-6 w-6 cursor-pointer list-none items-center justify-center rounded hover:bg-[#eeeeee] [&::-webkit-details-marker]:hidden"
           aria-label={
@@ -3792,8 +3814,10 @@ function TokenUsageToggle({ usage }: { usage?: TokenUsage }) {
 }
 
 function ModelInfoChip() {
+  const detailsRef = useCloseDetailsOnOutside();
+
   return (
-    <details className="relative">
+    <details ref={detailsRef} className="relative">
       <summary
         className="flex h-6 max-w-[150px] cursor-pointer list-none items-center rounded-full border border-[#CECECE] bg-transparent px-2 text-[12px] leading-4 text-[#3a3a3a] hover:bg-[#eeeeee] [&::-webkit-details-marker]:hidden"
         aria-label="Informations sur le modèle gpt-oss-120b"
@@ -3981,14 +4005,14 @@ function renderAssistantMarkdown(content: string) {
 
       nodes.push(
         <div key={`table-${index}`} className="overflow-auto rounded border border-[#E5E5E5]">
-          <table className="min-w-full border-collapse text-left text-[12px] leading-5">
+          <table className="min-w-full border-collapse text-left text-[12px] leading-5 [&_tbody_tr:last-child_td]:border-b-0">
             <thead className="bg-[#f6f6f6] text-[#161616]">
               <tr>
                 {headers.map((header) => (
                   <th
                     key={header}
                     scope="col"
-                    className="border-b border-r border-[#E5E5E5] px-2 py-1 font-medium last:border-r-0"
+                    className="border-b border-[#E5E5E5] px-2 py-1 font-medium"
                   >
                     {renderInlineMarkdown(header)}
                   </th>
@@ -4001,7 +4025,7 @@ function renderAssistantMarkdown(content: string) {
                   {headers.map((header, cellIndex) => (
                     <td
                       key={`${header}-${cellIndex}`}
-                      className="border-b border-r border-[#E5E5E5] px-2 py-1 text-[#3a3a3a] last:border-r-0"
+                      className="border-b border-[#E5E5E5] px-2 py-1 text-[#3a3a3a]"
                     >
                       {renderInlineMarkdown(row[cellIndex] ?? "")}
                     </td>
@@ -4326,9 +4350,6 @@ function AssistantChart({ chart }: { chart: AssistantChartSpec }) {
           {chart.title}
         </p>
         <div className="flex shrink-0 items-center gap-1">
-          <span className="rounded bg-[#f6f6f6] px-1.5 py-0.5 text-[11px] text-[#5d5d5d]">
-            {chart.type}
-          </span>
           {chart.type === "bar" ? <details className="relative">
             <summary
               className="flex h-6 w-6 cursor-pointer list-none items-center justify-center rounded text-[#5d5d5d] hover:bg-[#f6f6f6] hover:text-[#161616] [&::-webkit-details-marker]:hidden"
@@ -4450,6 +4471,120 @@ function chartFromVegaSpec(
   };
 }
 
+function AssistantDisclosure({
+  icon,
+  title,
+  children,
+}: {
+  icon: RemixIconComponent;
+  title: string;
+  children: ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+
+  return (
+    <div className="text-[12px] text-[#777777]">
+      <button
+        type="button"
+        className={`flex w-full cursor-pointer items-center justify-between py-1 font-medium transition-colors ${
+          isOpen ? "text-[#161616]" : "text-[#777777]"
+        }`}
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((open) => !open)}
+      >
+        <span className="flex min-w-0 items-center gap-2">
+          <Icon path={icon} className="h-3.5 w-3.5" />
+          <span>{title}</span>
+        </span>
+        <Icon
+          path={icons.arrowRightS}
+          className={`h-4 w-4 transition-transform duration-200 ${
+            isOpen ? "rotate-90" : "rotate-0"
+          }`}
+        />
+      </button>
+      <div
+        className={`grid transition-[grid-template-rows,opacity,transform] duration-300 ease-out ${
+          isOpen
+            ? "grid-rows-[1fr] translate-y-0 opacity-100"
+            : "grid-rows-[0fr] -translate-y-1 opacity-0"
+        }`}
+      >
+        <div className="min-h-0 overflow-hidden">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function getAssistantToolLabel(
+  tool: NonNullable<AgentResponse["toolTrace"]>[number]["tool"],
+) {
+  const labels: Record<string, string> = {
+    inspect_schema: "Inspecter le schéma",
+    execute_sql: "Exécuter la requête SQL",
+    get_resource_context: "Lire le contexte de la ressource",
+    execute_query: "Interroger les données",
+    create_chart: "Créer le graphique",
+  };
+
+  return labels[String(tool)] ?? String(tool);
+}
+
+function AssistantSqlBlock({ sql }: { sql: string }) {
+  const [copied, setCopied] = useState(false);
+  const tokens = sql.split(
+    /(\b(?:SELECT|FROM|WHERE|GROUP\s+BY|ORDER\s+BY|LIMIT|AS|AND|OR|JOIN|ON|WITH|DESC|ASC|IS\s+NOT\s+NULL|IS\s+NULL)\b|\b(?:COUNT|SUM|AVG|MIN|MAX|ROUND|TRIM|UNNEST|string_split)\b|\b\d+(?:\.\d+)?\b|'[^']*')/gi,
+  );
+
+  async function copySql() {
+    try {
+      await navigator.clipboard.writeText(sql);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 overflow-hidden rounded border border-[#dddddd] bg-[#f6f6f6]">
+      <div className="flex min-h-8 items-center justify-between border-b border-[#dddddd] px-2">
+        <span className="text-[9px] font-bold uppercase tracking-[0.05em] text-[#777777]">
+          SQL exécuté
+        </span>
+        <button
+          type="button"
+          onClick={() => void copySql()}
+          className="flex h-6 items-center gap-1 rounded px-1.5 text-[10px] text-[#555555] hover:bg-[#e5e5e5] hover:text-[#161616]"
+          aria-label="Copier la requête SQL"
+          title="Copier la requête SQL"
+        >
+          <Icon path={icons.copy} className="h-3.5 w-3.5" />
+          {copied ? <span>Copié</span> : null}
+        </button>
+      </div>
+      <pre className="max-h-44 overflow-auto p-2 font-mono text-[11px] leading-5 text-[#333333]">
+        {tokens.map((token, index) => {
+          const normalized = token.toUpperCase();
+          const className = /^(SELECT|FROM|WHERE|GROUP\s+BY|ORDER\s+BY|LIMIT|AS|AND|OR|JOIN|ON|WITH)$/.test(normalized)
+            ? "font-semibold text-[#000091]"
+            : /^(DESC|ASC|IS\s+NOT\s+NULL|IS\s+NULL)$/.test(normalized)
+              ? "text-[#7b2cbf]"
+              : /^(COUNT|SUM|AVG|MIN|MAX|ROUND|TRIM|UNNEST|STRING_SPLIT)$/.test(normalized)
+                ? "font-semibold text-[#a55800]"
+                : /^\d/.test(token)
+                  ? "text-[#ce0500]"
+                  : /^'/.test(token)
+                    ? "text-[#18753c]"
+                    : "";
+
+          return <span key={`${token}-${index}`} className={className}>{token}</span>;
+        })}
+      </pre>
+    </div>
+  );
+}
+
 function ChatSidebar({
   activeResource,
   sourceName,
@@ -4471,6 +4606,13 @@ function ChatSidebar({
   const [messageFeedback, setMessageFeedback] = useState<
     Record<string, "up" | "down">
   >({});
+  const [feedbackDetailsMessageId, setFeedbackDetailsMessageId] = useState<
+    string | null
+  >(null);
+  const [feedbackDetails, setFeedbackDetails] = useState("");
+  const [feedbackDetailsSentIds, setFeedbackDetailsSentIds] = useState<
+    string[]
+  >([]);
   const [isAgentLoading, setIsAgentLoading] = useState(false);
   const [loadingStepIndex, setLoadingStepIndex] = useState(0);
   const [chatSidebarWidth, setChatSidebarWidth] = useState(chatSidebarDefaultWidth);
@@ -4940,7 +5082,7 @@ function ChatSidebar({
 
       <div
         ref={chatScrollRef}
-        className="min-h-0 flex-1 overflow-auto bg-[#FFFFFF] px-2 py-3"
+        className="min-h-0 flex-1 overflow-auto bg-[#FFFFFF] px-3 py-3"
       >
         {messages.length === 0 ? (
           <div className="flex min-h-full flex-col justify-end pb-2">
@@ -4968,67 +5110,51 @@ function ChatSidebar({
             {messages.map((message) =>
               message.role === "user" ? (
                 <div key={message.id} className="flex justify-end">
-                  <p className="max-w-[300px] rounded bg-[#e8edff] px-3 py-2 text-[13px] leading-5 text-[#000091]">
+                  <p className="max-w-[300px] rounded bg-[#eeeeee] px-3 py-2 text-[13px] leading-5 text-[#161616]">
                     {message.content}
                   </p>
                 </div>
               ) : (
                 <div key={message.id} className="flex flex-col gap-2">
                   {message.response?.reasoning ? (
-                    <details className="order-1 rounded border border-[#E5E5E5] bg-[#fcfcfc]">
-                      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[12px] font-medium text-[#3a3a3a] [&::-webkit-details-marker]:hidden">
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#eeeeee]">
-                            <Icon path={icons.brain} className="h-3.5 w-3.5 text-[#3a3a3a]" />
-                          </span>
-                          <span>Raisonnement</span>
-                        </span>
-                      </summary>
-                      <p className="border-t border-[#E5E5E5] px-3 py-2 text-[12px] leading-5 text-[#3a3a3a]">
+                    <div className="order-1">
+                      <AssistantDisclosure icon={icons.brain} title="Raisonnement">
+                        <p className="px-[22px] py-1 text-[12px] leading-5 text-[#777777]">
                         {message.response.reasoning}
-                      </p>
-                    </details>
+                        </p>
+                      </AssistantDisclosure>
+                    </div>
                   ) : null}
                   {message.response?.toolTrace?.length || message.response?.sql ? (
-                    <details className="order-2 rounded border border-[#E5E5E5] bg-[#fcfcfc]">
-                      <summary className="flex cursor-pointer list-none items-center gap-2 px-3 py-2 text-[12px] font-medium text-[#3a3a3a] [&::-webkit-details-marker]:hidden">
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded bg-[#eeeeee]">
-                            <Icon path={icons.code} className="h-3.5 w-3.5 text-[#3a3a3a]" />
-                          </span>
-                          <span>Tools utilisés</span>
-                        </span>
-                      </summary>
-                      <div className="border-t border-[#E5E5E5]">
-                        <div className="space-y-2 px-3 py-2">
+                    <div className="order-2">
+                      <AssistantDisclosure
+                        icon={icons.wrench}
+                        title={`${message.response.toolTrace?.length || (message.response.sql ? 1 : 0)} ${
+                          (message.response.toolTrace?.length || (message.response.sql ? 1 : 0)) > 1
+                            ? "outils utilisés"
+                            : "outil utilisé"
+                        }`}
+                      >
+                        <div className="space-y-1 px-[22px] py-1">
                           {message.response.toolTrace?.length ? (
                             message.response.toolTrace.map((trace, index) => (
-                                <div
+                                <p
                                   key={`${trace.tool}-${index}`}
-                                  className="grid grid-cols-[18px_minmax(0,1fr)] gap-2 text-[12px] leading-5 text-[#3a3a3a]"
+                                  className="grid grid-cols-[16px_minmax(0,1fr)] gap-1 text-[11px] leading-5 text-[#777777]"
                                 >
-                                  <span className="mt-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-[#e8edff] text-[10px] font-semibold text-[#000091]">
-                                    {index + 1}
-                                  </span>
+                                  <span className="text-[#555555]">{index + 1}.</span>
                                   <span className="min-w-0">
-                                    <code className="rounded bg-[#FFFFFF] px-1 font-mono text-[11px] text-[#161616]">
-                                      {trace.tool}
-                                    </code>
+                                    <strong className="font-semibold text-[#333333]">
+                                      {getAssistantToolLabel(trace.tool)}
+                                    </strong>
                                     {trace.description ? (
-                                      <span className="ml-1 text-[#161616]">
-                                        {trace.description}
-                                      </span>
-                                    ) : null}
-                                    {trace.tool === "execute_sql" ? (
-                                      <span className="ml-1 rounded bg-[#e6feda] px-1 text-[10px] font-medium uppercase text-[#18753c]">
-                                        {trace.show ? "final" : "exploration"}
-                                      </span>
+                                      <span> — {trace.description}</span>
                                     ) : null}
                                     <span className="block text-[#666666]">
                                       {trace.summary}
                                     </span>
                                   </span>
-                                </div>
+                                </p>
                               ))
                           ) : (
                             <p className="text-[12px] leading-5 text-[#666666]">
@@ -5037,24 +5163,19 @@ function ChatSidebar({
                           )}
                         </div>
                         {message.response.sql ? (
-                          <div className="border-t border-[#E5E5E5]">
-                            <p className="px-3 pt-2 text-[11px] font-bold uppercase leading-4 text-[#666666]">
-                              SQL exécuté
-                            </p>
-                            <pre className="mt-1 max-h-44 overflow-auto bg-[#f6f6f6] p-3 font-mono text-[12px] leading-5 text-[#161616]">
-                              {message.response.sql}
-                            </pre>
+                          <div className="px-[22px]">
+                            <AssistantSqlBlock sql={message.response.sql} />
                           </div>
                         ) : null}
                         {message.response.columnsUsed?.length ? (
-                          <p className="px-3 pb-3 text-[12px] leading-5 text-[#3a3a3a]">
+                          <p className="px-[22px] pb-1 pt-2 text-[11px] leading-5 text-[#777777]">
                             Colonnes utilisées : {message.response.columnsUsed.join(", ")}
                           </p>
                         ) : null}
-                      </div>
-                    </details>
+                      </AssistantDisclosure>
+                    </div>
                   ) : null}
-                  <div className="order-3 rounded border border-[#E5E5E5] bg-[#FFFFFF] p-3 text-[13px] leading-5 text-[#161616] shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+                  <div className="order-3 text-[13px] leading-5 text-[#161616]">
                     <div className="space-y-2">{renderAssistantMarkdown(message.content)}</div>
                     {message.response?.proposedAction.type === "apply_filter" ? (
                       <div className="mt-3 rounded border border-[#E5E5E5] bg-[#f6f6f6] p-2">
@@ -5166,49 +5287,59 @@ function ChatSidebar({
                       <AssistantChart chart={message.response.chart} />
                     </div>
                   ) : null}
-                  <div className="order-5 flex gap-1">
-                    <button
-                      type="button"
-                      aria-label="Réponse utile"
-                      title="Réponse utile"
-                      onClick={() =>
-                        setMessageFeedback((current) => ({
-                          ...current,
-                          [message.id]: "up",
-                        }))
-                      }
-                      className="flex h-6 w-6 items-center justify-center rounded text-[#5d5d5d] hover:bg-[#f6f6f6] hover:text-[#000091]"
-                    >
-                      <Icon
-                        path={icons.thumbUp}
-                        className={`h-3.5 w-3.5 ${
-                          messageFeedback[message.id] === "up"
-                            ? "text-[#161616]"
-                            : ""
-                        }`}
-                      />
-                    </button>
-                    <button
-                      type="button"
-                      aria-label="Réponse inutile"
-                      title="Réponse inutile"
-                      onClick={() =>
-                        setMessageFeedback((current) => ({
-                          ...current,
-                          [message.id]: "down",
-                        }))
-                      }
-                      className="flex h-6 w-6 items-center justify-center rounded text-[#5d5d5d] hover:bg-[#f6f6f6] hover:text-[#000091]"
-                    >
-                      <Icon
-                        path={icons.thumbDown}
-                        className={`h-3.5 w-3.5 ${
-                          messageFeedback[message.id] === "down"
-                            ? "text-[#161616]"
-                            : ""
-                        }`}
-                      />
-                    </button>
+                  <div className="order-5">
+                    {messageFeedback[message.id] ? (
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[#555555]" role="status">
+                        <span>
+                          {feedbackDetailsSentIds.includes(message.id)
+                            ? "Merci pour vos précisions !"
+                            : "Merci pour votre retour !"}
+                        </span>
+                        {!feedbackDetailsSentIds.includes(message.id) ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFeedbackDetails("");
+                              setFeedbackDetailsMessageId(message.id);
+                            }}
+                            className="font-semibold text-[#000091] underline underline-offset-2"
+                          >
+                            Partager plus de détails
+                          </button>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="flex gap-1">
+                        <button
+                          type="button"
+                          aria-label="Réponse utile"
+                          title="Réponse utile"
+                          onClick={() =>
+                            setMessageFeedback((current) => ({
+                              ...current,
+                              [message.id]: "up",
+                            }))
+                          }
+                          className="flex h-6 w-6 items-center justify-center rounded text-[#5d5d5d] hover:bg-[#f6f6f6] hover:text-[#000091]"
+                        >
+                          <Icon path={icons.thumbUp} className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Réponse inutile"
+                          title="Réponse inutile"
+                          onClick={() =>
+                            setMessageFeedback((current) => ({
+                              ...current,
+                              [message.id]: "down",
+                            }))
+                          }
+                          className="flex h-6 w-6 items-center justify-center rounded text-[#5d5d5d] hover:bg-[#f6f6f6] hover:text-[#000091]"
+                        >
+                          <Icon path={icons.thumbDown} className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ),
@@ -5218,7 +5349,7 @@ function ChatSidebar({
                 {assistantLoadingSteps.map((step, index) => (
                   <p
                     key={step.label}
-                    className={`text-[13px] font-medium leading-5 ${
+                    className={`text-[11px] font-medium leading-[1.5] ${
                       index === loadingStepIndex
                         ? "t-shimmer"
                         : "text-[#9c9c9c]"
@@ -5235,7 +5366,7 @@ function ChatSidebar({
       </div>
 
       <form
-        className="shrink-0 bg-[#FFFFFF] px-2"
+        className="shrink-0 bg-[#FFFFFF] px-3"
         onSubmit={(event) => {
           event.preventDefault();
           submitAgentQuestion();
@@ -5276,17 +5407,95 @@ function ChatSidebar({
             </button>
           </div>
         </div>
-        <div className="-mx-2 mt-1 flex min-h-6 items-center justify-end gap-1 bg-[#FFFFFF] px-2 pb-1 text-right text-[11px] leading-none text-[#5d5d5d]">
+        <div className="mt-1 flex min-h-6 flex-wrap items-center justify-end gap-1 bg-[#FFFFFF] pb-1 text-right text-[11px] leading-none text-[#5d5d5d]">
           <span>L’assistant peut faire des erreurs.</span>
-          <Link
-            href="/a-propos"
-            className="underline decoration-solid underline-offset-2 hover:text-[#000091]"
-          >
-            En savoir plus
-          </Link>
-          <Icon path={icons.externalLink} className="h-2.5 w-2.5 shrink-0" />
+          <span className="inline-flex items-center gap-0.5 whitespace-nowrap">
+            <Link
+              href="/a-propos"
+              className="underline decoration-solid underline-offset-2 hover:text-[#000091]"
+            >
+              En savoir plus
+            </Link>
+            <Icon path={icons.externalLink} className="block h-2.5 w-2.5 shrink-0" />
+          </span>
         </div>
       </form>
+
+      {feedbackDetailsMessageId ? (
+        <div
+          className="fixed inset-0 z-[100] grid place-items-center bg-black/30 p-5"
+          role="presentation"
+          onMouseDown={() => setFeedbackDetailsMessageId(null)}
+        >
+          <div
+            className="w-full max-w-[430px] border border-[#cccccc] bg-[#FFFFFF] shadow-[0_18px_55px_rgba(0,0,0,0.2)]"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="assistant-feedback-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-5 border-b border-[#E5E5E5] p-4">
+              <div>
+                <h2 id="assistant-feedback-title" className="text-[15px] font-semibold text-[#161616]">
+                  Partager plus de détails
+                </h2>
+                <p className="mt-1 text-[11px] text-[#666666]">
+                  Votre retour nous aide à améliorer les réponses.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFeedbackDetailsMessageId(null)}
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-[#eeeeee]"
+                aria-label="Fermer"
+              >
+                <Icon path={icons.close} className="h-4 w-4" />
+              </button>
+            </div>
+            <form
+              className="p-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                setFeedbackDetailsSentIds((current) =>
+                  current.includes(feedbackDetailsMessageId)
+                    ? current
+                    : [...current, feedbackDetailsMessageId],
+                );
+                setFeedbackDetailsMessageId(null);
+              }}
+            >
+              <label htmlFor="assistant-feedback-details" className="mb-1.5 block text-[11px] font-semibold text-[#161616]">
+                Votre commentaire
+              </label>
+              <textarea
+                id="assistant-feedback-details"
+                value={feedbackDetails}
+                onChange={(event) => setFeedbackDetails(event.target.value)}
+                rows={5}
+                autoFocus
+                placeholder="Qu’est-ce qui était utile ou pourrait être amélioré ?"
+                className="block w-full resize-y border border-[#aaaaaa] p-2 text-[12px] leading-5 outline-none focus:border-[#000091] focus:ring-1 focus:ring-[#000091]"
+              />
+              <div className="mt-3 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFeedbackDetailsMessageId(null)}
+                  className="border border-[#cccccc] px-3 py-2 text-[12px] font-semibold"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="submit"
+                  disabled={!feedbackDetails.trim()}
+                  className="bg-[#000091] px-3 py-2 text-[12px] font-semibold text-[#FFFFFF] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Envoyer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
     </aside>
   );
 }
