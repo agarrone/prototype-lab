@@ -82,6 +82,9 @@ export default async function TestAssistantPage({
             allowCustomResourceUrl={false}
             standardResourceList
             datasetReference={dataset.slug || dataset.id}
+            enableFilters={false}
+            enableCellInteractions={false}
+            alwaysShowRowCount
             contextOrganization={dataset.organizationName}
             contextTitle={dataset.title}
             showContextLogo={false}

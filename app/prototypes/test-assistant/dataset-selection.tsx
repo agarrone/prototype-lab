@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   RiArrowRightLine,
@@ -60,6 +60,7 @@ export function DatasetSelection() {
   const [isSearching, setIsSearching] = useState(false);
   const [isResolving, setIsResolving] = useState(false);
   const [error, setError] = useState("");
+  const continueSectionRef = useRef<HTMLDivElement | null>(null);
 
   function selectSummary(dataset: DatagouvDatasetSummary) {
     const parquetResources = dataset.resources.flatMap((resource) =>
@@ -90,6 +91,12 @@ export function DatasetSelection() {
   function selectDataset(dataset: SelectableDataset) {
     setSelected(dataset);
     setSelectedParquetUrl(dataset.parquetResources[0]?.url ?? "");
+    window.setTimeout(() => {
+      continueSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "end",
+      });
+    }, 0);
   }
 
   async function selectExample(dataset: SelectableDataset) {
@@ -267,7 +274,7 @@ export function DatasetSelection() {
         </div>
       ) : null}
 
-      <div className="mt-8 flex flex-col gap-3 border-t border-[#dddddd] pt-5 sm:flex-row sm:items-center sm:justify-between">
+      <div ref={continueSectionRef} className="mt-8 flex flex-col gap-3 border-t border-[#dddddd] pt-5 sm:flex-row sm:items-center sm:justify-between">
         <p className="min-h-6 text-[14px] text-[#3a3a3a]">
           {selected ? <><strong>{selected.title}</strong> est sélectionné.</> : "Sélectionnez un jeu de données pour continuer."}
         </p>

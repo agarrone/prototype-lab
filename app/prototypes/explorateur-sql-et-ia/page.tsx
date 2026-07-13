@@ -1559,6 +1559,7 @@ function HeaderCell({
   sortDirection,
   onOpen,
   onResizeStart,
+  showFilter = true,
 }: {
   column: (typeof tableColumns)[number];
   width: number;
@@ -1566,6 +1567,7 @@ function HeaderCell({
   sortDirection?: SortDirection;
   onOpen: () => void;
   onResizeStart: (event: ReactMouseEvent<HTMLButtonElement>) => void;
+  showFilter?: boolean;
 }) {
   return (
     <div
@@ -1589,7 +1591,7 @@ function HeaderCell({
           />
         ) : null}
       </div>
-      <button
+      {showFilter ? <button
         type="button"
         onClick={onOpen}
         aria-label={`Filtrer ${column.label}`}
@@ -1602,7 +1604,7 @@ function HeaderCell({
           path={icons.filter}
           className={`h-4 w-4 ${isOpen ? "text-[#000091]" : "text-[#CECECE]"}`}
         />
-      </button>
+      </button> : null}
       <button
         type="button"
         aria-label={`Redimensionner ${column.label}`}
@@ -2354,6 +2356,7 @@ function DataCell({
   onOpen,
   onCopy,
   onFilter,
+  interactive = true,
 }: {
   id: string;
   value: string;
@@ -2363,6 +2366,7 @@ function DataCell({
   onOpen: () => void;
   onCopy: () => void;
   onFilter: () => void;
+  interactive?: boolean;
 }) {
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Enter" || event.key === " ") {
@@ -2371,7 +2375,7 @@ function DataCell({
     }
   }
 
-  const cellClassName = `relative flex h-7 shrink-0 cursor-pointer items-center border-b border-r border-[#E5E5E5] px-2 text-left hover:bg-[#f6f6f6] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091] ${
+  const cellClassName = `relative flex h-7 shrink-0 items-center border-b border-r border-[#E5E5E5] px-2 text-left ${interactive ? "cursor-pointer hover:bg-[#f6f6f6] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091]" : "cursor-default"} ${
     isActive ? "bg-[#e8edff]" : ""
   }`;
   const cellStyle = { width };
@@ -2379,10 +2383,10 @@ function DataCell({
   if (type === "category" || type === "reference") {
     return (
       <div
-        role="button"
-        tabIndex={0}
-        onClick={onOpen}
-        onKeyDown={handleKeyDown}
+        role={interactive ? "button" : undefined}
+        tabIndex={interactive ? 0 : undefined}
+        onClick={interactive ? onOpen : undefined}
+        onKeyDown={interactive ? handleKeyDown : undefined}
         className={cellClassName}
         style={cellStyle}
         aria-label={`Actions pour ${id} : ${value}`}
@@ -2390,7 +2394,7 @@ function DataCell({
         <span className="truncate rounded bg-[#eeeeee] px-2 py-1 text-[12px] leading-3 text-[#3a3a3a]">
           {value}
         </span>
-        {isActive ? (
+        {interactive && isActive ? (
           <CellActionMenu
             value={value}
             type={type}
@@ -2405,16 +2409,16 @@ function DataCell({
   if (type === "identifier") {
     return (
       <div
-        role="button"
-        tabIndex={0}
-        onClick={onOpen}
-        onKeyDown={handleKeyDown}
+        role={interactive ? "button" : undefined}
+        tabIndex={interactive ? 0 : undefined}
+        onClick={interactive ? onOpen : undefined}
+        onKeyDown={interactive ? handleKeyDown : undefined}
         className={`${cellClassName} text-[12px] text-[#3a3a3a]`}
         style={cellStyle}
         aria-label={`Actions pour ${id} : ${value}`}
       >
         <span className="truncate">{value}</span>
-        {isActive ? (
+        {interactive && isActive ? (
           <CellActionMenu
             value={value}
             type={type}
@@ -2428,10 +2432,10 @@ function DataCell({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
-      onClick={onOpen}
-      onKeyDown={handleKeyDown}
+      role={interactive ? "button" : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      onClick={interactive ? onOpen : undefined}
+      onKeyDown={interactive ? handleKeyDown : undefined}
       className={`${cellClassName} text-[12px] text-[#161616] ${
         type === "number" ? "justify-end" : "justify-start"
       }`}
@@ -2439,7 +2443,7 @@ function DataCell({
       aria-label={`Actions pour ${id} : ${value}`}
     >
       <span className="truncate">{value}</span>
-      {isActive ? (
+      {interactive && isActive ? (
         <CellActionMenu
           value={value}
           type={type}
@@ -2484,6 +2488,7 @@ function MobileDataCard({
   onOpenCell,
   onCopyCell,
   onFilterCell,
+  interactive = true,
 }: {
   row: Row;
   columns: TableColumn[];
@@ -2491,6 +2496,7 @@ function MobileDataCard({
   onOpenCell: (cell: NonNullable<ActiveCell>) => void;
   onCopyCell: (value: string) => void;
   onFilterCell: (cell: NonNullable<ActiveCell>) => void;
+  interactive?: boolean;
 }) {
   const [isExpanded, setIsExpanded] = useState(false);
   const primaryColumns = isExpanded ? columns : columns.slice(0, 4);
@@ -2516,7 +2522,7 @@ function MobileDataCard({
                 <span className="truncate">{column.label}</span>
               </dt>
               <dd className="pl-5">
-                <button
+                {interactive ? <button
                   type="button"
                   onClick={() =>
                     onOpenCell({
@@ -2530,8 +2536,8 @@ function MobileDataCard({
                   aria-label={`Actions pour ${column.label} : ${value}`}
                 >
                   <MobileFieldValue value={value} type={column.type} />
-                </button>
-                {activeCell?.id === `${row.id}-${column.key}` ? (
+                </button> : <MobileFieldValue value={value} type={column.type} />}
+                {interactive && activeCell?.id === `${row.id}-${column.key}` ? (
                   <CellActionMenu
                     value={value}
                     type={column.type}
@@ -5606,6 +5612,9 @@ export type ExplorateurSqlEtIaProps = {
   showContextUpdatedAt?: boolean;
   showUpdateAndDownloadInfo?: boolean;
   datasetReference?: string;
+  enableFilters?: boolean;
+  enableCellInteractions?: boolean;
+  alwaysShowRowCount?: boolean;
   initialResource?: {
     id?: string;
     name: string;
@@ -5629,6 +5638,9 @@ export function ExplorateurSqlEtIaPrototype({
   showContextUpdatedAt = true,
   showUpdateAndDownloadInfo = true,
   datasetReference,
+  enableFilters = true,
+  enableCellInteractions = true,
+  alwaysShowRowCount = false,
   initialResource,
   initialResources,
 }: ExplorateurSqlEtIaProps = {}) {
@@ -6969,7 +6981,7 @@ export function ExplorateurSqlEtIaPrototype({
                     className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
                   />
                 </label>
-                <button
+                {enableFilters ? <button
                   type="button"
                   onClick={() => {
                     setIsMobileFiltersOpen(true);
@@ -6981,9 +6993,11 @@ export function ExplorateurSqlEtIaPrototype({
                 >
                   <Icon path={icons.filter} className="h-3.5 w-3.5 text-[#3a3a3a]" />
                   Filtres
-                </button>
+                </button> : null}
                 <span className="hidden text-[13px] text-[#3a3a3a] lg:inline">
-                  Recherche et filtres exécutés localement
+                  {enableFilters
+                    ? "Recherche et filtres exécutés localement"
+                    : "Recherche exécutée localement"}
                 </span>
               </div>
               <div className="ml-auto flex min-w-0 shrink-0 items-center gap-3 text-[12px] text-[#3a3a3a] lg:gap-4 lg:text-[13px]">
@@ -7032,18 +7046,18 @@ export function ExplorateurSqlEtIaPrototype({
                 </span>
                 <span className="flex items-center gap-1">
                   <Icon path={icons.rows} className="h-3.5 w-3.5 text-[#3a3a3a]" />
-                  <span className="hidden whitespace-nowrap lg:inline">
+                  <span className={`${alwaysShowRowCount ? "inline" : "hidden lg:inline"} min-w-[72px] whitespace-nowrap`}>
                     {isDatasetPreviewLoading
                       ? "Lignes —"
                       : hasActiveDatasetFilters
                         ? `Lignes ${displayedRowCount.toLocaleString("fr-FR")} sur ${(datasetRowCount ?? 0).toLocaleString("fr-FR")}`
                         : `${displayedRowCount.toLocaleString("fr-FR")} lignes`}
                   </span>
-                  <span className="whitespace-nowrap lg:hidden">
+                  {!alwaysShowRowCount ? <span className="whitespace-nowrap lg:hidden">
                     {isDatasetPreviewLoading
                       ? "—"
                       : displayedRowCount.toLocaleString("fr-FR")}
-                  </span>
+                  </span> : null}
                 </span>
               </div>
             </div>
@@ -7055,7 +7069,7 @@ export function ExplorateurSqlEtIaPrototype({
                   : "shadow-none"
               }`}
             >
-              <ActiveFiltersBar
+              {enableFilters ? <ActiveFiltersBar
                 searchQuery={searchQuery}
                 sortState={sortState}
                 categoryFilters={categoryFilters}
@@ -7072,11 +7086,11 @@ export function ExplorateurSqlEtIaPrototype({
                 onClearDate={clearDateFilter}
                 onClearSort={() => setSortState(null)}
                 onClearAll={clearAllFilters}
-              />
+              /> : null}
             </div>
 
             <div className="relative min-h-0 flex-1">
-              {activeFilter || activeCell ? (
+              {enableFilters && (activeFilter || activeCell) ? (
                 <FilterDismissLayer
                   onClose={() => {
                     setActiveFilter(null);
@@ -7084,7 +7098,7 @@ export function ExplorateurSqlEtIaPrototype({
                   }}
                 />
               ) : null}
-              {isMobileFiltersOpen ? (
+              {enableFilters && isMobileFiltersOpen ? (
                 <MobileFiltersPanel
                   isOpen={isMobileFiltersOpen}
                   visibleColumns={visibleColumns}
@@ -7109,7 +7123,7 @@ export function ExplorateurSqlEtIaPrototype({
                   }}
                 />
               ) : null}
-              <FilterMenus
+              {enableFilters ? <FilterMenus
                 activeFilter={activeFilter}
                 visibleColumns={visibleColumns}
                 sortState={sortState}
@@ -7129,7 +7143,7 @@ export function ExplorateurSqlEtIaPrototype({
                   setActiveFilter(null);
                   setIsMobileFiltersOpen(false);
                 }}
-              />
+              /> : null}
 
               <div
                 ref={tableViewportRef}
@@ -7205,6 +7219,7 @@ export function ExplorateurSqlEtIaPrototype({
                         onOpenCell={openCell}
                         onCopyCell={copyCellValue}
                         onFilterCell={filterByCellValue}
+                        interactive={enableCellInteractions}
                       />
                     ))}
                   </div>
@@ -7238,6 +7253,7 @@ export function ExplorateurSqlEtIaPrototype({
                       onResizeStart={(event) =>
                         startColumnResize(column.key, event)
                       }
+                      showFilter={enableFilters}
                     />
                   ))}
                 </div>
@@ -7324,6 +7340,7 @@ export function ExplorateurSqlEtIaPrototype({
                                     type: column.type,
                                   });
                                 }}
+                                interactive={enableCellInteractions}
                               />
                             );
                           })}
