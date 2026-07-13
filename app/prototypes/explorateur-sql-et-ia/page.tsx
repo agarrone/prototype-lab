@@ -4630,6 +4630,7 @@ function ChatSidebar({
   activeResource,
   sourceName,
   datasetReference,
+  learnMoreHref,
   onApplyFilter,
   onApplySort,
   onClose,
@@ -4637,6 +4638,7 @@ function ChatSidebar({
   activeResource: Resource;
   sourceName: string;
   datasetReference?: string;
+  learnMoreHref: string;
   onApplyFilter: AssistantActionHandlers["onApplyFilter"];
   onApplySort: AssistantActionHandlers["onApplySort"];
   onClose: () => void;
@@ -5544,7 +5546,7 @@ function ChatSidebar({
           <span>L’assistant peut faire des erreurs.</span>
           <span className="inline-flex items-center gap-0.5 whitespace-nowrap">
             <Link
-              href="/a-propos"
+              href={learnMoreHref}
               className="underline decoration-solid underline-offset-2 hover:text-[#000091]"
             >
               En savoir plus
@@ -5615,6 +5617,7 @@ export type ExplorateurSqlEtIaProps = {
   enableFilters?: boolean;
   enableCellInteractions?: boolean;
   alwaysShowRowCount?: boolean;
+  learnMoreHref?: string;
   initialResource?: {
     id?: string;
     name: string;
@@ -5641,6 +5644,7 @@ export function ExplorateurSqlEtIaPrototype({
   enableFilters = true,
   enableCellInteractions = true,
   alwaysShowRowCount = false,
+  learnMoreHref = "/a-propos",
   initialResource,
   initialResources,
 }: ExplorateurSqlEtIaProps = {}) {
@@ -7387,6 +7391,7 @@ export function ExplorateurSqlEtIaPrototype({
               activeResource={activeResource}
               sourceName={activeParquetName}
               datasetReference={datasetReference}
+              learnMoreHref={learnMoreHref}
               onApplyFilter={applyAssistantFilters}
               onApplySort={applyAssistantSort}
               onClose={() => setIsChatSidebarOpen(false)}

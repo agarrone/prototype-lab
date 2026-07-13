@@ -85,6 +85,7 @@ export default async function TestAssistantPage({
             enableFilters={false}
             enableCellInteractions={false}
             alwaysShowRowCount
+            learnMoreHref="/prototypes/test-assistant/documentation"
             contextOrganization={dataset.organizationName}
             contextTitle={dataset.title}
             showContextLogo={false}

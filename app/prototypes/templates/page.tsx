@@ -70,16 +70,16 @@ function ProducerBlock({ dataset }: { dataset: DatagouvDatasetSummary }) {
         </div>
         <Link
           href={dataset.organizationPage ?? "#"}
-          className="flex min-w-0 flex-1 items-center gap-1.5 text-[14px] font-bold leading-6 text-[#000091] underline underline-offset-4"
+          className="flex min-w-0 items-start gap-1.5 text-[14px] font-bold leading-6 text-[#000091] underline underline-offset-4"
         >
-          <RiBankLine aria-hidden="true" className="h-4 w-4 shrink-0" />
-          <span className="min-w-0 flex-1 truncate">
-            {dataset.organizationName}
+          <RiBankLine aria-hidden="true" className="mt-1 h-4 w-4 shrink-0" />
+          <span className="min-w-0">
+            <span>{dataset.organizationName}</span>{" "}
+            <RiCheckboxCircleLine
+              aria-hidden="true"
+              className="inline-block h-5 w-5 align-[-0.3em]"
+            />
           </span>
-          <RiCheckboxCircleLine
-            aria-hidden="true"
-            className="h-5 w-5 shrink-0"
-          />
         </Link>
       </div>
     </section>

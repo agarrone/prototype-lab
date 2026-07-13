@@ -91,16 +91,16 @@ export function DatasetSelection() {
   function selectDataset(dataset: SelectableDataset) {
     setSelected(dataset);
     setSelectedParquetUrl(dataset.parquetResources[0]?.url ?? "");
-    window.setTimeout(() => {
-      continueSectionRef.current?.scrollIntoView({
+    window.requestAnimationFrame(() => {
+      window.scrollTo({
         behavior: "smooth",
-        block: "end",
+        top: document.documentElement.scrollHeight,
       });
-    }, 0);
+    });
   }
 
   async function selectExample(dataset: SelectableDataset) {
-    setIsResolving(true);
+    selectDataset(dataset);
     setError("");
     try {
       const response = await fetch(
@@ -110,11 +110,30 @@ export function DatasetSelection() {
         dataset?: DatagouvDatasetSummary;
       };
       if (!response.ok || !payload.dataset) throw new Error();
-      selectSummary(payload.dataset);
+      const parquetResources = payload.dataset.resources.flatMap((resource) =>
+        resource.parquetUrl
+          ? [
+              {
+                id: resource.id,
+                title: resource.title,
+                sourceFormat: resource.format,
+                url: resource.parquetUrl,
+              },
+            ]
+          : [],
+      );
+      if (parquetResources.length) {
+        setSelected({
+          id: dataset.id,
+          reference: payload.dataset.slug || payload.dataset.id,
+          title: payload.dataset.title,
+          organization: payload.dataset.organizationName,
+          parquetResources,
+        });
+        setSelectedParquetUrl(parquetResources[0].url);
+      }
     } catch {
-      selectDataset(dataset);
-    } finally {
-      setIsResolving(false);
+      // Keep the bundled example selected when live metadata is unavailable.
     }
   }
 
@@ -293,8 +312,10 @@ function DatasetCard({ dataset, selected, onSelect }: { dataset: SelectableDatas
       type="button"
       aria-pressed={selected}
       onClick={onSelect}
-      className={`flex min-h-11 w-full cursor-pointer items-center justify-between gap-4 rounded px-3 py-2.5 text-left transition-colors ${
-        selected ? "bg-[#e8edff]" : "bg-[#f6f6f6] hover:bg-[#eeeeee]"
+      className={`flex min-h-11 w-full cursor-pointer items-center justify-between gap-4 rounded border bg-white px-3 py-2.5 text-left transition-colors ${
+        selected
+          ? "border-[#000091]"
+          : "border-[#dddddd] hover:border-[#8585f6] hover:bg-[#f5f5fe]"
       }`}
     >
       <span className="min-w-0 text-[14px] leading-5">
