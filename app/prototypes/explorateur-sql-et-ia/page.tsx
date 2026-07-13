@@ -4155,8 +4155,8 @@ function escapeSvgText(value: string) {
     .replace(/"/g, "&quot;");
 }
 
-function createChartSvg(chart: AssistantChartSpec) {
-  const chartRows = chart.data.slice(0, 8).map((item, index) => ({
+function createChartSvg(chart: AssistantChartSpec, source?: string) {
+  const chartRows = chart.data.slice(0, 12).map((item, index) => ({
     label: String(item[chart.xKey] ?? `Valeur ${index + 1}`),
     value: Number(item[chart.yKey]),
   }));
@@ -4164,12 +4164,12 @@ function createChartSvg(chart: AssistantChartSpec) {
     .map((item) => item.value)
     .filter((value) => Number.isFinite(value));
   const maxValue = Math.max(...values, 1);
-  const width = 760;
-  const rowHeight = 30;
-  const topPadding = 54;
-  const leftPadding = 172;
-  const rightPadding = 92;
-  const bottomPadding = 24;
+  const width = 960;
+  const rowHeight = 38;
+  const topPadding = 82;
+  const leftPadding = 238;
+  const rightPadding = 118;
+  const bottomPadding = source ? 58 : 36;
   const height = topPadding + chartRows.length * rowHeight + bottomPadding;
   const barWidth = width - leftPadding - rightPadding;
 
@@ -4177,27 +4177,32 @@ function createChartSvg(chart: AssistantChartSpec) {
     .map((item, index) => {
       const y = topPadding + index * rowHeight;
       const value = Number.isFinite(item.value) ? item.value : 0;
-      const filledWidth = Math.max(3, Math.round((value / maxValue) * barWidth));
+      const filledWidth = Math.max(4, Math.round((Math.max(0, value) / maxValue) * barWidth));
+      const displayLabel = item.label.length > 46
+        ? `${item.label.slice(0, 45)}…`
+        : item.label;
 
       return `
-        <text x="16" y="${y + 16}" font-family="system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" fill="#5d5d5d">${escapeSvgText(item.label.slice(0, 42))}</text>
-        <rect x="${leftPadding}" y="${y + 6}" width="${barWidth}" height="8" rx="4" fill="#eeeeee" />
-        <rect x="${leftPadding}" y="${y + 6}" width="${filledWidth}" height="8" rx="4" fill="#000091" />
-        <text x="${width - 16}" y="${y + 16}" text-anchor="end" font-family="system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="12" fill="#3a3a3a">${Number.isFinite(item.value) ? item.value.toLocaleString("fr-FR") : "-"}</text>
+        <text x="32" y="${y + 21}" font-family="Marianne, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" fill="#3a3a3a">${escapeSvgText(displayLabel)}</text>
+        <rect x="${leftPadding}" y="${y + 7}" width="${barWidth}" height="14" rx="2" fill="#eeeeee" />
+        <rect x="${leftPadding}" y="${y + 7}" width="${filledWidth}" height="14" rx="2" fill="#000091" />
+        <text x="${width - 32}" y="${y + 21}" text-anchor="end" font-family="Marianne, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="600" fill="#161616">${Number.isFinite(item.value) ? item.value.toLocaleString("fr-FR") : "-"}</text>
       `;
     })
     .join("");
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
     <rect width="100%" height="100%" fill="#ffffff" />
-    <text x="16" y="28" font-family="system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="15" font-weight="600" fill="#161616">${escapeSvgText(chart.title)}</text>
-    <text x="16" y="44" font-family="system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#666666">${escapeSvgText(chart.type)}</text>
+    <text x="32" y="43" font-family="Marianne, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="22" font-weight="700" fill="#161616">${escapeSvgText(chart.title)}</text>
+    <line x1="32" y1="62" x2="928" y2="62" stroke="#dddddd" />
     ${rowsMarkup}
+    ${source ? `<text x="32" y="${height - 35}" font-family="Marianne, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#666666">Source : ${escapeSvgText(source.length > 100 ? `${source.slice(0, 99)}…` : source)}</text>` : ""}
+    <text x="928" y="${height - 15}" text-anchor="end" font-family="Marianne, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="11" fill="#666666">Généré avec l’assistant d’exploration data.gouv.fr</text>
   </svg>`;
 }
 
-async function copySvgChart(chart: AssistantChartSpec) {
-  const svg = createChartSvg(chart);
+async function copySvgChart(chart: AssistantChartSpec, source?: string) {
+  const svg = createChartSvg(chart, source);
 
   try {
     if ("ClipboardItem" in window && navigator.clipboard?.write) {
@@ -4216,8 +4221,8 @@ async function copySvgChart(chart: AssistantChartSpec) {
   await navigator.clipboard?.writeText(svg);
 }
 
-async function copyJpgChart(chart: AssistantChartSpec) {
-  const svg = createChartSvg(chart);
+async function copyPngChart(chart: AssistantChartSpec, source?: string) {
+  const svg = createChartSvg(chart, source);
   const svgBlob = new Blob([svg], { type: "image/svg+xml;charset=utf-8" });
   const objectUrl = URL.createObjectURL(svgBlob);
 
@@ -4229,8 +4234,9 @@ async function copyJpgChart(chart: AssistantChartSpec) {
       nextImage.src = objectUrl;
     });
     const canvas = document.createElement("canvas");
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
+    const exportScale = 2;
+    canvas.width = image.naturalWidth * exportScale;
+    canvas.height = image.naturalHeight * exportScale;
     const context = canvas.getContext("2d");
 
     if (!context) {
@@ -4239,9 +4245,10 @@ async function copyJpgChart(chart: AssistantChartSpec) {
 
     context.fillStyle = "#ffffff";
     context.fillRect(0, 0, canvas.width, canvas.height);
+    context.scale(exportScale, exportScale);
     context.drawImage(image, 0, 0);
 
-    const jpgBlob = await new Promise<Blob>((resolve, reject) => {
+    const pngBlob = await new Promise<Blob>((resolve, reject) => {
       canvas.toBlob(
         (blob) => {
           if (blob) {
@@ -4249,24 +4256,32 @@ async function copyJpgChart(chart: AssistantChartSpec) {
             return;
           }
 
-          reject(new Error("Impossible de créer l'image JPG."));
+          reject(new Error("Impossible de créer l’image PNG."));
         },
-        "image/jpeg",
-        0.92,
+        "image/png",
       );
     });
 
     await navigator.clipboard.write([
-      new ClipboardItem({ "image/jpeg": jpgBlob }),
+      new ClipboardItem({ "image/png": pngBlob }),
     ]);
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
 }
 
-function AssistantChart({ chart }: { chart: AssistantChartSpec }) {
+function AssistantChart({
+  chart,
+  organizationName,
+  datasetName,
+}: {
+  chart: AssistantChartSpec;
+  organizationName?: string;
+  datasetName?: string;
+}) {
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const source = [organizationName, datasetName].filter(Boolean).join(" · ");
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -4367,15 +4382,15 @@ function AssistantChart({ chart }: { chart: AssistantChartSpec }) {
     return () => chartInstance.destroy();
   }, [chart]);
 
-  async function copyChart(format: "jpg" | "svg") {
+  async function copyChart(format: "png" | "svg") {
     try {
       if (format === "svg") {
-        await copySvgChart(chart);
+        await copySvgChart(chart, source);
       } else {
-        await copyJpgChart(chart);
+        await copyPngChart(chart, source);
       }
 
-      setCopyStatus(format === "svg" ? "SVG copié" : "JPG copié");
+      setCopyStatus(format === "svg" ? "SVG copié" : "Image copiée");
     } catch {
       setCopyStatus("Copie impossible");
     }
@@ -4401,17 +4416,17 @@ function AssistantChart({ chart }: { chart: AssistantChartSpec }) {
             <div className="absolute right-0 top-7 z-20 w-[150px] rounded border border-[#E5E5E5] bg-[#FFFFFF] p-1 shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]">
               <button
                 type="button"
-                onClick={() => void copyChart("jpg")}
+                onClick={() => void copyChart("png")}
                 className="flex h-7 w-full items-center px-2 text-left text-[12px] leading-4 text-[#3a3a3a] hover:bg-[#f6f6f6]"
               >
-                Copier en JPG
+                Copier comme image
               </button>
               <button
                 type="button"
                 onClick={() => void copyChart("svg")}
                 className="flex h-7 w-full items-center px-2 text-left text-[12px] leading-4 text-[#3a3a3a] hover:bg-[#f6f6f6]"
               >
-                Copier en SVG
+                Copier le SVG
               </button>
               {copyStatus ? (
                 <p className="border-t border-[#E5E5E5] px-2 py-1 text-[11px] leading-4 text-[#5d5d5d]">
@@ -4425,6 +4440,11 @@ function AssistantChart({ chart }: { chart: AssistantChartSpec }) {
       <div className="relative h-[260px] w-full">
         <canvas ref={canvasRef} aria-label={chart.title} role="img" />
       </div>
+      {source ? (
+        <p className="mt-2 truncate text-[10px] leading-4 text-[#666666]" title={source}>
+          Source : {source}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -4630,6 +4650,8 @@ function ChatSidebar({
   activeResource,
   sourceName,
   datasetReference,
+  datasetName,
+  organizationName,
   learnMoreHref,
   onApplyFilter,
   onApplySort,
@@ -4638,6 +4660,8 @@ function ChatSidebar({
   activeResource: Resource;
   sourceName: string;
   datasetReference?: string;
+  datasetName?: string;
+  organizationName?: string;
   learnMoreHref: string;
   onApplyFilter: AssistantActionHandlers["onApplyFilter"];
   onApplySort: AssistantActionHandlers["onApplySort"];
@@ -5428,7 +5452,11 @@ function ChatSidebar({
                   </div>
                   {message.response?.chart ? (
                     <div className="order-4">
-                      <AssistantChart chart={message.response.chart} />
+                      <AssistantChart
+                        chart={message.response.chart}
+                        datasetName={datasetName}
+                        organizationName={organizationName}
+                      />
                     </div>
                   ) : null}
                   <div className="order-5">
@@ -7391,6 +7419,8 @@ export function ExplorateurSqlEtIaPrototype({
               activeResource={activeResource}
               sourceName={activeParquetName}
               datasetReference={datasetReference}
+              datasetName={contextTitle}
+              organizationName={contextOrganization}
               learnMoreHref={learnMoreHref}
               onApplyFilter={applyAssistantFilters}
               onApplySort={applyAssistantSort}
