@@ -33,7 +33,7 @@ function ChevronIcon() {
   return (
     <RiArrowRightSLine
       aria-hidden="true"
-      className="h-4 w-4 shrink-0 text-[#666666] transition-transform group-open:rotate-90"
+      className="tree-chevron h-4 w-4 shrink-0 text-[#666666] transition-transform"
     />
   );
 }
@@ -50,6 +50,24 @@ const prototypeIcons = {
   "explore-in-context": RiMicroscopeLine,
 };
 
+const currentPrototypeSlugs = [
+  "explorateur",
+  "explorateur-sql-et-ia",
+  "enrichissement-donnees",
+  "explore-in-context",
+] as const;
+
+const currentPrototypes = currentPrototypeSlugs
+  .map((slug) => prototypes.find((prototype) => prototype.slug === slug))
+  .filter((prototype): prototype is (typeof prototypes)[number] => Boolean(prototype));
+
+const explorationPrototypes = prototypes.filter(
+  (prototype) =>
+    !currentPrototypeSlugs.includes(
+      prototype.slug as (typeof currentPrototypeSlugs)[number],
+    ),
+);
+
 function StatusBadge({ status }: { status: string }) {
   const className =
     {
@@ -65,6 +83,41 @@ function StatusBadge({ status }: { status: string }) {
     >
       {status}
     </span>
+  );
+}
+
+function PrototypeLinks({
+  items,
+}: {
+  items: (typeof prototypes)[number][];
+}) {
+  return (
+    <ul className="ml-6 mt-1 space-y-1 border-l border-[#e5e5e5] pl-4">
+      {items.map((prototype) => {
+        const PrototypeIcon =
+          prototypeIcons[prototype.slug as keyof typeof prototypeIcons] ??
+          RiPagesLine;
+
+        return (
+          <li key={prototype.slug}>
+            <Link
+              href={`/prototypes/${prototype.slug}`}
+              className="flex items-center justify-between gap-4 rounded px-2 py-1.5 text-[#161616] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000091]"
+            >
+              <span className="flex min-w-0 items-center gap-2">
+                <span aria-hidden="true" className="h-4 w-4" />
+                <PrototypeIcon
+                  aria-hidden="true"
+                  className="h-5 w-5 shrink-0 text-[#666666]"
+                />
+                <span className="truncate">{prototype.title}</span>
+              </span>
+              <StatusBadge status={prototype.status} />
+            </Link>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -99,7 +152,11 @@ export default function Home() {
               <span>à propos</span>
             </Link>
 
-            <details className="group" aria-label="prototypes">
+            <details
+              className="[&[open]>summary>.tree-chevron]:rotate-90"
+              aria-label="prototypes"
+              open
+            >
               <summary className="flex cursor-pointer list-none items-center gap-2 rounded px-2 py-1.5 outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-[#000091] [&::-webkit-details-marker]:hidden">
                 <ChevronIcon />
                 <FolderIcon />
@@ -107,30 +164,29 @@ export default function Home() {
               </summary>
 
               <ul className="ml-6 mt-1 space-y-1 border-l border-[#e5e5e5] pl-4">
-                {prototypes.map((prototype) => {
-                  const PrototypeIcon =
-                    prototypeIcons[prototype.slug as keyof typeof prototypeIcons] ??
-                    RiPagesLine;
-
-                  return (
-                    <li key={prototype.slug}>
-                      <Link
-                        href={`/prototypes/${prototype.slug}`}
-                        className="flex items-center justify-between gap-4 rounded px-2 py-1.5 text-[#161616] transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000091]"
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span aria-hidden="true" className="h-4 w-4" />
-                          <PrototypeIcon
-                            aria-hidden="true"
-                            className="h-5 w-5 shrink-0 text-[#666666]"
-                          />
-                          <span className="truncate">{prototype.title}</span>
-                        </span>
-                        <StatusBadge status={prototype.status} />
-                      </Link>
-                    </li>
-                  );
-                })}
+                <li>
+                  <details
+                    className="[&[open]>summary>.tree-chevron]:rotate-90"
+                    open
+                  >
+                    <summary className="flex cursor-pointer list-none items-center gap-2 rounded px-2 py-1.5 outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-[#000091] [&::-webkit-details-marker]:hidden">
+                      <ChevronIcon />
+                      <FolderIcon />
+                      <span>En cours</span>
+                    </summary>
+                    <PrototypeLinks items={currentPrototypes} />
+                  </details>
+                </li>
+                <li>
+                  <details className="[&[open]>summary>.tree-chevron]:rotate-90">
+                    <summary className="flex cursor-pointer list-none items-center gap-2 rounded px-2 py-1.5 outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-[#000091] [&::-webkit-details-marker]:hidden">
+                      <ChevronIcon />
+                      <FolderIcon />
+                      <span>Explorations</span>
+                    </summary>
+                    <PrototypeLinks items={explorationPrototypes} />
+                  </details>
+                </li>
               </ul>
             </details>
           </div>

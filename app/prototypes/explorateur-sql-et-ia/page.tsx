@@ -3682,6 +3682,8 @@ const assistantLoadingSteps = [
     detail: "La réponse est formulée à partir des preuves disponibles.",
   },
 ];
+const gristFeedbackFormUrl =
+  "https://grist.numerique.gouv.fr/o/datagouv/forms/iMKAxQa486jfLdQ5AJEyHj/8";
 const desktopTableHeaderHeight = 48;
 const desktopTableRowHeight = 28;
 const desktopTableOverscanRows = 24;
@@ -4609,10 +4611,6 @@ function ChatSidebar({
   const [feedbackDetailsMessageId, setFeedbackDetailsMessageId] = useState<
     string | null
   >(null);
-  const [feedbackDetails, setFeedbackDetails] = useState("");
-  const [feedbackDetailsSentIds, setFeedbackDetailsSentIds] = useState<
-    string[]
-  >([]);
   const [isAgentLoading, setIsAgentLoading] = useState(false);
   const [loadingStepIndex, setLoadingStepIndex] = useState(0);
   const [chatSidebarWidth, setChatSidebarWidth] = useState(chatSidebarDefaultWidth);
@@ -5043,6 +5041,50 @@ function ChatSidebar({
     submitAgentQuestion(question);
   }
 
+  const gristFeedbackUrl = useMemo(() => {
+    if (!feedbackDetailsMessageId) {
+      return gristFeedbackFormUrl;
+    }
+
+    const assistantIndex = messages.findIndex(
+      (message) => message.id === feedbackDetailsMessageId,
+    );
+    const assistantMessage = messages[assistantIndex];
+    let userQuestion = "";
+
+    for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+      if (messages[index].role === "user") {
+        userQuestion = messages[index].content;
+        break;
+      }
+    }
+
+    const url = new URL(gristFeedbackFormUrl);
+    url.searchParams.set(
+      "Rating",
+      messageFeedback[feedbackDetailsMessageId] === "up" ? "Utile" : "Inutile",
+    );
+    url.searchParams.set("Question", userQuestion.slice(0, 2000));
+    url.searchParams.set("Answer", assistantMessage?.content.slice(0, 5000) ?? "");
+    url.searchParams.set(
+      "Resource",
+      activeResource.sourceUrl ?? sourceName,
+    );
+    url.searchParams.set(
+      "Model",
+      assistantMessage?.response?.model ?? "gpt-oss-120b",
+    );
+    url.searchParams.set("CreatedAt", new Date().toISOString());
+
+    return url.toString();
+  }, [
+    activeResource.sourceUrl,
+    feedbackDetailsMessageId,
+    messageFeedback,
+    messages,
+    sourceName,
+  ]);
+
   return (
     <aside
       className="chat-sidebar relative flex shrink-0 flex-col overflow-hidden border-l border-[#E5E5E5] bg-[#FFFFFF] transition-[width] duration-200"
@@ -5290,23 +5332,14 @@ function ChatSidebar({
                   <div className="order-5">
                     {messageFeedback[message.id] ? (
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[#555555]" role="status">
-                        <span>
-                          {feedbackDetailsSentIds.includes(message.id)
-                            ? "Merci pour vos précisions !"
-                            : "Merci pour votre retour !"}
-                        </span>
-                        {!feedbackDetailsSentIds.includes(message.id) ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setFeedbackDetails("");
-                              setFeedbackDetailsMessageId(message.id);
-                            }}
-                            className="font-semibold text-[#000091] underline underline-offset-2"
-                          >
-                            Partager plus de détails
-                          </button>
-                        ) : null}
+                        <span>Merci pour votre retour !</span>
+                        <button
+                          type="button"
+                          onClick={() => setFeedbackDetailsMessageId(message.id)}
+                          className="font-semibold text-[#000091] underline underline-offset-2"
+                        >
+                          Partager plus de détails
+                        </button>
                       </div>
                     ) : (
                       <div className="flex gap-1">
@@ -5428,7 +5461,7 @@ function ChatSidebar({
           onMouseDown={() => setFeedbackDetailsMessageId(null)}
         >
           <div
-            className="w-full max-w-[430px] border border-[#cccccc] bg-[#FFFFFF] shadow-[0_18px_55px_rgba(0,0,0,0.2)]"
+            className="flex h-[min(760px,calc(100vh-40px))] w-full max-w-[680px] flex-col overflow-hidden border border-[#cccccc] bg-[#FFFFFF] shadow-[0_18px_55px_rgba(0,0,0,0.2)]"
             role="dialog"
             aria-modal="true"
             aria-labelledby="assistant-feedback-title"
@@ -5440,7 +5473,7 @@ function ChatSidebar({
                   Partager plus de détails
                 </h2>
                 <p className="mt-1 text-[11px] text-[#666666]">
-                  Votre retour nous aide à améliorer les réponses.
+                  Remplissez ce court formulaire Grist pour nous aider à améliorer les réponses.
                 </p>
               </div>
               <button
@@ -5452,47 +5485,12 @@ function ChatSidebar({
                 <Icon path={icons.close} className="h-4 w-4" />
               </button>
             </div>
-            <form
-              className="p-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                setFeedbackDetailsSentIds((current) =>
-                  current.includes(feedbackDetailsMessageId)
-                    ? current
-                    : [...current, feedbackDetailsMessageId],
-                );
-                setFeedbackDetailsMessageId(null);
-              }}
-            >
-              <label htmlFor="assistant-feedback-details" className="mb-1.5 block text-[11px] font-semibold text-[#161616]">
-                Votre commentaire
-              </label>
-              <textarea
-                id="assistant-feedback-details"
-                value={feedbackDetails}
-                onChange={(event) => setFeedbackDetails(event.target.value)}
-                rows={5}
-                autoFocus
-                placeholder="Qu’est-ce qui était utile ou pourrait être amélioré ?"
-                className="block w-full resize-y border border-[#aaaaaa] p-2 text-[12px] leading-5 outline-none focus:border-[#000091] focus:ring-1 focus:ring-[#000091]"
-              />
-              <div className="mt-3 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setFeedbackDetailsMessageId(null)}
-                  className="border border-[#cccccc] px-3 py-2 text-[12px] font-semibold"
-                >
-                  Annuler
-                </button>
-                <button
-                  type="submit"
-                  disabled={!feedbackDetails.trim()}
-                  className="bg-[#000091] px-3 py-2 text-[12px] font-semibold text-[#FFFFFF] disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Envoyer
-                </button>
-              </div>
-            </form>
+            <iframe
+              src={gristFeedbackUrl}
+              title="Formulaire de retour sur l’assistant"
+              className="min-h-0 w-full flex-1 border-0 bg-[#FFFFFF]"
+              loading="lazy"
+            />
           </div>
         </div>
       ) : null}
