@@ -262,13 +262,18 @@ function DatasetTabs({ dataset }: { dataset: DatagouvDatasetSummary }) {
 export function DatasetPageTemplate({
   children,
   dataset = defaultDatasetSummary,
+  showTabs = true,
+  topContent,
 }: {
   children?: ReactNode;
   dataset?: DatagouvDatasetSummary;
+  showTabs?: boolean;
+  topContent?: ReactNode;
 }) {
   return (
     <main className="min-h-dvh bg-white py-3 text-[#161616]">
       <section className="w-full">
+        {topContent}
         <Breadcrumb dataset={dataset} />
 
         <div className={`${frContainerClass} pt-3`}>
@@ -291,7 +296,7 @@ export function DatasetPageTemplate({
           </div>
         </div>
 
-        <DatasetTabs dataset={dataset} />
+        {showTabs ? <DatasetTabs dataset={dataset} /> : null}
         {children}
       </section>
     </main>

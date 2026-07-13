@@ -13,6 +13,46 @@ const columnListPatterns = [
   /\blist\s+(?:the\s+)?columns\b/i,
 ];
 
+function humanizeDuckDbType(type: string) {
+  const normalized = type.trim().toUpperCase();
+
+  if (normalized.endsWith("[]") || normalized.startsWith("LIST(") || normalized.startsWith("ARRAY(")) {
+    return "liste";
+  }
+  if (normalized.startsWith("STRUCT(") || normalized.startsWith("MAP(")) {
+    return "objet structuré";
+  }
+  if (/^(VARCHAR|CHAR|BPCHAR|TEXT|STRING|UUID|ENUM)/.test(normalized)) {
+    return "texte";
+  }
+  if (/^(TINYINT|SMALLINT|INTEGER|INT|BIGINT|HUGEINT|UTINYINT|USMALLINT|UINTEGER|UBIGINT)/.test(normalized)) {
+    return "nombre entier";
+  }
+  if (/^(DECIMAL|NUMERIC|REAL|FLOAT|DOUBLE)/.test(normalized)) {
+    return "nombre décimal";
+  }
+  if (normalized === "BOOLEAN" || normalized === "BOOL") {
+    return "oui / non";
+  }
+  if (normalized === "DATE") {
+    return "date";
+  }
+  if (normalized.startsWith("TIMESTAMP") || normalized === "DATETIME") {
+    return "date et heure";
+  }
+  if (normalized.startsWith("TIME")) {
+    return "heure";
+  }
+  if (normalized.startsWith("INTERVAL")) {
+    return "durée";
+  }
+  if (/^(BLOB|BIT|VARINT)/.test(normalized)) {
+    return "donnée technique";
+  }
+
+  return "valeur";
+}
+
 export function answerFromSchema(
   question: string,
   schema?: InspectSchemaResult,
@@ -26,7 +66,7 @@ export function answerFromSchema(
       "| Colonne | Type |",
       "|---|---|",
       ...schema.columns.map(
-        (column) => `| \`${column.name}\` | ${column.type} |`,
+        (column) => `| \`${column.name}\` | ${humanizeDuckDbType(column.type)} |`,
       ),
     ].join("\n");
 

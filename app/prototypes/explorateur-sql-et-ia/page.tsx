@@ -1500,9 +1500,11 @@ function ResourceItem({
       >
         {resource.name}
       </span>
-      <span className="shrink-0 whitespace-nowrap text-[12px] text-[#3a3a3a]">
-        {resource.size}
-      </span>
+      {resource.size !== "—" ? (
+        <span className="shrink-0 whitespace-nowrap text-[12px] text-[#3a3a3a]">
+          {resource.size}
+        </span>
+      ) : null}
       <FormatTag>{resource.format}</FormatTag>
     </button>
   );
@@ -1511,32 +1513,38 @@ function ResourceItem({
 function DatasetContextHeader({
   title,
   updatedAt,
+  organizationName = "data.gouv.fr",
+  showLogo = true,
   actions,
 }: {
   title: string;
-  updatedAt: string;
+  updatedAt?: string;
+  organizationName?: string;
+  showLogo?: boolean;
   actions: ReactNode;
 }) {
   return (
     <div className="flex h-[58px] shrink-0 items-center justify-between gap-2 border-b border-[#E5E5E5] bg-[#f6f6f6]/95 px-3 backdrop-blur-[5px] sm:gap-4">
       <div className="flex min-w-0 items-center gap-2">
-        <div className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[2px] border border-[#E5E5E5] bg-[#FFFFFF] p-1">
+        {showLogo ? <div className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[2px] border border-[#E5E5E5] bg-[#FFFFFF] p-1">
           <div className="flex h-full w-full items-center justify-center rounded-[1px] border border-[#eeeeee] text-[8px] font-bold leading-3 text-[#000091]">
             DG
           </div>
-        </div>
+        </div> : null}
         <div className="flex min-w-0 items-center gap-1 text-[13px] leading-[1.4] sm:text-[16px]">
           <span className="min-w-0 truncate text-[#161616]">
-            data.gouv.fr
+            {organizationName}
           </span>
           <span className="shrink-0 text-[#161616]">/</span>
           <span className="min-w-0 truncate font-bold text-[#161616]">
             {title}
           </span>
-          <span className="hidden shrink-0 text-[#3a3a3a] sm:inline">·</span>
-          <span className="hidden truncate text-[#3a3a3a] sm:inline">
-            mis à jour le {updatedAt}
-          </span>
+          {updatedAt ? <>
+            <span className="hidden shrink-0 text-[#3a3a3a] sm:inline">·</span>
+            <span className="hidden truncate text-[#3a3a3a] sm:inline">
+              mis à jour le {updatedAt}
+            </span>
+          </> : null}
         </div>
       </div>
       <div className="flex shrink-0 items-center gap-2">{actions}</div>
@@ -3569,6 +3577,25 @@ type TokenUsage = {
   total_tokens?: number;
 };
 
+type DatasetMetadataResult = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  organization: string;
+  page: string;
+  license: string;
+  lastUpdate: string;
+  qualityScore: number;
+  resources: Array<{
+    id: string;
+    title: string;
+    format: string;
+    url?: string;
+    parquetUrl?: string;
+  }>;
+};
+
 type AgentResponse = {
   intent: AssistantIntent;
   answer: string;
@@ -3578,7 +3605,7 @@ type AgentResponse = {
   chart?: AssistantChartSpec;
   queryRows?: Record<string, unknown>[];
   toolTrace?: {
-    tool: "inspect_schema" | "execute_sql" | "get_resource_context" | "execute_query" | "create_chart";
+    tool: "get_dataset_metadata" | "inspect_schema" | "execute_sql" | "get_resource_context" | "execute_query" | "create_chart";
     summary: string;
     description?: string;
     show?: boolean;
@@ -3592,6 +3619,10 @@ type AgentResponse = {
 };
 
 type AssistantToolCall =
+  | {
+      tool: "get_dataset_metadata";
+      arguments?: Record<string, never>;
+    }
   | {
       tool: "inspect_schema";
       arguments?: Record<string, never>;
@@ -3659,6 +3690,7 @@ type AssistantActionHandlers = {
 
 function getAssistantStarterQuestions() {
   return [
+    "Explique-moi le contenu de ce jeu de données",
     "Explique moi ton fonctionnement",
     "Quelles sont les colonnes de ce jeu de données ?",
   ];
@@ -4523,6 +4555,7 @@ function getAssistantToolLabel(
 ) {
   const labels: Record<string, string> = {
     inspect_schema: "Inspecter le schéma",
+    get_dataset_metadata: "Lire les métadonnées du jeu de données",
     execute_sql: "Exécuter la requête SQL",
     get_resource_context: "Lire le contexte de la ressource",
     execute_query: "Interroger les données",
@@ -4590,12 +4623,14 @@ function AssistantSqlBlock({ sql }: { sql: string }) {
 function ChatSidebar({
   activeResource,
   sourceName,
+  datasetReference,
   onApplyFilter,
   onApplySort,
   onClose,
 }: {
   activeResource: Resource;
   sourceName: string;
+  datasetReference?: string;
   onApplyFilter: AssistantActionHandlers["onApplyFilter"];
   onApplySort: AssistantActionHandlers["onApplySort"];
   onClose: () => void;
@@ -4617,6 +4652,7 @@ function ChatSidebar({
   const [lastTokenUsage, setLastTokenUsage] = useState<TokenUsage | undefined>();
   const starterQuestions = useMemo(() => getAssistantStarterQuestions(), []);
   const inspectedSchemaRef = useRef<InspectSchemaResult | null>(null);
+  const datasetMetadataRef = useRef<DatasetMetadataResult | null>(null);
   const messageIdCounterRef = useRef(0);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -4695,6 +4731,8 @@ function ChatSidebar({
         body: JSON.stringify({
           resourceName: sourceName,
           tableName: "data",
+          datasetReference,
+          datasetMetadata: datasetMetadataRef.current,
           conversationHistory: messages.slice(-8).map((message) => ({
             role: message.role,
             content: message.content,
@@ -4710,6 +4748,30 @@ function ChatSidebar({
     }
 
     return data;
+  }
+
+  async function fetchDatasetMetadata() {
+    if (!datasetReference) {
+      throw new Error(
+        "Les métadonnées ne sont pas disponibles pour cette ressource isolée.",
+      );
+    }
+
+    const response = await fetch(
+      `/api/prototypes/explorateur-sql-et-ia/agent/metadata?dataset=${encodeURIComponent(datasetReference)}`,
+    );
+    const payload = (await response.json()) as {
+      metadata?: DatasetMetadataResult;
+      error?: string;
+    };
+
+    if (!response.ok || !payload.metadata) {
+      throw new Error(
+        payload.error ?? "Impossible de récupérer les métadonnées.",
+      );
+    }
+
+    return payload.metadata;
   }
 
   async function runRemoteAssistant(question: string): Promise<AgentResponse> {
@@ -4732,6 +4794,38 @@ function ChatSidebar({
         usage: plan.usage,
         status: plan.needsClarification ? "ambiguous" : "success",
       });
+    }
+
+    if (plan.toolCall?.tool === "get_dataset_metadata") {
+      const metadata =
+        datasetMetadataRef.current ?? (await fetchDatasetMetadata());
+      datasetMetadataRef.current = metadata;
+      toolTrace.push({
+        tool: "get_dataset_metadata",
+        description: "Récupérer les métadonnées publiques du jeu de données.",
+        summary: `${metadata.resources.length} ressources et les informations du producteur récupérées depuis data.gouv.fr.`,
+      });
+
+      const metadataPlan = await callAgentPhase({
+        phase: "plan",
+        question,
+        schema: cachedSchema,
+      });
+      planningUsage = mergeTokenUsage(planningUsage, metadataPlan.usage);
+      plan = metadataPlan;
+
+      if (plan.answer) {
+        return normalizeRemoteResponse({
+          answer: plan.answer,
+          reasoning: plan.reasoning,
+          needsClarification: plan.needsClarification,
+          toolTrace,
+          proposedAction: { type: "none" },
+          model: plan.model,
+          usage: planningUsage,
+          status: plan.needsClarification ? "ambiguous" : "success",
+        });
+      }
     }
 
     if (
@@ -5475,6 +5569,9 @@ function ChatSidebar({
                 <p className="mt-1 text-[11px] text-[#666666]">
                   Remplissez ce court formulaire Grist pour nous aider à améliorer les réponses.
                 </p>
+                <p className="mt-2 max-w-[540px] text-[11px] leading-4 text-[#666666]">
+                  Votre retour inclura la question que vous avez posée afin de nous aider à comprendre le contexte. Votre identité n’est ni collectée ni transmise.
+                </p>
               </div>
               <button
                 type="button"
@@ -5498,15 +5595,85 @@ function ChatSidebar({
   );
 }
 
-export default function ExplorateurSqlEtIaPage() {
+export type ExplorateurSqlEtIaProps = {
+  embedded?: boolean;
+  initialAssistantOpen?: boolean;
+  allowCustomResourceUrl?: boolean;
+  standardResourceList?: boolean;
+  contextTitle?: string;
+  contextOrganization?: string;
+  showContextLogo?: boolean;
+  showContextUpdatedAt?: boolean;
+  showUpdateAndDownloadInfo?: boolean;
+  datasetReference?: string;
+  initialResource?: {
+    id?: string;
+    name: string;
+    url: string;
+  };
+  initialResources?: Array<{
+    id?: string;
+    name: string;
+    url: string;
+  }>;
+};
+
+export function ExplorateurSqlEtIaPrototype({
+  embedded = false,
+  initialAssistantOpen = false,
+  allowCustomResourceUrl = true,
+  standardResourceList = false,
+  contextTitle,
+  contextOrganization,
+  showContextLogo = true,
+  showContextUpdatedAt = true,
+  showUpdateAndDownloadInfo = true,
+  datasetReference,
+  initialResource,
+  initialResources,
+}: ExplorateurSqlEtIaProps = {}) {
+  const configuredResources = useMemo(
+    () =>
+      initialResources?.length
+        ? initialResources
+        : initialResource
+          ? [initialResource]
+          : null,
+    [initialResource, initialResources],
+  );
+  const firstConfiguredResource =
+    configuredResources?.find((resource) => resource.url === initialResource?.url) ??
+    configuredResources?.[0];
+  const initialResourceId = firstConfiguredResource?.id ?? "catalogue_datasets";
+  const initialParquetUrl = firstConfiguredResource?.url ?? defaultParquetFileUrl;
+  const availableResources = useMemo<Resource[]>(
+    () =>
+      configuredResources
+        ? configuredResources.map((resource, index) =>
+            ({
+              id: resource.id ?? `parquet-resource-${index}`,
+              name: resource.name,
+              size: "—",
+              format: "PARQUET",
+              updatedAt: "—",
+              downloads: 0,
+              type: "table",
+              tabs: ["Aperçu", "Structure des données"],
+              sourceUrl: resource.url,
+            }),
+          )
+        : resources,
+    [configuredResources],
+  );
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [resourceSidebarWidth, setResourceSidebarWidth] = useState(
     resourceSidebarDefaultWidth,
   );
-  const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false);
-  const [activeResourceId, setActiveResourceId] = useState("catalogue_datasets");
-  const [parquetFileUrl, setParquetFileUrl] = useState(defaultParquetFileUrl);
-  const [activeParquetUrl, setActiveParquetUrl] = useState(defaultParquetFileUrl);
+  const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(initialAssistantOpen);
+  const [resourceSearchQuery, setResourceSearchQuery] = useState("");
+  const [activeResourceId, setActiveResourceId] = useState(initialResourceId);
+  const [parquetFileUrl, setParquetFileUrl] = useState(initialParquetUrl);
+  const [activeParquetUrl, setActiveParquetUrl] = useState(initialParquetUrl);
   const [parquetReloadVersion, setParquetReloadVersion] = useState(0);
   const [activeFilter, setActiveFilter] = useState<ColumnKey | null>(null);
   const [activeCell, setActiveCell] = useState<ActiveCell>(null);
@@ -5515,6 +5682,7 @@ export default function ExplorateurSqlEtIaPage() {
   const [isMobileResourceMenuOpen, setIsMobileResourceMenuOpen] = useState(false);
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
   const [isExplorerMinimized, setIsExplorerMinimized] = useState(false);
+  const [isEmbeddedFullscreen, setIsEmbeddedFullscreen] = useState(false);
   const [visibleColumnKeys, setVisibleColumnKeys] = useState<ColumnKey[]>(
     tableColumns.map((column) => column.key),
   );
@@ -5633,8 +5801,8 @@ export default function ExplorateurSqlEtIaPage() {
   const activeResource =
     activeResourceId === customParquetResource.id
       ? customParquetResource
-      : resources.find((resource) => resource.id === activeResourceId) ??
-        resources[0];
+      : availableResources.find((resource) => resource.id === activeResourceId) ??
+        availableResources[0];
   const activeParquetName = useMemo(() => {
     if (activeResource.sourceUrl === activeParquetUrl) {
       return activeResource.name;
@@ -5692,7 +5860,9 @@ export default function ExplorateurSqlEtIaPage() {
     loadParquetFileUrl(parquetFileUrl);
   }
 
-  const filteredResources = resources;
+  const filteredResources = availableResources.filter((resource) =>
+    resource.name.toLowerCase().includes(resourceSearchQuery.trim().toLowerCase()),
+  );
 
   const mainResources = filteredResources.filter(
     (resource) => resource.type !== "documentation",
@@ -5702,7 +5872,7 @@ export default function ExplorateurSqlEtIaPage() {
   );
 
   function toggleResourceSidebarAutoFit() {
-    const autoFitWidth = getAutoFitResourceSidebarWidth(resources);
+    const autoFitWidth = getAutoFitResourceSidebarWidth(availableResources);
     const isAlreadyAutoFit = Math.abs(resourceSidebarWidth - autoFitWidth) <= 2;
 
     setResourceSidebarWidth(
@@ -6252,9 +6422,32 @@ export default function ExplorateurSqlEtIaPage() {
     setActiveCell(null);
   }
 
+  useEffect(() => {
+    if (!isEmbeddedFullscreen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function closeOnEscape(event: globalThis.KeyboardEvent) {
+      if (event.key === "Escape") setIsEmbeddedFullscreen(false);
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isEmbeddedFullscreen]);
+
   return (
     <main
-      className={`relative h-dvh overflow-hidden text-[#161616] ${
+      className={`overflow-hidden text-[#161616] ${
+        embedded
+          ? isEmbeddedFullscreen
+            ? "fixed inset-0 z-[100] h-dvh bg-[#FFFFFF]"
+            : "relative h-[76dvh] min-h-[620px] border border-[#E5E5E5]"
+          : "relative h-dvh"
+      } ${
         isExplorerMinimized
           ? "flex items-center justify-center bg-[#f6f6f6] p-6"
           : "bg-[#FFFFFF] p-0"
@@ -6278,10 +6471,13 @@ export default function ExplorateurSqlEtIaPage() {
       >
         {!isExplorerMinimized ? (
           <DatasetContextHeader
-            title={activeResource.name}
-            updatedAt={activeResource.updatedAt}
+            title={contextTitle ?? activeResource.name}
+            organizationName={contextOrganization}
+            showLogo={showContextLogo}
+            updatedAt={showContextUpdatedAt ? activeResource.updatedAt : undefined}
             actions={
               <>
+                {showUpdateAndDownloadInfo ? (
                 <div className="relative">
                   {isDownloadMenuOpen ? (
                     <button
@@ -6313,6 +6509,7 @@ export default function ExplorateurSqlEtIaPage() {
                     <DownloadMenu onClose={() => setIsDownloadMenuOpen(false)} />
                   ) : null}
                 </div>
+                ) : null}
                   <button
                   type="button"
                   aria-expanded={isChatSidebarOpen}
@@ -6333,9 +6530,19 @@ export default function ExplorateurSqlEtIaPage() {
                 </button>
                 <button
                   type="button"
-                  aria-label="Réduire l’explorateur"
+                  aria-label={
+                    embedded
+                      ? isEmbeddedFullscreen
+                        ? "Quitter le plein écran"
+                        : "Afficher en plein écran"
+                      : "Réduire l’explorateur"
+                  }
                   onClick={() => {
-                    setIsExplorerMinimized(true);
+                    if (embedded) {
+                      setIsEmbeddedFullscreen((current) => !current);
+                    } else {
+                      setIsExplorerMinimized(true);
+                    }
                     setIsDownloadMenuOpen(false);
                     setIsColumnSelectorOpen(false);
                     setActiveFilter(null);
@@ -6344,7 +6551,11 @@ export default function ExplorateurSqlEtIaPage() {
                   className="flex h-8 w-8 items-center justify-center border border-[#E5E5E5] bg-[#FFFFFF] text-[#161616] hover:bg-[#f6f6f6]"
                 >
                   <Icon
-                    path={icons.fullscreenExit}
+                    path={
+                      embedded && !isEmbeddedFullscreen
+                        ? icons.fullscreen
+                        : icons.fullscreenExit
+                    }
                     className="h-4 w-4 text-[#3a3a3a]"
                   />
                 </button>
@@ -6389,9 +6600,23 @@ export default function ExplorateurSqlEtIaPage() {
                 isSidebarCollapsed ? "hidden" : ""
               }`}
             >
+              {standardResourceList ? (
+                <label className="flex h-8 items-center gap-1 rounded border border-[#E5E5E5] bg-[#f6f6f6] px-2">
+                  <Icon path={icons.search} className="h-3.5 w-3.5 text-[#3a3a3a]" />
+                  <input
+                    value={resourceSearchQuery}
+                    onChange={(event) => setResourceSearchQuery(event.target.value)}
+                    aria-label="Rechercher une ressource"
+                    placeholder="Rechercher une ressource"
+                    className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
+                  />
+                </label>
+              ) : null}
               <section className="space-y-0.5">
-                <p className="px-1 pb-2 text-[12px] font-medium leading-4 text-[#3a3a3a]">
-                  Jeux de données d’exemple
+                <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
+                  {standardResourceList
+                    ? `${mainResources.length} Fichier${mainResources.length > 1 ? "s" : ""} disponible${mainResources.length > 1 ? "s" : ""} en Parquet`
+                    : "Jeux de données d’exemple"}
                 </p>
                 {mainResources.map((resource) => (
                   <ResourceItem
@@ -6405,6 +6630,7 @@ export default function ExplorateurSqlEtIaPage() {
                 ))}
               </section>
 
+              {allowCustomResourceUrl ? (
               <section className="space-y-2 border-t border-[#E5E5E5] pt-3">
                 <p className="px-1 text-[12px] font-medium leading-4 text-[#3a3a3a]">
                   Ou charger un jeu de données Parquet
@@ -6435,6 +6661,7 @@ export default function ExplorateurSqlEtIaPage() {
                   </button>
                 </div>
               </section>
+              ) : null}
 
               {documentationResources.length > 0 ? (
                 <section className="space-y-0.5">
@@ -6533,9 +6760,23 @@ export default function ExplorateurSqlEtIaPage() {
                         </button>
                       </div>
                       <div className="max-h-[calc(70dvh-2rem)] overflow-auto p-2">
+                        {standardResourceList ? (
+                          <label className="mb-2 flex h-8 items-center gap-1 rounded border border-[#E5E5E5] bg-[#f6f6f6] px-2">
+                            <Icon path={icons.search} className="h-3.5 w-3.5 text-[#3a3a3a]" />
+                            <input
+                              value={resourceSearchQuery}
+                              onChange={(event) => setResourceSearchQuery(event.target.value)}
+                              aria-label="Rechercher une ressource"
+                              placeholder="Rechercher une ressource"
+                              className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
+                            />
+                          </label>
+                        ) : null}
                         <section className="space-y-0.5">
                           <p className="px-1 pb-2 text-[12px] font-medium leading-4 text-[#3a3a3a]">
-                            Jeux de données d’exemple
+                            {standardResourceList
+                              ? `${mainResources.length} Fichier${mainResources.length > 1 ? "s" : ""} disponible${mainResources.length > 1 ? "s" : ""} en Parquet`
+                              : "Jeux de données d’exemple"}
                           </p>
                           {mainResources.map((resource) => (
                             <ResourceItem
@@ -6551,6 +6792,7 @@ export default function ExplorateurSqlEtIaPage() {
                             />
                           ))}
                         </section>
+                        {allowCustomResourceUrl ? (
                         <section className="mt-3 space-y-2 border-t border-[#E5E5E5] pt-3">
                           <p className="px-1 text-[12px] font-medium leading-4 text-[#3a3a3a]">
                             Ou charger un jeu de données Parquet
@@ -6581,6 +6823,7 @@ export default function ExplorateurSqlEtIaPage() {
                           </button>
                           </div>
                         </section>
+                        ) : null}
                         {documentationResources.length > 0 ? (
                           <section className="mt-3 space-y-0.5">
                             <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
@@ -6612,27 +6855,34 @@ export default function ExplorateurSqlEtIaPage() {
                 <span className="desktop-explorer-only min-w-0 truncate font-medium">
                   {activeResource.name}
                 </span>
+                {showUpdateAndDownloadInfo ? <>
                 <span className="desktop-explorer-only shrink-0 text-[#3a3a3a]">·</span>
                 <span className="desktop-explorer-only shrink-0 text-[#3a3a3a]">
                   Mis à jour le {activeResource.updatedAt}
                 </span>
-                <span className="desktop-explorer-only shrink-0 text-[#3a3a3a]">·</span>
-                <span className="desktop-explorer-only shrink-0 text-[#3a3a3a]">
-                  {activeResource.size}
-                </span>
+                </> : null}
+                {activeResource.size !== "—" ? <>
+                  <span className="desktop-explorer-only shrink-0 text-[#3a3a3a]">·</span>
+                  <span className="desktop-explorer-only shrink-0 text-[#3a3a3a]">
+                    {activeResource.size}
+                  </span>
+                </> : null}
                 <span className="desktop-explorer-only shrink-0 text-[#3a3a3a]">·</span>
                 <span className="desktop-explorer-only shrink-0">
                   <FormatTag>{activeResource.format}</FormatTag>
                 </span>
+                {showUpdateAndDownloadInfo ? <>
                 <span className="desktop-explorer-only shrink-0 text-[#3a3a3a]">·</span>
                 <Icon path={icons.download} className="desktop-explorer-only h-3 w-3 shrink-0 text-[#3a3a3a]" />
                 <span className="desktop-explorer-only shrink-0 text-[#3a3a3a]">
                   {activeResource.downloads}
                 </span>
+                </> : null}
               </div>
 
               {isExplorerMinimized ? (
                 <div className="flex items-center gap-2">
+                  {showUpdateAndDownloadInfo ? (
                   <div className="relative">
                     {isDownloadMenuOpen ? (
                       <button
@@ -6664,6 +6914,7 @@ export default function ExplorateurSqlEtIaPage() {
                       <DownloadMenu onClose={() => setIsDownloadMenuOpen(false)} />
                     ) : null}
                   </div>
+                  ) : null}
                   <button
                     type="button"
                     aria-expanded={isChatSidebarOpen}
@@ -7093,7 +7344,9 @@ export default function ExplorateurSqlEtIaPage() {
                     </p>
                     <p className="max-w-[420px] text-[12px] leading-5 text-[#666666]">
                       {datasetRowCount === 0
-                        ? "Choisissez un autre jeu de données d’exemple ou chargez une autre URL Parquet."
+                        ? allowCustomResourceUrl
+                          ? "Choisissez un autre jeu de données d’exemple ou chargez une autre URL Parquet."
+                          : "Choisissez une autre ressource dans la liste."
                         : "Modifiez ou réinitialisez les filtres pour afficher des lignes."}
                     </p>
                     {datasetRowCount === 0 ? null : (
@@ -7116,6 +7369,7 @@ export default function ExplorateurSqlEtIaPage() {
               key={`${activeParquetUrl}-${parquetReloadVersion}`}
               activeResource={activeResource}
               sourceName={activeParquetName}
+              datasetReference={datasetReference}
               onApplyFilter={applyAssistantFilters}
               onApplySort={applyAssistantSort}
               onClose={() => setIsChatSidebarOpen(false)}
@@ -7137,10 +7391,12 @@ export default function ExplorateurSqlEtIaPage() {
             {resourceTooltip.resource.name}
           </p>
           <div className="mt-1 flex items-center gap-1 text-[12px] leading-4 text-[#3a3a3a]">
-            <span>{resourceTooltip.resource.size}</span>
+            {resourceTooltip.resource.size !== "—" ? (
+              <span>{resourceTooltip.resource.size}</span>
+            ) : null}
             <FormatTag>{resourceTooltip.resource.format}</FormatTag>
           </div>
-          <dl className="mt-2 grid gap-1 border-t border-[#E5E5E5] pt-2 text-[12px] leading-4">
+          {showUpdateAndDownloadInfo ? <dl className="mt-2 grid gap-1 border-t border-[#E5E5E5] pt-2 text-[12px] leading-4">
             <div className="flex items-center justify-between gap-3">
               <dt className="text-[#666666]">Mise à jour</dt>
               <dd className="whitespace-nowrap font-medium text-[#161616]">
@@ -7153,14 +7409,18 @@ export default function ExplorateurSqlEtIaPage() {
                 {resourceTooltip.resource.downloads.toLocaleString("fr-FR")}
               </dd>
             </div>
-          </dl>
+          </dl> : null}
         </div>
       ) : null}
-      <datalist id="default-parquet-sources">
+      {allowCustomResourceUrl ? <datalist id="default-parquet-sources">
         {defaultParquetSources.map((source) => (
           <option key={source.url} value={source.url} label={source.label} />
         ))}
-      </datalist>
+      </datalist> : null}
     </main>
   );
+}
+
+export default function ExplorateurSqlEtIaPage() {
+  return <ExplorateurSqlEtIaPrototype />;
 }

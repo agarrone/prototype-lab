@@ -61,6 +61,9 @@ export async function runAgentPhase(
 Table: ${tableName}
 Schéma disponible: ${body.schema ? "oui" : "non"}
 ${body.schema ? `Schéma courant:\n${JSON.stringify(body.schema, null, 2)}` : ""}
+Métadonnées du jeu de données disponibles: ${body.datasetMetadata ? "oui" : "non"}
+Référence du jeu de données disponible: ${body.datasetReference ? "oui" : "non"}
+${body.datasetMetadata ? `Métadonnées courantes:\n${JSON.stringify(body.datasetMetadata, null, 2)}` : ""}
 Historique récent:
 ${JSON.stringify(history, null, 2)}
 
@@ -114,6 +117,9 @@ Question: ${question}`,
 Schéma courant:
 ${JSON.stringify(body.schema, null, 2)}
 
+Métadonnées du jeu de données:
+${JSON.stringify(body.datasetMetadata ?? null, null, 2)}
+
 Résultats SQL déjà obtenus:
 ${JSON.stringify(body.previousSqlResults ?? [], null, 2)}
 
@@ -153,6 +159,8 @@ Question: ${question}`,
 Question: ${question}
 Schéma:
 ${JSON.stringify(body.schema, null, 2)}
+Métadonnées du jeu de données:
+${JSON.stringify(body.datasetMetadata ?? null, null, 2)}
 SQL exécuté:
 ${sanitizeSelectSql(body.sql)}
 Résultat SQL:
@@ -193,6 +201,8 @@ ${JSON.stringify(body.executionResult, null, 2)}`,
           content: `Question: ${question}
 Schéma:
 ${JSON.stringify(body.schema, null, 2)}
+Métadonnées du jeu de données:
+${JSON.stringify(body.datasetMetadata ?? null, null, 2)}
 Historique des résultats SQL:
 ${JSON.stringify(evidence, null, 2)}
 SQL final: ${finalSql}`,

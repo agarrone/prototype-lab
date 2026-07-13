@@ -29,6 +29,7 @@ export type DatagouvResourceSummary = {
   downloads: number;
   type: string;
   url?: string;
+  parquetUrl?: string;
 };
 
 type DatagouvDatasetApi = {
@@ -73,6 +74,9 @@ type DatagouvResourceApi = {
     views?: number;
   } | null;
   type?: string | null;
+  extras?: {
+    "analysis:parsing:parquet_url"?: string | null;
+  } | null;
 };
 
 type DatagouvSearchResponse = {
@@ -253,6 +257,9 @@ function toResourceSummary(
     downloads: resource.metrics?.downloads ?? resource.metrics?.views ?? 0,
     type: resource.type ?? "main",
     url: resource.url ?? undefined,
+    parquetUrl:
+      resource.extras?.["analysis:parsing:parquet_url"] ??
+      (format === "PARQUET" ? resource.url ?? undefined : undefined),
   };
 }
 

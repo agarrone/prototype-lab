@@ -94,6 +94,10 @@ export function parseToolCall(
     return { tool: "inspect_schema", arguments: {} };
   }
 
+  if (tool === "get_dataset_metadata") {
+    return { tool: "get_dataset_metadata", arguments: {} };
+  }
+
   if (
     tool === "execute_sql" &&
     typeof (args.sql ?? parsed.sql) === "string"

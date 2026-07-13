@@ -6,6 +6,7 @@ import {
   RiFolder3Line,
   RiInformationLine,
   RiLayout2Line,
+  RiMessageAi3Line,
   RiMicroscopeLine,
   RiPagesLine,
   RiPaletteLine,
@@ -48,6 +49,7 @@ const prototypeIcons = {
   "preview-dashboard": RiBarChartBoxLine,
   templates: RiLayout2Line,
   "explore-in-context": RiMicroscopeLine,
+  "test-assistant": RiMessageAi3Line,
 };
 
 const currentPrototypeSlugs = [
@@ -61,10 +63,19 @@ const currentPrototypes = currentPrototypeSlugs
   .map((slug) => prototypes.find((prototype) => prototype.slug === slug))
   .filter((prototype): prototype is (typeof prototypes)[number] => Boolean(prototype));
 
+const testPrototypeSlugs = ["test-assistant"] as const;
+
+const testPrototypes = testPrototypeSlugs
+  .map((slug) => prototypes.find((prototype) => prototype.slug === slug))
+  .filter((prototype): prototype is (typeof prototypes)[number] => Boolean(prototype));
+
 const explorationPrototypes = prototypes.filter(
   (prototype) =>
     !currentPrototypeSlugs.includes(
       prototype.slug as (typeof currentPrototypeSlugs)[number],
+    ) &&
+    !testPrototypeSlugs.includes(
+      prototype.slug as (typeof testPrototypeSlugs)[number],
     ),
 );
 
@@ -175,6 +186,19 @@ export default function Home() {
                       <span>En cours</span>
                     </summary>
                     <PrototypeLinks items={currentPrototypes} />
+                  </details>
+                </li>
+                <li>
+                  <details
+                    className="[&[open]>summary>.tree-chevron]:rotate-90"
+                    open
+                  >
+                    <summary className="flex cursor-pointer list-none items-center gap-2 rounded px-2 py-1.5 outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-[#000091] [&::-webkit-details-marker]:hidden">
+                      <ChevronIcon />
+                      <FolderIcon />
+                      <span>Test</span>
+                    </summary>
+                    <PrototypeLinks items={testPrototypes} />
                   </details>
                 </li>
                 <li>

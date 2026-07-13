@@ -9,6 +9,15 @@ export type Prototype = {
 
 export const prototypes: Prototype[] = [
   {
+    slug: "test-assistant",
+    title: "Assistant d’exploration",
+    description:
+      "Parcours partageable pour tester l’assistant sur une page de jeu de données data.gouv.fr.",
+    status: "almost there",
+    tags: ["assistant", "test utilisateur", "dataset"],
+    figmaUrl: "",
+  },
+  {
     slug: "assistant",
     title: "Assistant",
     description:

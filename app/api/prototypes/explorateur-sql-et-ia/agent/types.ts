@@ -1,5 +1,24 @@
 export type AgentPhase = "plan" | "generate_sql" | "create_chart" | "synthesize";
 
+export type DatasetMetadataResult = {
+  id: string;
+  slug: string;
+  title: string;
+  description: string;
+  organization: string;
+  page: string;
+  license: string;
+  lastUpdate: string;
+  qualityScore: number;
+  resources: Array<{
+    id: string;
+    title: string;
+    format: string;
+    url?: string;
+    parquetUrl?: string;
+  }>;
+};
+
 export type TokenUsage = {
   prompt_tokens?: number;
   completion_tokens?: number;
@@ -32,6 +51,7 @@ export type SqlExecutionFailure = {
 export type VegaLiteSpec = Record<string, unknown>;
 
 export type AssistantToolCall =
+  | { tool: "get_dataset_metadata"; arguments?: Record<string, never> }
   | { tool: "inspect_schema"; arguments?: Record<string, never> }
   | {
       tool: "execute_sql";
@@ -57,8 +77,10 @@ export type AgentRequest = {
   phase?: AgentPhase;
   question?: string;
   resourceName?: string;
+  datasetReference?: string;
   tableName?: string;
   schema?: InspectSchemaResult;
+  datasetMetadata?: DatasetMetadataResult;
   sql?: string;
   executionResult?: ExecuteSqlResult;
   previousSqlResults?: SqlExecutionEvidence[];
