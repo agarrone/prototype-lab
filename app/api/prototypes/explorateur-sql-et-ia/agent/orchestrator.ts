@@ -1,5 +1,6 @@
 import { callModel } from "./model-client";
 import { chartPrompt } from "./prompts/chart";
+import { mapPrompt } from "./prompts/map";
 import { plannerPrompt } from "./prompts/planner";
 import { addResultLimitDisclosure } from "./result-limits";
 import { sqlPrompt } from "./prompts/sql";
@@ -171,6 +172,41 @@ ${JSON.stringify(body.executionResult, null, 2)}`,
 
     return Response.json({
       toolCall: parseToolCall(response.content, "create_chart"),
+      model: config.model,
+      usage: response.usage,
+    });
+  }
+
+  if (phase === "create_map") {
+    if (!body.schema || !body.sql || !body.executionResult) {
+      return Response.json(
+        { error: "Le schéma, le SQL et le résultat SQL sont obligatoires." },
+        { status: 400 },
+      );
+    }
+
+    const response = await callModel({
+      ...config,
+      messages: [
+        { role: "system", content: `${systemPrompt}\n\n${mapPrompt}` },
+        {
+          role: "user",
+          content: `Ressource: ${resourceName}
+Question: ${question}
+Schéma:
+${JSON.stringify(body.schema, null, 2)}
+Métadonnées du jeu de données:
+${JSON.stringify(body.datasetMetadata ?? null, null, 2)}
+SQL exécuté:
+${sanitizeSelectSql(body.sql)}
+Résultat SQL:
+${JSON.stringify(body.executionResult, null, 2)}`,
+        },
+      ],
+    });
+
+    return Response.json({
+      toolCall: parseToolCall(response.content, "create_map"),
       model: config.model,
       usage: response.usage,
     });

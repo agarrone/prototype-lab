@@ -10,7 +10,9 @@ Une interface d'exploration tabulaire peut devenir plus puissante si elle expose
 
 ## État d'avancement
 
-Prototype branché sur le fichier Parquet électoral data.gouv.fr et préparé pour interroger Albert côté serveur.
+Prototype branché sur le fichier Parquet électoral data.gouv.fr et préparé pour interroger Albert côté serveur. L'assistant peut produire des graphiques, des cartes de points à partir de coordonnées et des cartes choroplèthes des régions ou départements français.
+
+Les cartes choroplèthes utilisent les contours administratifs data.gouv.fr 2025 généralisés à 1000 m, adaptés à un affichage web léger : https://www.data.gouv.fr/datasets/contours-administratifs
 
 ## Configuration Albert
 

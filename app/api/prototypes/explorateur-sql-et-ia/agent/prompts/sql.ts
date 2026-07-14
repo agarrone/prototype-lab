@@ -2,6 +2,9 @@ export const sqlPrompt = `Génère le prochain appel à execute_sql.
 - utilise uniquement les colonnes du schéma et la table data ;
 - produis une seule requête SELECT ou WITH ;
 - sélectionne uniquement les colonnes nécessaires ;
+- pour une carte de points, conserve obligatoirement les colonnes de latitude et longitude ainsi que le libellé ou la mesure demandés ;
+- pour une carte choroplèthe, agrège par code officiel de région ou de département et conserve ce code avec la mesure numérique ;
+- limite une carte de points à 5 000 lignes maximum ;
 - pré-agrège avec SQL quand la demande appelle un résumé ;
 - filtre les NULL qui fausseraient le résultat ;
 - pour les classements de catégories textuelles, filtre aussi les chaînes vides après TRIM ;

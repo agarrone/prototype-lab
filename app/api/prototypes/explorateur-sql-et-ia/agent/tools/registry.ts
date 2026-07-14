@@ -1,4 +1,4 @@
-import type { AssistantToolCall, PlannerDecision } from "../types";
+import type { AssistantToolCall, MapSpec, PlannerDecision } from "../types";
 import { parseJsonObject, stripCodeFence } from "../utils";
 import { sanitizeSelectSql } from "./sql";
 
@@ -133,6 +133,49 @@ export function parseToolCall(
             ? description.trim()
             : undefined,
         spec: (args.spec ?? parsed.spec) as Record<string, unknown>,
+      },
+    };
+  }
+
+  const mapSpecCandidate =
+    asRecord(args.spec ?? parsed.spec) ??
+    (typeof args.type === "string" ? args : undefined) ??
+    (typeof parsed.type === "string" ? parsed : undefined);
+
+  if (tool === "create_map" && mapSpecCandidate) {
+    const description = args.description ?? parsed.description;
+    const spec = mapSpecCandidate;
+
+    if (spec.type === "points") {
+      if (
+        typeof spec.title !== "string" ||
+        typeof spec.latitudeField !== "string" ||
+        typeof spec.longitudeField !== "string"
+      ) {
+        throw new Error("La carte de points ne contient pas les champs requis.");
+      }
+    } else if (spec.type === "choropleth") {
+      if (
+        typeof spec.title !== "string" ||
+        !["france-regions", "france-departments"].includes(
+          String(spec.boundary),
+        ) ||
+        typeof spec.dataKey !== "string" ||
+        spec.boundaryKey !== "code" ||
+        typeof spec.valueField !== "string"
+      ) {
+        throw new Error("La carte choroplèthe ne contient pas les champs requis.");
+      }
+    } else {
+      throw new Error("Le type de carte n'est pas pris en charge.");
+    }
+
+    return {
+      tool: "create_map",
+      arguments: {
+        description:
+          typeof description === "string" ? description.trim() : undefined,
+        spec: spec as MapSpec,
       },
     };
   }

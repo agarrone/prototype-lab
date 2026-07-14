@@ -26,7 +26,12 @@ const tools = [
   {
     title: "Présenter les résultats",
     description:
-      "Peut restituer une réponse en texte, sous forme de tableau ou avec une visualisation lorsque cela facilite la lecture.",
+      "Peut restituer une réponse en texte, sous forme de tableau ou avec un graphique lorsque cela facilite la lecture.",
+  },
+  {
+    title: "Créer une carte",
+    description:
+      "Produit une carte de points à partir de coordonnées ou une carte choroplèthe par région ou département lorsque les colonnes géographiques nécessaires sont disponibles.",
   },
 ];
 
@@ -105,6 +110,7 @@ export default function AssistantDocumentationPage() {
               <li>La qualité du résultat dépend de la structure et de la documentation du jeu de données.</li>
               <li>Les résultats doivent être vérifiés avant toute décision importante ou réutilisation.</li>
               <li>Certains fichiers volumineux ou atypiques peuvent ne pas être correctement analysés.</li>
+              <li>Une carte nécessite des coordonnées, des codes géographiques ou des noms de régions ou départements suffisamment fiables pour être joints aux contours administratifs.</li>
             </ul>
           </DocumentationSection>
         </div>

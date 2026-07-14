@@ -1,4 +1,9 @@
-export type AgentPhase = "plan" | "generate_sql" | "create_chart" | "synthesize";
+export type AgentPhase =
+  | "plan"
+  | "generate_sql"
+  | "create_chart"
+  | "create_map"
+  | "synthesize";
 
 export type DatasetMetadataResult = {
   id: string;
@@ -50,6 +55,27 @@ export type SqlExecutionFailure = {
 
 export type VegaLiteSpec = Record<string, unknown>;
 
+export type MapSpec =
+  | {
+      type: "points";
+      title: string;
+      latitudeField: string;
+      longitudeField: string;
+      labelField?: string;
+      valueField?: string;
+      colorField?: string;
+      cluster?: boolean;
+    }
+  | {
+      type: "choropleth";
+      title: string;
+      boundary: "france-regions" | "france-departments";
+      dataKey: string;
+      boundaryKey: "code";
+      valueField: string;
+      labelField?: string;
+    };
+
 export type AssistantToolCall =
   | { tool: "get_dataset_metadata"; arguments?: Record<string, never> }
   | { tool: "inspect_schema"; arguments?: Record<string, never> }
@@ -60,6 +86,10 @@ export type AssistantToolCall =
   | {
       tool: "create_chart";
       arguments: { description?: string; spec: VegaLiteSpec };
+    }
+  | {
+      tool: "create_map";
+      arguments: { description?: string; spec: MapSpec };
     };
 
 export type PlannerDecision =

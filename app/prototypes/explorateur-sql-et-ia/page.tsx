@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import Chart from "chart.js/auto";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -64,6 +65,16 @@ import {
   type ExecuteSqlResult,
   type InspectSchemaResult,
 } from "./duckdb-wasm-client";
+import type { MapSpec } from "@/app/api/prototypes/explorateur-sql-et-ia/agent/types";
+
+const AssistantMap = dynamic(() => import("./assistant-map"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-[328px] items-center justify-center rounded border border-[#E5E5E5] bg-[#f6f6f6] text-[12px] text-[#666666]">
+      Chargement de la carte…
+    </div>
+  ),
+});
 
 type ResourceType = "table" | "code" | "geodata" | "documentation";
 
@@ -3609,9 +3620,10 @@ type AgentResponse = {
   sql?: string;
   columnsUsed?: string[];
   chart?: AssistantChartSpec;
+  map?: AssistantMapSpec;
   queryRows?: Record<string, unknown>[];
   toolTrace?: {
-    tool: "get_dataset_metadata" | "inspect_schema" | "execute_sql" | "get_resource_context" | "execute_query" | "create_chart";
+    tool: "get_dataset_metadata" | "inspect_schema" | "execute_sql" | "get_resource_context" | "execute_query" | "create_chart" | "create_map";
     summary: string;
     description?: string;
     show?: boolean;
@@ -3647,6 +3659,13 @@ type AssistantToolCall =
         description?: string;
         spec: VegaLiteSpec;
       };
+    }
+  | {
+      tool: "create_map";
+      arguments: {
+        description?: string;
+        spec: MapSpec;
+      };
     };
 
 type AgentPhaseResponse = {
@@ -3680,6 +3699,11 @@ type AssistantChartSpec = {
   yKey: string;
   data: Record<string, unknown>[];
   spec?: VegaLiteSpec;
+};
+
+type AssistantMapSpec = {
+  spec: MapSpec;
+  data: Record<string, unknown>[];
 };
 
 type AssistantMessage = {
@@ -4455,6 +4479,93 @@ function shouldCreateChart(question: string) {
   );
 }
 
+function shouldCreateMap(question: string) {
+  return /\b(carte|cartograph|choropl[eè]the|choropleth|map|g[eé]ograph|points? sur (?:une |la )?carte)\b/i.test(
+    question,
+  );
+}
+
+function inferMapSpecFromResult(
+  question: string,
+  result: ExecuteSqlResult,
+): MapSpec | undefined {
+  const columns = result.columns;
+  const latitudeField = columns.find((column) =>
+    /^(?:lat|latitude|y|geo_?lat)$/i.test(column.trim()),
+  );
+  const longitudeField = columns.find((column) =>
+    /^(?:lon|lng|long|longitude|x|geo_?(?:lon|lng))$/i.test(column.trim()),
+  );
+
+  if (latitudeField && longitudeField) {
+    const labelField = columns.find(
+      (column) =>
+        column !== latitudeField &&
+        column !== longitudeField &&
+        /(?:nom|name|label|libell[eé]|titre|title)/i.test(column),
+    );
+    const valueField = columns.find((column, columnIndex) => {
+      if (
+        column === latitudeField ||
+        column === longitudeField ||
+        column === labelField
+      ) {
+        return false;
+      }
+
+      return result.rows.some(
+        (row) => Number.isFinite(Number(row[columnIndex])) && row[columnIndex] !== "",
+      );
+    });
+
+    return {
+      type: "points",
+      title: /festival/i.test(question) ? "Carte des festivals" : "Carte des résultats",
+      latitudeField,
+      longitudeField,
+      labelField,
+      valueField,
+      cluster: result.rowCount >= 100,
+    };
+  }
+
+  const departmentCodeField = columns.find((column) =>
+    /(?:code_?)?(?:d[eé]partement|dept)|^dep$/i.test(column),
+  );
+  const regionCodeField = columns.find((column) =>
+    /(?:code_?)?r[eé]gion/i.test(column),
+  );
+  const dataKey = departmentCodeField ?? regionCodeField;
+
+  if (dataKey) {
+    const valueField = columns.find((column, columnIndex) => {
+      if (column === dataKey) return false;
+      return result.rows.some(
+        (row) => Number.isFinite(Number(row[columnIndex])) && row[columnIndex] !== "",
+      );
+    });
+    const labelField = columns.find(
+      (column) => column !== dataKey && /(?:nom|name|label|libell[eé])/i.test(column),
+    );
+
+    if (valueField) {
+      return {
+        type: "choropleth",
+        title: "Carte choroplèthe des résultats",
+        boundary: departmentCodeField
+          ? "france-departments"
+          : "france-regions",
+        dataKey,
+        boundaryKey: "code",
+        valueField,
+        labelField,
+      };
+    }
+  }
+
+  return undefined;
+}
+
 function getVegaField(channel: unknown) {
   if (
     typeof channel === "object" &&
@@ -4586,6 +4697,7 @@ function getAssistantToolLabel(
     get_resource_context: "Lire le contexte de la ressource",
     execute_query: "Interroger les données",
     create_chart: "Créer le graphique",
+    create_map: "Créer la carte",
   };
 
   return labels[String(tool)] ?? String(tool);
@@ -4734,6 +4846,7 @@ function ChatSidebar({
       reasoning: response.reasoning,
       sql: response.sql,
       chart: response.chart,
+      map: response.map,
       queryRows: response.queryRows,
       toolTrace: response.toolTrace,
       columnsUsed: response.columnsUsed,
@@ -4862,7 +4975,9 @@ function ChatSidebar({
 
     if (
       plan.toolCall?.tool !== "inspect_schema" &&
-      plan.toolCall?.tool !== "execute_sql"
+      plan.toolCall?.tool !== "execute_sql" &&
+      plan.toolCall?.tool !== "create_chart" &&
+      plan.toolCall?.tool !== "create_map"
     ) {
       throw new Error("Le modèle n'a pas choisi un tool exploitable à cette étape.");
     }
@@ -4899,7 +5014,11 @@ function ChatSidebar({
         });
       }
 
-      if (plan.toolCall?.tool !== "execute_sql") {
+      if (
+        plan.toolCall?.tool !== "execute_sql" &&
+        plan.toolCall?.tool !== "create_chart" &&
+        plan.toolCall?.tool !== "create_map"
+      ) {
         return normalizeRemoteResponse({
           answer:
             "Je ne suis pas certain de l’analyse à effectuer avec les colonnes disponibles. Peux-tu préciser la mesure, la dimension ou le résultat attendu ?",
@@ -5012,8 +5131,72 @@ function ChatSidebar({
     });
 
     let generatedChart: AssistantChartSpec | undefined;
+    let generatedMap: AssistantMapSpec | undefined;
 
-    if (shouldCreateChart(question)) {
+    if (shouldCreateMap(question)) {
+      try {
+        const mapPlan = await callAgentPhase({
+          phase: "create_map",
+          question,
+          schema,
+          sql: finalEvidence.sql,
+          executionResult: finalEvidence.result,
+        });
+
+        totalUsage = mergeTokenUsage(totalUsage, mapPlan.usage);
+
+        if (mapPlan.toolCall?.tool !== "create_map") {
+          throw new Error("Le modèle n'a pas produit de carte exploitable.");
+        }
+
+        const mapDescription =
+          mapPlan.toolCall.arguments.description ||
+          "Créer une carte à partir du résultat SQL.";
+        const mapData = executionRowsToRecords(finalEvidence.result);
+        const inferredSpec = inferMapSpecFromResult(
+          question,
+          finalEvidence.result,
+        );
+        generatedMap = {
+          spec:
+            inferredSpec?.type === "points"
+              ? inferredSpec
+              : mapPlan.toolCall.arguments.spec,
+          data: mapData,
+        };
+        toolTrace.push({
+          tool: "create_map",
+          description: mapDescription,
+          summary: `${mapData.length} lignes utilisées pour générer la carte.`,
+          show: true,
+        });
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Erreur de carte inconnue.";
+        console.error("prototype-assistant-map-error", error);
+        const fallbackSpec = inferMapSpecFromResult(question, finalEvidence.result);
+
+        if (fallbackSpec) {
+          const mapData = executionRowsToRecords(finalEvidence.result);
+          generatedMap = { spec: fallbackSpec, data: mapData };
+          toolTrace.push({
+            tool: "create_map",
+            description: "Créer une carte à partir du résultat SQL.",
+            summary: `${mapData.length} lignes cartographiées à partir des colonnes géographiques détectées.`,
+            show: true,
+          });
+        } else {
+          toolTrace.push({
+            tool: "create_map",
+            description: "Créer une carte à partir du résultat SQL.",
+            summary: `La carte n’a pas pu être générée : ${errorMessage}`,
+            show: false,
+          });
+        }
+      }
+    }
+
+    if (!generatedMap && shouldCreateChart(question)) {
       try {
         const chartPlan = await callAgentPhase({
           phase: "create_chart",
@@ -5062,6 +5245,7 @@ function ChatSidebar({
       reasoning: finalAnswer.reasoning,
       sql: finalAnswer.sql ?? finalEvidence.sql,
       chart: generatedChart,
+      map: generatedMap,
       queryRows: executionRowsToRecords(finalEvidence.result).slice(0, 12),
       toolTrace,
       proposedAction: { type: "none" },
@@ -5456,6 +5640,15 @@ function ChatSidebar({
                         chart={message.response.chart}
                         datasetName={datasetName}
                         organizationName={organizationName}
+                      />
+                    </div>
+                  ) : null}
+                  {message.response?.map ? (
+                    <div className="order-4">
+                      <AssistantMap
+                        spec={message.response.map.spec}
+                        data={message.response.map.data}
+                        source={[organizationName, datasetName].filter(Boolean).join(" · ")}
                       />
                     </div>
                   ) : null}

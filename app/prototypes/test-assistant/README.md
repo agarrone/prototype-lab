@@ -10,7 +10,7 @@ Un assistant intégré à côté du tableau aide les utilisateurs à comprendre 
 
 ## État d’avancement
 
-Prototype fonctionnel. Le parcours comprend une introduction, le choix d’un jeu de données dont une ressource est publiée ou automatiquement convertie en Parquet, puis l’exploration avec l’assistant existant.
+Prototype fonctionnel. Le parcours comprend une introduction, le choix d’un jeu de données dont une ressource est publiée ou automatiquement convertie en Parquet, puis l’exploration avec l’assistant existant. L’assistant partagé prend en charge les graphiques, les cartes de points et les cartes choroplèthes par région ou département.
 
 ## Inspirations
 
