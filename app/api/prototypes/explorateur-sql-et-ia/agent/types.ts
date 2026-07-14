@@ -122,4 +122,5 @@ export type AgentModelConfig = {
   apiKey: string;
   apiUrl: string;
   model: string;
+  signal?: AbortSignal;
 };

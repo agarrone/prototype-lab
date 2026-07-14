@@ -24,6 +24,7 @@ export async function POST(request: Request) {
       apiKey,
       apiUrl: process.env.ALBERT_API_URL ?? defaultAlbertApiUrl,
       model: process.env.ALBERT_MODEL ?? "albert-large",
+      signal: request.signal,
     });
   } catch (error) {
     return Response.json(

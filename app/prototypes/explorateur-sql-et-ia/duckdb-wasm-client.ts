@@ -212,6 +212,8 @@ async function createConnection(parquetUrl: string) {
   const worker = new Worker(bundle.mainWorker ?? bundles.mvp.mainWorker);
   const logger = new duckdb.ConsoleLogger();
   const db = new duckdb.AsyncDuckDB(logger, worker);
+  activeDatabase = db;
+  activeWorker = worker;
   await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
   await db.registerFileURL(
     parquetFileName,
@@ -224,9 +226,6 @@ async function createConnection(parquetUrl: string) {
   await connection.query(
     `CREATE OR REPLACE VIEW ${quoteIdentifier(tableName)} AS SELECT * FROM read_parquet('${parquetFileName}')`,
   );
-
-  activeDatabase = db;
-  activeWorker = worker;
 
   return connection;
 }
@@ -277,6 +276,23 @@ export async function configureParquetSource(value: string) {
   }
 
   return nextUrl;
+}
+
+export async function cancelActiveQuery() {
+  const database = activeDatabase;
+  const worker = activeWorker;
+
+  connectionPromise = null;
+  activeDatabase = null;
+  activeWorker = null;
+
+  try {
+    await database?.terminate();
+  } catch {
+    // Terminating the worker is the fallback when a query cannot be cancelled cleanly.
+  } finally {
+    worker?.terminate();
+  }
 }
 
 export async function inspectSchema(): Promise<InspectSchemaResult> {

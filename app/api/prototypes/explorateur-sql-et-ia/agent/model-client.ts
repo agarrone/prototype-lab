@@ -48,12 +48,14 @@ export async function callModel({
   model,
   messages,
   temperature = 0.1,
+  signal,
 }: {
   apiKey: string;
   apiUrl: string;
   model: string;
   messages: { role: "system" | "user"; content: string }[];
   temperature?: number;
+  signal?: AbortSignal;
 }) {
   async function requestModel(nextMessages: typeof messages) {
     const response = await fetch(apiUrl, {
@@ -62,6 +64,7 @@ export async function callModel({
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
       },
+      signal,
       body: JSON.stringify({
         model,
         messages: nextMessages,

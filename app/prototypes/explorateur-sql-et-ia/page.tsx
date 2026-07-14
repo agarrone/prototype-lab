@@ -57,6 +57,7 @@ import {
   RiWrenchLine,
 } from "@remixicon/react";
 import {
+  cancelActiveQuery,
   configureParquetSource,
   executeSql,
   getColumnValueOptions,
@@ -3633,8 +3634,47 @@ type AgentResponse = {
   clarificationOptions?: AssistantFilterPayload[];
   model?: string;
   usage?: TokenUsage;
-  status: "success" | "ambiguous" | "empty" | "unable" | "error";
+  status: "success" | "ambiguous" | "empty" | "unable" | "error" | "stopped";
 };
+
+type AssistantRequestErrorKind = "network" | "service" | "data" | "analysis";
+
+class AssistantRequestError extends Error {
+  constructor(
+    public readonly kind: AssistantRequestErrorKind,
+    message: string,
+  ) {
+    super(message);
+    this.name = "AssistantRequestError";
+  }
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+function assistantErrorResponse(error: unknown): AgentResponse {
+  const kind =
+    error instanceof AssistantRequestError ? error.kind : "analysis";
+  const messages: Record<AssistantRequestErrorKind, string> = {
+    network:
+      "Problème de connexion. Vérifiez votre accès au réseau puis réessayez.",
+    service:
+      "L’assistant est momentanément indisponible. Votre question est conservée dans la conversation et vous pouvez réessayer.",
+    data:
+      "Les données n’ont pas pu être lues correctement. Essayez de recharger la ressource ou d’en sélectionner une autre.",
+    analysis:
+      "L’analyse n’a pas pu aboutir avec cette question. Vous pouvez réessayer ou préciser le résultat attendu.",
+  };
+
+  return {
+    intent: "unable",
+    answer: messages[kind],
+    reasoning: `L’analyse a été interrompue par une erreur de type « ${kind} ». Aucun résultat incomplet n’a été présenté comme une réponse fiable.`,
+    proposedAction: { type: "none" },
+    status: "error",
+  };
+}
 
 type AssistantToolCall =
   | {
@@ -4793,6 +4833,11 @@ function ChatSidebar({
   const [feedbackDetailsMessageId, setFeedbackDetailsMessageId] = useState<
     string | null
   >(null);
+  const [feedbackTooltip, setFeedbackTooltip] = useState<{
+    messageId: string;
+    left: number;
+    bottom: number;
+  } | null>(null);
   const [isAgentLoading, setIsAgentLoading] = useState(false);
   const [loadingStepIndex, setLoadingStepIndex] = useState(0);
   const [chatSidebarWidth, setChatSidebarWidth] = useState(chatSidebarDefaultWidth);
@@ -4802,6 +4847,22 @@ function ChatSidebar({
   const datasetMetadataRef = useRef<DatasetMetadataResult | null>(null);
   const messageIdCounterRef = useRef(0);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const questionInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const agentRunCounterRef = useRef(0);
+  const activeAgentRunRef = useRef<{
+    id: number;
+    controller: AbortController;
+    loadingInterval: number;
+    assistantMessageId: string;
+  } | null>(null);
+
+  useEffect(() => {
+    return () => {
+      const activeRun = activeAgentRunRef.current;
+      activeRun?.controller.abort();
+      if (activeRun) window.clearInterval(activeRun.loadingInterval);
+    };
+  }, []);
 
   useEffect(() => {
     const scrollContainer = chatScrollRef.current;
@@ -4868,53 +4929,102 @@ function ChatSidebar({
     );
   }
 
-  async function callAgentPhase(payload: Record<string, unknown>) {
-    const apiResponse = await fetch(
-      "/api/prototypes/explorateur-sql-et-ia/agent",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+  async function callAgentPhase(
+    payload: Record<string, unknown>,
+    signal: AbortSignal,
+  ) {
+    let apiResponse: Response;
+
+    try {
+      apiResponse = await fetch(
+        "/api/prototypes/explorateur-sql-et-ia/agent",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          signal,
+          body: JSON.stringify({
+            resourceName: sourceName,
+            tableName: "data",
+            datasetReference,
+            datasetMetadata: datasetMetadataRef.current,
+            conversationHistory: messages.slice(-8).map((message) => ({
+              role: message.role,
+              content: message.content,
+            })),
+            ...payload,
+          }),
         },
-        body: JSON.stringify({
-          resourceName: sourceName,
-          tableName: "data",
-          datasetReference,
-          datasetMetadata: datasetMetadataRef.current,
-          conversationHistory: messages.slice(-8).map((message) => ({
-            role: message.role,
-            content: message.content,
-          })),
-          ...payload,
-        }),
-      },
-    );
-    const data = (await apiResponse.json()) as AgentPhaseResponse;
+      );
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      throw new AssistantRequestError(
+        "network",
+        "La requête vers l’assistant n’a pas pu être envoyée.",
+      );
+    }
+
+    let data: AgentPhaseResponse;
+
+    try {
+      data = (await apiResponse.json()) as AgentPhaseResponse;
+    } catch {
+      throw new AssistantRequestError(
+        "service",
+        "Le service a renvoyé une réponse illisible.",
+      );
+    }
 
     if (!apiResponse.ok || data.error) {
-      throw new Error(data.error ?? "Impossible d’interroger le modèle.");
+      const kind: AssistantRequestErrorKind =
+        apiResponse.status >= 500 || (apiResponse.ok && data.error)
+          ? "service"
+          : "analysis";
+      throw new AssistantRequestError(
+        kind,
+        data.error ?? "Impossible d’interroger le modèle.",
+      );
     }
 
     return data;
   }
 
-  async function fetchDatasetMetadata() {
+  async function fetchDatasetMetadata(signal: AbortSignal) {
     if (!datasetReference) {
       throw new Error(
         "Les métadonnées ne sont pas disponibles pour cette ressource isolée.",
       );
     }
 
-    const response = await fetch(
-      `/api/prototypes/explorateur-sql-et-ia/agent/metadata?dataset=${encodeURIComponent(datasetReference)}`,
-    );
-    const payload = (await response.json()) as {
-      metadata?: DatasetMetadataResult;
-      error?: string;
-    };
+    let response: Response;
+
+    try {
+      response = await fetch(
+        `/api/prototypes/explorateur-sql-et-ia/agent/metadata?dataset=${encodeURIComponent(datasetReference)}`,
+        { signal },
+      );
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      throw new AssistantRequestError(
+        "network",
+        "Les métadonnées n’ont pas pu être récupérées.",
+      );
+    }
+    let payload: { metadata?: DatasetMetadataResult; error?: string };
+
+    try {
+      payload = (await response.json()) as typeof payload;
+    } catch {
+      throw new AssistantRequestError(
+        "data",
+        "La réponse de métadonnées est illisible.",
+      );
+    }
 
     if (!response.ok || !payload.metadata) {
-      throw new Error(
+      throw new AssistantRequestError(
+        "data",
         payload.error ?? "Impossible de récupérer les métadonnées.",
       );
     }
@@ -4922,14 +5032,17 @@ function ChatSidebar({
     return payload.metadata;
   }
 
-  async function runRemoteAssistant(question: string): Promise<AgentResponse> {
+  async function runRemoteAssistant(
+    question: string,
+    signal: AbortSignal,
+  ): Promise<AgentResponse> {
     const toolTrace: AgentResponse["toolTrace"] = [];
     const cachedSchema = inspectedSchemaRef.current;
     let plan = await callAgentPhase({
       phase: "plan",
       question,
       schema: cachedSchema,
-    });
+    }, signal);
     let planningUsage = plan.usage;
 
     if (plan.answer) {
@@ -4946,7 +5059,7 @@ function ChatSidebar({
 
     if (plan.toolCall?.tool === "get_dataset_metadata") {
       const metadata =
-        datasetMetadataRef.current ?? (await fetchDatasetMetadata());
+        datasetMetadataRef.current ?? (await fetchDatasetMetadata(signal));
       datasetMetadataRef.current = metadata;
       toolTrace.push({
         tool: "get_dataset_metadata",
@@ -4958,7 +5071,7 @@ function ChatSidebar({
         phase: "plan",
         question,
         schema: cachedSchema,
-      });
+      }, signal);
       planningUsage = mergeTokenUsage(planningUsage, metadataPlan.usage);
       plan = metadataPlan;
 
@@ -4985,7 +5098,20 @@ function ChatSidebar({
       throw new Error("Le modèle n'a pas choisi un tool exploitable à cette étape.");
     }
 
-    const schema = cachedSchema ?? (await inspectSchema());
+    let schema: InspectSchemaResult;
+
+    try {
+      schema = cachedSchema ?? (await inspectSchema());
+      signal.throwIfAborted();
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      throw new AssistantRequestError(
+        "data",
+        error instanceof Error
+          ? error.message
+          : "Le schéma de la ressource n’a pas pu être lu.",
+      );
+    }
     inspectedSchemaRef.current = schema;
     if (!cachedSchema) {
       toolTrace.push({
@@ -5000,7 +5126,7 @@ function ChatSidebar({
         phase: "plan",
         question,
         schema,
-      });
+      }, signal);
       planningUsage = mergeTokenUsage(planningUsage, schemaPlan.usage);
       plan = schemaPlan;
 
@@ -5055,7 +5181,7 @@ function ChatSidebar({
             schema,
             previousSqlResults: sqlEvidence,
             previousSqlErrors: sqlFailures,
-          });
+          }, signal);
       pendingSqlToolCall = undefined;
 
       finalModel = sqlPlan.model ?? finalModel;
@@ -5074,7 +5200,9 @@ function ChatSidebar({
 
       try {
         executionResult = await executeSql(sql);
+        signal.throwIfAborted();
       } catch (error) {
+        if (isAbortError(error)) throw error;
         const errorMessage =
           error instanceof Error ? error.message : "Erreur SQL inconnue.";
 
@@ -5110,17 +5238,16 @@ function ChatSidebar({
     if (!finalEvidence) {
       return normalizeRemoteResponse({
         answer:
-          "Je n’ai pas réussi à construire une analyse fiable avec les informations actuelles. Peux-tu préciser les colonnes à utiliser ou le résultat que tu attends ?",
+          "L’analyse des données n’a pas pu être exécutée après plusieurs tentatives. Vous pouvez préciser les colonnes à utiliser ou essayer une autre formulation.",
         reasoning:
           sqlFailures.length > 0
-            ? `Les ${sqlFailures.length} tentatives SQL ont échoué malgré leur correction automatique. Une précision sur la mesure ou la granularité permettra de repartir sur une interprétation différente.`
+            ? `Les ${sqlFailures.length} tentatives SQL ont échoué malgré leur correction automatique.`
             : "Aucune requête suffisamment fiable n’a pu être exécutée avec le schéma disponible.",
-        needsClarification: true,
         toolTrace,
         proposedAction: { type: "none" },
         model: finalModel,
         usage: totalUsage,
-        status: "ambiguous",
+        status: "unable",
       });
     }
 
@@ -5131,7 +5258,7 @@ function ChatSidebar({
       sql: finalEvidence.sql,
       executionResult: finalEvidence.result,
       previousSqlResults: sqlEvidence,
-    });
+    }, signal);
 
     let generatedChart: AssistantChartSpec | undefined;
     let generatedMap: AssistantMapSpec | undefined;
@@ -5144,7 +5271,7 @@ function ChatSidebar({
           schema,
           sql: finalEvidence.sql,
           executionResult: finalEvidence.result,
-        });
+        }, signal);
 
         totalUsage = mergeTokenUsage(totalUsage, mapPlan.usage);
 
@@ -5174,6 +5301,7 @@ function ChatSidebar({
           show: true,
         });
       } catch (error) {
+        if (isAbortError(error)) throw error;
         const errorMessage =
           error instanceof Error ? error.message : "Erreur de carte inconnue.";
         console.error("prototype-assistant-map-error", error);
@@ -5207,7 +5335,7 @@ function ChatSidebar({
           schema,
           sql: finalEvidence.sql,
           executionResult: finalEvidence.result,
-        });
+        }, signal);
 
         totalUsage = mergeTokenUsage(totalUsage, chartPlan.usage);
 
@@ -5231,7 +5359,8 @@ function ChatSidebar({
           summary: `${generatedChart.data.length} lignes utilisées pour générer le graphique.`,
           show: true,
         });
-      } catch {
+      } catch (error) {
+        if (isAbortError(error)) throw error;
         toolTrace.push({
           tool: "create_chart",
           description: "Créer une visualisation à partir du résultat SQL.",
@@ -5293,6 +5422,9 @@ function ChatSidebar({
     setAgentQuestion("");
     const userMessageId = `user-${messageId}`;
     const assistantMessageId = `assistant-${messageId}`;
+    agentRunCounterRef.current += 1;
+    const runId = agentRunCounterRef.current;
+    const controller = new AbortController();
 
     setMessages((current) => [
       ...current,
@@ -5308,30 +5440,28 @@ function ChatSidebar({
         current >= assistantLoadingSteps.length - 1 ? current : current + 1,
       );
     }, 900);
+    activeAgentRunRef.current = {
+      id: runId,
+      controller,
+      loadingInterval,
+      assistantMessageId,
+    };
 
     void (async () => {
       let response: AgentResponse;
 
       try {
-        response = await runRemoteAssistant(question);
+        response = await runRemoteAssistant(question, controller.signal);
       } catch (error) {
+        if (isAbortError(error)) return;
         console.error("prototype-assistant-remote-error", error);
-        response = {
-          intent: "clarify",
-          answer:
-            "Je n’ai pas pu confirmer une réponse fiable. Peux-tu reformuler la demande en précisant le résultat attendu ou les colonnes à utiliser ?",
-          reasoning:
-            error instanceof Error
-              ? `L’analyse a été interrompue avant d’obtenir une preuve exploitable : ${error.message}. Une précision permettra de relancer le parcours avec une interprétation plus ciblée.`
-              : "L’analyse a été interrompue avant d’obtenir une preuve exploitable. Une précision permettra de relancer le parcours avec une interprétation plus ciblée.",
-          needsClarification: true,
-          proposedAction: { type: "none" },
-          status: "ambiguous",
-        };
+        response = assistantErrorResponse(error);
       } finally {
         window.clearInterval(loadingInterval);
       }
 
+      if (activeAgentRunRef.current?.id !== runId) return;
+      activeAgentRunRef.current = null;
       setMessages((current) => [
         ...current,
         {
@@ -5347,6 +5477,38 @@ function ChatSidebar({
       setLastTokenUsage(response.usage);
       setIsAgentLoading(false);
     })();
+  }
+
+  function stopAgentAnalysis() {
+    const activeRun = activeAgentRunRef.current;
+    activeAgentRunRef.current = null;
+    agentRunCounterRef.current += 1;
+
+    if (activeRun) {
+      activeRun.controller.abort();
+      window.clearInterval(activeRun.loadingInterval);
+    }
+    void cancelActiveQuery();
+    setIsAgentLoading(false);
+    setAgentQuestion("");
+    setMessages((current) => [
+      ...current,
+      {
+        id:
+          activeRun?.assistantMessageId ??
+          `assistant-stopped-${agentRunCounterRef.current}`,
+        role: "assistant",
+        content:
+          "Analyse arrêtée. Vous pouvez modifier votre question ou lancer une nouvelle analyse.",
+        response: {
+          intent: "unable",
+          answer:
+            "Analyse arrêtée. Vous pouvez modifier votre question ou lancer une nouvelle analyse.",
+          proposedAction: { type: "none" },
+          status: "stopped",
+        },
+      },
+    ]);
   }
 
   function submitStarterQuestion(question: string) {
@@ -5403,6 +5565,23 @@ function ChatSidebar({
         [messageId]: "error",
       }));
     }
+  }
+
+  function showFeedbackTooltip(
+    messageId: string,
+    element: HTMLElement,
+  ) {
+    const rect = element.getBoundingClientRect();
+    const tooltipWidth = 280;
+
+    setFeedbackTooltip({
+      messageId,
+      left: Math.min(
+        Math.max(12, rect.left),
+        window.innerWidth - tooltipWidth - 12,
+      ),
+      bottom: window.innerHeight - rect.top + 8,
+    });
   }
 
   const gristFeedbackUrl = useMemo(() => {
@@ -5492,6 +5671,23 @@ function ChatSidebar({
       >
         {messages.length === 0 ? (
           <div className="flex min-h-full flex-col justify-end pb-2">
+            <div className="mb-3 h-20 w-20 overflow-hidden" aria-hidden="true">
+              <Image
+                src="/prototypes/animation-signature.gif"
+                alt=""
+                width={1080}
+                height={1080}
+                unoptimized
+                className="h-full w-full object-contain grayscale contrast-[2.8] mix-blend-multiply motion-reduce:hidden"
+              />
+              <Image
+                src="/prototypes/animation-logo.svg"
+                alt=""
+                width={1080}
+                height={1080}
+                className="hidden h-full w-full object-contain grayscale contrast-[2.8] mix-blend-multiply motion-reduce:block"
+              />
+            </div>
             <p className="px-1 text-[14px] font-semibold leading-[1.4] text-[#161616]">
               Assistant d’exploration de données
             </p>
@@ -5581,7 +5777,18 @@ function ChatSidebar({
                       </AssistantDisclosure>
                     </div>
                   ) : null}
-                  <div className="order-3 text-[13px] leading-5 text-[#161616]">
+                  <div
+                    className={`order-3 text-[13px] leading-5 text-[#161616] ${
+                      message.response?.status === "error"
+                        ? "border-l-4 border-[#CE0500] bg-[#FEF4F4] px-3 py-2"
+                        : message.response?.status === "unable"
+                          ? "border-l-4 border-[#E4794A] bg-[#FFF4ED] px-3 py-2"
+                          : message.response?.status === "stopped"
+                            ? "font-semibold text-[#161616]"
+                            : ""
+                    }`}
+                    role={message.response?.status === "error" ? "alert" : undefined}
+                  >
                     <div className="space-y-2">{renderAssistantMarkdown(message.content)}</div>
                     {message.response?.proposedAction.type === "apply_filter" ? (
                       <div className="mt-3 rounded border border-[#E5E5E5] bg-[#f6f6f6] p-2">
@@ -5739,11 +5946,37 @@ function ChatSidebar({
                         </button>
                       </div>
                     ) : (
-                      <div className="flex gap-1">
+                      <div
+                        className="relative flex gap-1"
+                      >
+                        <span id={`feedback-help-${message.id}`} className="sr-only">
+                          Votre évaluation et le contexte de cette réponse seront envoyés.
+                        </span>
+                        {feedbackTooltip?.messageId === message.id ? (
+                          <span
+                            role="tooltip"
+                            className="pointer-events-none fixed z-[120] w-[280px] border border-[#DDDDDD] bg-[#FFFFFF] px-2.5 py-2 text-[11px] leading-4 text-[#3A3A3A] shadow-[0_4px_12px_rgba(0,0,0,0.12)]"
+                            style={{
+                              left: feedbackTooltip.left,
+                              bottom: feedbackTooltip.bottom,
+                            }}
+                          >
+                            Votre évaluation et le contexte de cette réponse seront envoyés.
+                          </span>
+                        ) : null}
                         <button
                           type="button"
                           aria-label="Réponse utile"
-                          title="Réponse utile"
+                          aria-describedby={`feedback-help-${message.id}`}
+                          title="Votre évaluation et le contexte de cette réponse seront envoyés."
+                          onMouseEnter={(event) =>
+                            showFeedbackTooltip(message.id, event.currentTarget)
+                          }
+                          onMouseLeave={() => setFeedbackTooltip(null)}
+                          onFocus={(event) =>
+                            showFeedbackTooltip(message.id, event.currentTarget)
+                          }
+                          onBlur={() => setFeedbackTooltip(null)}
                           onClick={() => void sendMessageFeedback(message.id, "up")}
                           className="flex h-6 w-6 items-center justify-center rounded text-[#5d5d5d] hover:bg-[#f6f6f6] hover:text-[#000091]"
                         >
@@ -5752,7 +5985,16 @@ function ChatSidebar({
                         <button
                           type="button"
                           aria-label="Réponse inutile"
-                          title="Réponse inutile"
+                          aria-describedby={`feedback-help-${message.id}`}
+                          title="Votre évaluation et le contexte de cette réponse seront envoyés."
+                          onMouseEnter={(event) =>
+                            showFeedbackTooltip(message.id, event.currentTarget)
+                          }
+                          onMouseLeave={() => setFeedbackTooltip(null)}
+                          onFocus={(event) =>
+                            showFeedbackTooltip(message.id, event.currentTarget)
+                          }
+                          onBlur={() => setFeedbackTooltip(null)}
                           onClick={() => void sendMessageFeedback(message.id, "down")}
                           className="flex h-6 w-6 items-center justify-center rounded text-[#5d5d5d] hover:bg-[#f6f6f6] hover:text-[#000091]"
                         >
@@ -5795,13 +6037,32 @@ function ChatSidebar({
         <label className="sr-only" htmlFor="chat-question">
           Question sur les données
         </label>
-        <div className="flex h-[161px] flex-col justify-between rounded border border-[#ebebeb] bg-[rgba(0,0,0,0.02)] px-2 py-3">
+        <div className="flex h-[112px] flex-col justify-between rounded border border-[#ebebeb] bg-[rgba(0,0,0,0.02)] px-2 py-2">
           <textarea
+            ref={questionInputRef}
             id="chat-question"
-            rows={4}
+            rows={3}
             value={agentQuestion}
             onChange={(event) => setAgentQuestion(event.target.value)}
             onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
+              if (event.key === "ArrowUp" && !agentQuestion.trim()) {
+                const previousQuestion = [...messages]
+                  .reverse()
+                  .find((message) => message.role === "user")?.content;
+
+                if (previousQuestion) {
+                  event.preventDefault();
+                  setAgentQuestion(previousQuestion);
+                  window.requestAnimationFrame(() => {
+                    const input = questionInputRef.current;
+                    const cursorPosition = previousQuestion.length;
+                    input?.focus();
+                    input?.setSelectionRange(cursorPosition, cursorPosition);
+                  });
+                }
+                return;
+              }
+
               if (event.key !== "Enter" || event.shiftKey) {
                 return;
               }
@@ -5817,14 +6078,29 @@ function ChatSidebar({
               <TokenUsageToggle usage={lastTokenUsage} />
               <ModelInfoChip />
             </div>
-            <button
-              type="submit"
-              aria-label="Envoyer la question"
-              disabled={isAgentLoading || !agentQuestion.trim()}
-              className="flex h-6 w-6 shrink-0 cursor-pointer items-center justify-center bg-[#000091] text-[#FFFFFF] transition-colors hover:bg-[#1212ff] disabled:cursor-not-allowed disabled:bg-[#929292]"
-            >
-              <Icon path={icons.arrowUp} className="h-4 w-4 text-[#FFFFFF]" />
-            </button>
+            {isAgentLoading ? (
+              <button
+                type="button"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  stopAgentAnalysis();
+                }}
+                className="flex h-7 shrink-0 cursor-pointer items-center gap-1.5 border border-[#161616] px-2 text-[11px] font-medium text-[#161616] transition-colors hover:bg-[#EEEEEE]"
+              >
+                <span aria-hidden className="h-2.5 w-2.5 bg-[#161616]" />
+                Arrêter
+              </button>
+            ) : (
+              <button
+                type="submit"
+                aria-label="Envoyer la question"
+                disabled={!agentQuestion.trim()}
+                className="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center bg-[#000091] text-[#FFFFFF] transition-colors hover:bg-[#1212ff] disabled:cursor-not-allowed disabled:bg-[#929292]"
+              >
+                <Icon path={icons.arrowUp} className="h-4 w-4 text-[#FFFFFF]" />
+              </button>
+            )}
           </div>
         </div>
         <div className="mt-1 flex min-h-6 flex-wrap items-center justify-end gap-1 bg-[#FFFFFF] pb-1 text-right text-[11px] leading-none text-[#5d5d5d]">
@@ -7707,7 +7983,7 @@ export function ExplorateurSqlEtIaPrototype({
             </div>
               </>
           </section>
-          {isChatSidebarOpen ? (
+          <div className={isChatSidebarOpen ? "contents" : "hidden"}>
             <ChatSidebar
               key={`${activeParquetUrl}-${parquetReloadVersion}`}
               activeResource={activeResource}
@@ -7720,7 +7996,7 @@ export function ExplorateurSqlEtIaPrototype({
               onApplySort={applyAssistantSort}
               onClose={() => setIsChatSidebarOpen(false)}
             />
-          ) : null}
+          </div>
         </div>
       </div>
       {resourceTooltip ? (
