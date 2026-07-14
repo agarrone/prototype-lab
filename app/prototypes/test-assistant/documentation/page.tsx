@@ -54,6 +54,12 @@ export default function AssistantDocumentationPage() {
           <p className="mt-5 text-[17px] leading-7 text-[#3a3a3a]">
             Cette expérimentation étudie comment une conversation en langage naturel peut aider à comprendre et explorer les données publiées sur data.gouv.fr.
           </p>
+          <Link
+            href="/prototypes/test-assistant/documentation/technique"
+            className="mt-6 inline-flex min-h-10 items-center border border-[#000091] px-4 text-[14px] font-medium text-[#000091] hover:bg-[#ececfe]"
+          >
+            Consulter le fonctionnement technique détaillé
+          </Link>
         </header>
 
         <div className="divide-y divide-[#dddddd]">
@@ -73,6 +79,20 @@ export default function AssistantDocumentationPage() {
               <li>Il analyse les résultats obtenus et rédige une réponse dans la langue de l’utilisateur.</li>
               <li>En cas de doute important, il doit demander une précision plutôt que supposer une interprétation.</li>
             </ul>
+          </DocumentationSection>
+
+          <DocumentationSection title="Documentation technique">
+            <p>
+              Une page dédiée présente l’architecture complète de l’agent, les outils, le modèle réellement configuré, les garde-fous, le mécanisme de feedback ainsi que le system prompt et tous les sous-prompts utilisés.
+            </p>
+            <p>
+              <Link
+                href="/prototypes/test-assistant/documentation/technique"
+                className="font-medium text-[#000091] underline underline-offset-4"
+              >
+                Voir comment l’agent fonctionne techniquement
+              </Link>
+            </p>
           </DocumentationSection>
 
           <DocumentationSection title="Les outils disponibles">

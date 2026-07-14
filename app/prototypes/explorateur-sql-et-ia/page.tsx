@@ -4787,6 +4787,9 @@ function ChatSidebar({
   const [messageFeedback, setMessageFeedback] = useState<
     Record<string, "up" | "down">
   >({});
+  const [messageFeedbackStatus, setMessageFeedbackStatus] = useState<
+    Record<string, "sending" | "sent" | "error">
+  >({});
   const [feedbackDetailsMessageId, setFeedbackDetailsMessageId] = useState<
     string | null
   >(null);
@@ -5351,6 +5354,57 @@ function ChatSidebar({
     submitAgentQuestion(question);
   }
 
+  async function sendMessageFeedback(
+    messageId: string,
+    rating: "up" | "down",
+  ) {
+    const assistantIndex = messages.findIndex((message) => message.id === messageId);
+    const assistantMessage = messages[assistantIndex];
+    let userQuestion = "";
+
+    for (let index = assistantIndex - 1; index >= 0; index -= 1) {
+      if (messages[index].role === "user") {
+        userQuestion = messages[index].content;
+        break;
+      }
+    }
+
+    setMessageFeedback((current) => ({ ...current, [messageId]: rating }));
+    setMessageFeedbackStatus((current) => ({
+      ...current,
+      [messageId]: "sending",
+    }));
+
+    try {
+      const response = await fetch("/api/prototypes/test-assistant/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rating: rating === "up" ? "Utile" : "Inutile",
+          question: userQuestion,
+          answer: assistantMessage?.content ?? "",
+          resource: activeResource.sourceUrl ?? sourceName,
+          model: assistantMessage?.response?.model ?? "gpt-oss-120b",
+          createdAt: new Date().toISOString(),
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error("Envoi impossible.");
+      }
+
+      setMessageFeedbackStatus((current) => ({
+        ...current,
+        [messageId]: "sent",
+      }));
+    } catch {
+      setMessageFeedbackStatus((current) => ({
+        ...current,
+        [messageId]: "error",
+      }));
+    }
+  }
+
   const gristFeedbackUrl = useMemo(() => {
     if (!feedbackDetailsMessageId) {
       return gristFeedbackFormUrl;
@@ -5397,7 +5451,7 @@ function ChatSidebar({
 
   return (
     <aside
-      className="chat-sidebar relative flex shrink-0 flex-col overflow-hidden border-l border-[#E5E5E5] bg-[#FFFFFF] transition-[width] duration-200"
+      className="chat-sidebar relative flex shrink-0 flex-col overflow-hidden border-l border-[#E5E5E5] bg-[#FFFFFF] shadow-[-4px_0_12px_rgba(0,0,0,0.06)] transition-[width] duration-200"
       style={{ width: chatSidebarWidth }}
       data-active-resource={activeResource.id}
     >
@@ -5655,7 +5709,27 @@ function ChatSidebar({
                   <div className="order-5">
                     {messageFeedback[message.id] ? (
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[#555555]" role="status">
-                        <span>Merci pour votre retour !</span>
+                        <span>
+                          {messageFeedbackStatus[message.id] === "sending"
+                            ? "Envoi du retour…"
+                            : messageFeedbackStatus[message.id] === "error"
+                              ? "Le retour n’a pas été envoyé."
+                              : "Merci pour votre retour !"}
+                        </span>
+                        {messageFeedbackStatus[message.id] === "error" ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              void sendMessageFeedback(
+                                message.id,
+                                messageFeedback[message.id],
+                              )
+                            }
+                            className="font-semibold text-[#000091] underline underline-offset-2"
+                          >
+                            Réessayer
+                          </button>
+                        ) : null}
                         <button
                           type="button"
                           onClick={() => setFeedbackDetailsMessageId(message.id)}
@@ -5670,12 +5744,7 @@ function ChatSidebar({
                           type="button"
                           aria-label="Réponse utile"
                           title="Réponse utile"
-                          onClick={() =>
-                            setMessageFeedback((current) => ({
-                              ...current,
-                              [message.id]: "up",
-                            }))
-                          }
+                          onClick={() => void sendMessageFeedback(message.id, "up")}
                           className="flex h-6 w-6 items-center justify-center rounded text-[#5d5d5d] hover:bg-[#f6f6f6] hover:text-[#000091]"
                         >
                           <Icon path={icons.thumbUp} className="h-3.5 w-3.5" />
@@ -5684,12 +5753,7 @@ function ChatSidebar({
                           type="button"
                           aria-label="Réponse inutile"
                           title="Réponse inutile"
-                          onClick={() =>
-                            setMessageFeedback((current) => ({
-                              ...current,
-                              [message.id]: "down",
-                            }))
-                          }
+                          onClick={() => void sendMessageFeedback(message.id, "down")}
                           className="flex h-6 w-6 items-center justify-center rounded text-[#5d5d5d] hover:bg-[#f6f6f6] hover:text-[#000091]"
                         >
                           <Icon path={icons.thumbDown} className="h-3.5 w-3.5" />
@@ -5779,44 +5843,50 @@ function ChatSidebar({
 
       {feedbackDetailsMessageId ? (
         <div
-          className="fixed inset-0 z-[100] grid place-items-center bg-black/30 p-5"
+          className="fixed inset-0 z-[100] grid place-items-center bg-[#161616]/40 p-3 backdrop-blur-[1px] sm:p-6"
           role="presentation"
           onMouseDown={() => setFeedbackDetailsMessageId(null)}
         >
           <div
-            className="flex h-[min(760px,calc(100vh-40px))] w-full max-w-[680px] flex-col overflow-hidden border border-[#cccccc] bg-[#FFFFFF] shadow-[0_18px_55px_rgba(0,0,0,0.2)]"
+            className="flex h-[calc(100dvh-24px)] w-full max-w-[720px] flex-col overflow-hidden border border-[#DDDDDD] border-t-4 border-t-[#000091] bg-[#FFFFFF] shadow-[0_16px_48px_rgba(0,0,18,0.22)] sm:h-[min(760px,calc(100dvh-48px))]"
             role="dialog"
             aria-modal="true"
             aria-labelledby="assistant-feedback-title"
+            aria-describedby="assistant-feedback-description"
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <div className="flex items-start justify-between gap-5 border-b border-[#E5E5E5] p-4">
-              <div>
-                <h2 id="assistant-feedback-title" className="text-[15px] font-semibold text-[#161616]">
-                  Partager plus de détails
-                </h2>
-                <p className="mt-1 text-[11px] text-[#666666]">
-                  Remplissez ce court formulaire Grist pour nous aider à améliorer les réponses.
+            <div className="flex items-start justify-between gap-5 border-b border-[#E5E5E5] px-4 py-4 sm:px-6 sm:py-5">
+              <div className="max-w-[580px]">
+                <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-[#000091]">
+                  Votre avis
                 </p>
-                <p className="mt-2 max-w-[540px] text-[11px] leading-4 text-[#666666]">
-                  Votre retour inclura la question que vous avez posée afin de nous aider à comprendre le contexte. Votre identité n’est ni collectée ni transmise.
+                <h2 id="assistant-feedback-title" className="text-[18px] font-semibold leading-6 text-[#161616]">
+                  Ajouter un commentaire
+                </h2>
+                <p id="assistant-feedback-description" className="mt-1 text-[13px] leading-5 text-[#3A3A3A]">
+                  Votre évaluation a bien été enregistrée. Vous pouvez maintenant préciser ce qui vous a été utile ou ce qui pourrait être amélioré.
+                </p>
+                <p className="mt-2 text-[11px] leading-4 text-[#666666]">
+                  La question et la réponse sont jointes pour fournir le contexte. Aucune donnée d’identité n’est collectée.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setFeedbackDetailsMessageId(null)}
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-[#eeeeee]"
+                className="flex h-8 w-8 shrink-0 items-center justify-center text-[#161616] transition-colors hover:bg-[#EEEEEE] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#000091]"
                 aria-label="Fermer"
               >
-                <Icon path={icons.close} className="h-4 w-4" />
+                <Icon path={icons.close} className="h-[18px] w-[18px]" />
               </button>
             </div>
-            <iframe
-              src={gristFeedbackUrl}
-              title="Formulaire de retour sur l’assistant"
-              className="min-h-0 w-full flex-1 border-0 bg-[#FFFFFF]"
-              loading="lazy"
-            />
+            <div className="min-h-0 flex-1 bg-[#F6F6F6] p-2 sm:p-3">
+              <iframe
+                src={gristFeedbackUrl}
+                title="Formulaire de retour sur l’assistant"
+                className="h-full min-h-0 w-full border border-[#DDDDDD] bg-[#FFFFFF]"
+                loading="lazy"
+              />
+            </div>
           </div>
         </div>
       ) : null}
@@ -5920,6 +5990,7 @@ export function ExplorateurSqlEtIaPrototype({
   const [isDownloadMenuOpen, setIsDownloadMenuOpen] = useState(false);
   const [isExplorerMinimized, setIsExplorerMinimized] = useState(false);
   const [isEmbeddedFullscreen, setIsEmbeddedFullscreen] = useState(false);
+  const embeddedFullscreenScrollRef = useRef({ x: 0, y: 0 });
   const [visibleColumnKeys, setVisibleColumnKeys] = useState<ColumnKey[]>(
     tableColumns.map((column) => column.key),
   );
@@ -6662,8 +6733,21 @@ export function ExplorateurSqlEtIaPrototype({
   useEffect(() => {
     if (!isEmbeddedFullscreen) return;
 
-    const previousOverflow = document.body.style.overflow;
+    const scrollPosition = embeddedFullscreenScrollRef.current;
+    const previousBodyStyles = {
+      overflow: document.body.style.overflow,
+      position: document.body.style.position,
+      top: document.body.style.top,
+      left: document.body.style.left,
+      right: document.body.style.right,
+      width: document.body.style.width,
+    };
     document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollPosition.y}px`;
+    document.body.style.left = `-${scrollPosition.x}px`;
+    document.body.style.right = "0";
+    document.body.style.width = "100%";
 
     function closeOnEscape(event: globalThis.KeyboardEvent) {
       if (event.key === "Escape") setIsEmbeddedFullscreen(false);
@@ -6671,8 +6755,16 @@ export function ExplorateurSqlEtIaPrototype({
 
     window.addEventListener("keydown", closeOnEscape);
     return () => {
-      document.body.style.overflow = previousOverflow;
+      document.body.style.overflow = previousBodyStyles.overflow;
+      document.body.style.position = previousBodyStyles.position;
+      document.body.style.top = previousBodyStyles.top;
+      document.body.style.left = previousBodyStyles.left;
+      document.body.style.right = previousBodyStyles.right;
+      document.body.style.width = previousBodyStyles.width;
       window.removeEventListener("keydown", closeOnEscape);
+      window.requestAnimationFrame(() => {
+        window.scrollTo(scrollPosition.x, scrollPosition.y);
+      });
     };
   }, [isEmbeddedFullscreen]);
 
@@ -6776,7 +6868,16 @@ export function ExplorateurSqlEtIaPrototype({
                   }
                   onClick={() => {
                     if (embedded) {
-                      setIsEmbeddedFullscreen((current) => !current);
+                      setIsEmbeddedFullscreen((current) => {
+                        if (!current) {
+                          embeddedFullscreenScrollRef.current = {
+                            x: window.scrollX,
+                            y: window.scrollY,
+                          };
+                        }
+
+                        return !current;
+                      });
                     } else {
                       setIsExplorerMinimized(true);
                     }

@@ -3,6 +3,7 @@
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import { useEffect, useRef, useState } from "react";
+import { RiFullscreenExitLine, RiFullscreenLine } from "@remixicon/react";
 import type { Feature, FeatureCollection, Geometry, GeoJsonProperties } from "geojson";
 import type { MapSpec } from "@/app/api/prototypes/explorateur-sql-et-ia/agent/types";
 
@@ -124,7 +125,10 @@ function getGeometryBounds(
         return;
       }
       if (!bounds) {
-        bounds = [point, point];
+        bounds = [
+          [point[0], point[1]],
+          [point[0], point[1]],
+        ];
       } else {
         bounds[0][0] = Math.min(bounds[0][0], point[0]);
         bounds[0][1] = Math.min(bounds[0][1], point[1]);
@@ -152,7 +156,46 @@ function getGeometryBounds(
 
 export default function AssistantMap({ spec, data, source }: AssistantMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<import("maplibre-gl").Map | null>(null);
+  const fittedBoundsRef = useRef<[[number, number], [number, number]] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setIsFullscreen(false);
+    }
+
+    window.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [isFullscreen]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    const frame = window.requestAnimationFrame(() => {
+      map.resize();
+      const bounds = fittedBoundsRef.current;
+      if (bounds) {
+        map.fitBounds(bounds, {
+          padding: isFullscreen ? 64 : 28,
+          maxZoom: 11,
+          duration: 0,
+        });
+      }
+    });
+
+    return () => window.cancelAnimationFrame(frame);
+  }, [isFullscreen]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -160,6 +203,7 @@ export default function AssistantMap({ spec, data, source }: AssistantMapProps) 
 
     let cancelled = false;
     let map: import("maplibre-gl").Map | undefined;
+    let resizeObserver: ResizeObserver | undefined;
 
     async function renderMap() {
       try {
@@ -260,6 +304,11 @@ export default function AssistantMap({ spec, data, source }: AssistantMapProps) 
           zoom: 4.2,
           attributionControl: false,
         });
+        mapRef.current = map;
+        resizeObserver = new ResizeObserver(() => {
+          map?.resize();
+        });
+        resizeObserver.observe(container);
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
         map.addControl(new maplibregl.AttributionControl({ compact: true }));
 
@@ -383,7 +432,14 @@ export default function AssistantMap({ spec, data, source }: AssistantMapProps) 
               ),
             undefined,
           );
-          if (bounds) map.fitBounds(bounds, { padding: 28, maxZoom: 11, duration: 0 });
+          if (bounds) {
+            fittedBoundsRef.current = bounds;
+            map.fitBounds(bounds, {
+              padding: 28,
+              maxZoom: 11,
+              duration: 0,
+            });
+          }
         });
       } catch (nextError) {
         if (!cancelled) {
@@ -395,21 +451,54 @@ export default function AssistantMap({ spec, data, source }: AssistantMapProps) 
     void renderMap();
     return () => {
       cancelled = true;
+      resizeObserver?.disconnect();
+      mapRef.current = null;
+      fittedBoundsRef.current = null;
       map?.remove();
     };
   }, [data, spec]);
 
   return (
-    <div className="overflow-hidden rounded border border-[#E5E5E5] bg-[#FFFFFF]">
-      <div className="border-b border-[#E5E5E5] px-3 py-2">
-        <p className="truncate text-[12px] font-medium text-[#161616]">{spec.title}</p>
+    <div
+      className={
+        isFullscreen
+          ? "assistant-map fixed inset-0 z-[150] flex flex-col overflow-hidden bg-[#FFFFFF]"
+          : "assistant-map overflow-hidden rounded border border-[#E5E5E5] bg-[#FFFFFF]"
+      }
+      data-fullscreen={isFullscreen ? "true" : "false"}
+    >
+      <div className="relative z-20 flex min-h-10 shrink-0 items-center justify-between gap-3 border-b border-[#E5E5E5] bg-[#FFFFFF] px-3 py-2">
+        <p className="min-w-0 truncate text-[12px] font-medium text-[#161616]">{spec.title}</p>
+        <button
+          type="button"
+          onClick={() => setIsFullscreen((current) => !current)}
+          className={`relative z-30 flex h-8 shrink-0 items-center justify-center gap-2 border border-[#E5E5E5] bg-[#FFFFFF] text-[12px] font-medium text-[#3a3a3a] hover:bg-[#f6f6f6] ${
+            isFullscreen ? "px-3" : "w-8"
+          }`}
+          aria-label={isFullscreen ? "Quitter le plein écran" : "Afficher la carte en plein écran"}
+          title={isFullscreen ? "Quitter le plein écran" : "Afficher en plein écran"}
+        >
+          {isFullscreen ? (
+            <>
+              <RiFullscreenExitLine aria-hidden className="h-4 w-4" />
+              <span>Réduire</span>
+            </>
+          ) : (
+            <RiFullscreenLine aria-hidden className="h-4 w-4" />
+          )}
+        </button>
       </div>
       {error ? (
-        <div className="flex h-[280px] items-center justify-center px-6 text-center text-[12px] leading-5 text-[#ce0500]">
+        <div className={`flex items-center justify-center px-6 text-center text-[12px] leading-5 text-[#ce0500] ${isFullscreen ? "min-h-0 flex-1" : "h-[280px]"}`}>
           {error}
         </div>
       ) : (
-        <div ref={containerRef} className="h-[280px] w-full" role="img" aria-label={spec.title} />
+        <div
+          ref={containerRef}
+          className={isFullscreen ? "relative z-0 min-h-0 w-full flex-1" : "relative z-0 h-[280px] w-full"}
+          role="img"
+          aria-label={spec.title}
+        />
       )}
       {source ? (
         <p className="truncate border-t border-[#E5E5E5] px-3 py-1.5 text-[10px] text-[#666666]" title={source}>

@@ -22,6 +22,30 @@ body {
   font-family: var(--font-marianne);
 }
 
+.assistant-map .maplibregl-ctrl-attrib {
+  max-width: calc(100% - 12px);
+  font-size: 9px;
+  line-height: 13px;
+}
+
+.assistant-map .maplibregl-ctrl-attrib-button {
+  width: 24px !important;
+  min-width: 24px !important;
+  height: 24px !important;
+  min-height: 24px !important;
+  padding: 0 !important;
+  background-size: 16px 16px !important;
+}
+
+.assistant-map[data-fullscreen="false"] .maplibregl-ctrl-bottom-right {
+  right: 4px;
+  bottom: 4px;
+}
+
+.assistant-map[data-fullscreen="false"] .maplibregl-ctrl-attrib.maplibregl-compact-show {
+  padding: 2px 26px 2px 5px;
+}
+
 .mobile-data-cards {
   display: none !important;
 }
