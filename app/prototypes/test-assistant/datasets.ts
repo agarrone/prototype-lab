@@ -65,4 +65,13 @@ export const assistantTestDatasets: AssistantTestDataset[] = [
     parquetUrl:
       "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/17f7cfd9-a5fe-4b6a-9f5d-3625feaa396e.parquet",
   },
+  {
+    reference:
+      "jeux-de-donnees-des-vitesses-relevees-par-les-voitures-radars-a-conduite-externalisee",
+    title:
+      "Vitesses relevées par les voitures radars à conduite externalisée — 2023",
+    organization: "Ministère de l’Intérieur",
+    parquetUrl:
+      "https://object.files.data.gouv.fr/hydra-parquet/hydra-parquet/756ff540c1160325916332c2570c54bf.parquet",
+  },
 ];
