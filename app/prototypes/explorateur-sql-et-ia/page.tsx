@@ -67,6 +67,10 @@ import {
   type InspectSchemaResult,
 } from "./duckdb-wasm-client";
 import type { MapSpec } from "@/app/api/prototypes/explorateur-sql-et-ia/agent/types";
+import {
+  dsfrVisualizationColors,
+  getDsfrCategoricalColors,
+} from "@/lib/dsfr-visualization-colors";
 
 const AssistantMap = dynamic(() => import("./assistant-map"), {
   ssr: false,
@@ -3623,6 +3627,7 @@ type AgentResponse = {
   chart?: AssistantChartSpec;
   map?: AssistantMapSpec;
   queryRows?: Record<string, unknown>[];
+  analysisMemory?: AnalysisMemory;
   toolTrace?: {
     tool: "get_dataset_metadata" | "inspect_schema" | "execute_sql" | "get_resource_context" | "execute_query" | "create_chart" | "create_map";
     summary: string;
@@ -3638,7 +3643,12 @@ type AgentResponse = {
   status: "success" | "ambiguous" | "empty" | "unable" | "error" | "stopped";
 };
 
-type AssistantRequestErrorKind = "network" | "service" | "data" | "analysis";
+type AssistantRequestErrorKind =
+  | "network"
+  | "service"
+  | "quota"
+  | "data"
+  | "analysis";
 
 class AssistantRequestError extends Error {
   constructor(
@@ -3662,6 +3672,8 @@ function assistantErrorResponse(error: unknown): AgentResponse {
       "Problème de connexion. Vérifiez votre accès au réseau puis réessayez.",
     service:
       "L’assistant est momentanément indisponible. Votre question est conservée dans la conversation et vous pouvez réessayer.",
+    quota:
+      "La capacité quotidienne de l’assistant a été atteinte. Votre question est conservée et pourra être relancée lorsque le service sera de nouveau disponible.",
     data:
       "Les données n’ont pas pu être lues correctement. Essayez de recharger la ressource ou d’en sélectionner une autre.",
     analysis:
@@ -3738,6 +3750,7 @@ type AssistantChartSpec = {
   title: string;
   xKey: string;
   yKey: string;
+  colorKey?: string;
   data: Record<string, unknown>[];
   spec?: VegaLiteSpec;
 };
@@ -3745,6 +3758,33 @@ type AssistantChartSpec = {
 type AssistantMapSpec = {
   spec: MapSpec;
   data: Record<string, unknown>[];
+};
+
+type AnalysisMemory = {
+  resourceKey: string;
+  question: string;
+  answer: string;
+  schema: InspectSchemaResult;
+  datasetMetadata?: DatasetMetadataResult;
+  toolCalls: Array<{
+    tool: "get_dataset_metadata" | "inspect_schema" | "execute_sql" | "get_resource_context" | "execute_query" | "create_chart" | "create_map";
+    summary: string;
+    description?: string;
+    show?: boolean;
+    spec?: VegaLiteSpec | MapSpec;
+  }>;
+  sqlExecutions: Array<{
+    description?: string;
+    sql: string;
+    result?: ExecuteSqlResult;
+    error?: string;
+    status: "success" | "error";
+  }>;
+  visualization?: {
+    type: "chart" | "map";
+    spec: VegaLiteSpec | MapSpec;
+  };
+  createdAt: string;
 };
 
 type AssistantMessage = {
@@ -4357,19 +4397,13 @@ function AssistantChart({
       String(item[chart.xKey] ?? `Valeur ${index + 1}`),
     );
     const values = rows.map((item) => Number(item[chart.yKey]));
-    const colors = [
-      "#000091",
-      "#6a6af4",
-      "#009081",
-      "#e1000f",
-      "#a558a0",
-      "#d64d00",
-      "#7d4e24",
-      "#18753c",
-    ];
+    const categoricalColors = chart.colorKey
+      ? getDsfrCategoricalColors(rows.map((item) => item[chart.colorKey as string]))
+      : [];
     let chartInstance: Chart;
 
     if (chart.type === "doughnut") {
+      const sliceColors = getDsfrCategoricalColors(labels);
       chartInstance = new Chart(canvas, {
         type: "doughnut",
         data: {
@@ -4378,7 +4412,9 @@ function AssistantChart({
             {
               data: values,
               backgroundColor: labels.map(
-                (_, index) => colors[index % colors.length],
+                (_, index) =>
+                  sliceColors[index]?.color ??
+                  dsfrVisualizationColors[index % dsfrVisualizationColors.length],
               ),
               borderColor: "#ffffff",
               borderWidth: 2,
@@ -4392,53 +4428,87 @@ function AssistantChart({
         },
       });
     } else if (chart.type === "scatter") {
-      const points = rows
-        .map((item) => ({
-          x: Number(item[chart.xKey]),
-          y: Number(item[chart.yKey]),
-        }))
-        .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y));
+      const scatterDatasets =
+        categoricalColors.length > 0 && chart.colorKey
+          ? categoricalColors.map(({ category, color }) => ({
+              label: category,
+              data: rows
+                .filter((item) => String(item[chart.colorKey as string] ?? "") === category)
+                .map((item) => ({
+                  x: Number(item[chart.xKey]),
+                  y: Number(item[chart.yKey]),
+                }))
+                .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y)),
+              backgroundColor: color,
+              pointRadius: 4,
+            }))
+          : [
+              {
+                label: chart.title,
+                data: rows
+                  .map((item) => ({
+                    x: Number(item[chart.xKey]),
+                    y: Number(item[chart.yKey]),
+                  }))
+                  .filter((point) => Number.isFinite(point.x) && Number.isFinite(point.y)),
+                backgroundColor: "#000091",
+                pointRadius: 4,
+              },
+            ];
 
       chartInstance = new Chart(canvas, {
         type: "scatter",
-        data: {
-          datasets: [
-            {
-              label: chart.title,
-              data: points,
-              backgroundColor: "#000091",
-              pointRadius: 4,
-            },
-          ],
-        },
+        data: { datasets: scatterDatasets },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
+          plugins: { legend: { display: categoricalColors.length > 0 } },
         },
       });
     } else {
-      chartInstance = new Chart(canvas, {
-        type: chart.type,
-        data: {
-          labels,
-          datasets: [
-            {
-              label: chart.title,
-              data: values,
-              backgroundColor: "#000091",
-              borderColor: "#000091",
+      const chartLabels =
+        categoricalColors.length > 0 ? Array.from(new Set(labels)) : labels;
+      const datasets =
+        categoricalColors.length > 0 && chart.colorKey
+          ? categoricalColors.map(({ category, color }) => ({
+              label: category,
+              data: chartLabels.map((label) => {
+                const row = rows.find(
+                  (item) =>
+                    String(item[chart.xKey] ?? "") === label &&
+                    String(item[chart.colorKey as string] ?? "") === category,
+                );
+                return row ? Number(row[chart.yKey]) : null;
+              }),
+              backgroundColor: color,
+              borderColor: color,
               borderWidth: 2,
               borderRadius: chart.type === "bar" ? 3 : undefined,
               tension: chart.type === "line" ? 0.25 : undefined,
               fill: false,
-            },
-          ],
+            }))
+          : [
+              {
+                label: chart.title,
+                data: values,
+                backgroundColor: "#000091",
+                borderColor: "#000091",
+                borderWidth: 2,
+                borderRadius: chart.type === "bar" ? 3 : undefined,
+                tension: chart.type === "line" ? 0.25 : undefined,
+                fill: false,
+              },
+            ];
+      chartInstance = new Chart(canvas, {
+        type: chart.type,
+        data: {
+          labels: chartLabels,
+          datasets,
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          plugins: { legend: { display: false } },
+          plugins: { legend: { display: categoricalColors.length > 0 } },
           scales: { y: { beginAtZero: true } },
         },
       });
@@ -4668,6 +4738,7 @@ function chartFromVegaSpec(
     getVegaField(encoding.theta) ??
     fields[1] ??
     "value";
+  const colorKey = getVegaField(encoding.color);
   const title =
     typeof spec.title === "string" && spec.title.trim()
       ? spec.title.trim()
@@ -4678,6 +4749,7 @@ function chartFromVegaSpec(
     title,
     xKey,
     yKey,
+    colorKey,
     data: values,
     spec,
   };
@@ -4891,6 +4963,7 @@ function ChatSidebar({
   const starterQuestions = useMemo(() => getAssistantStarterQuestions(), []);
   const inspectedSchemaRef = useRef<InspectSchemaResult | null>(null);
   const datasetMetadataRef = useRef<DatasetMetadataResult | null>(null);
+  const analysisMemoryRef = useRef<AnalysisMemory[]>([]);
   const messageIdCounterRef = useRef(0);
   const chatScrollRef = useRef<HTMLDivElement | null>(null);
   const questionInputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -4958,6 +5031,7 @@ function ChatSidebar({
       chart: response.chart,
       map: response.map,
       queryRows: response.queryRows,
+      analysisMemory: response.analysisMemory,
       toolTrace: response.toolTrace,
       columnsUsed: response.columnsUsed,
       proposedAction: response.proposedAction ?? { type: "none" },
@@ -4979,6 +5053,51 @@ function ChatSidebar({
     payload: Record<string, unknown>,
     signal: AbortSignal,
   ) {
+    const question = typeof payload.question === "string" ? payload.question : "";
+    const isFollowUp =
+      /\b(même|précédent|précédente|encore|maintenant|plutôt|finalement|celui|celle|ce résultat|cette (?:carte|requête|analyse)|ces données|le graphique|la carte|le résultat|la requête|le filtre|le tri)\b/i.test(
+        question,
+      ) ||
+      /^(?:et|sinon|donc|alors)\b/i.test(question.trim()) ||
+      (question.length <= 100 &&
+        /\b(?:région|département|commune|carte|graphique|filtre|tri|sql)\b/i.test(
+          question,
+        ));
+    const previousAnalysis = isFollowUp
+      ? analysisMemoryRef.current
+          .slice()
+          .reverse()
+          .find((analysis) => analysis.resourceKey === activeResource.id)
+      : undefined;
+    const phase = typeof payload.phase === "string" ? payload.phase : "plan";
+    const previousAnalysisContext =
+      previousAnalysis && (phase === "plan" || phase === "generate_sql")
+        ? {
+            question: previousAnalysis.question.slice(0, 800),
+            answer: previousAnalysis.answer.slice(0, 1200),
+            sqlExecutions: previousAnalysis.sqlExecutions
+              .slice(-2)
+              .map((execution) => ({
+                description: execution.description?.slice(0, 300),
+                sql: execution.sql.slice(0, 3000),
+                status: execution.status,
+                error: execution.error?.slice(0, 600),
+                result: execution.result
+                  ? {
+                      ...execution.result,
+                      rows: execution.result.rows.slice(0, 12).map((row) =>
+                        row.map((value) =>
+                          typeof value === "string"
+                            ? value.slice(0, 300)
+                            : value,
+                        ),
+                      ),
+                    }
+                  : undefined,
+              })),
+            visualization: previousAnalysis.visualization,
+          }
+        : undefined;
     let apiResponse: Response;
 
     try {
@@ -4995,6 +5114,7 @@ function ChatSidebar({
             tableName: "data",
             datasetReference,
             datasetMetadata: datasetMetadataRef.current,
+            previousAnalysis: previousAnalysisContext,
             conversationHistory: messages.slice(-8).map((message) => ({
               role: message.role,
               content: message.content,
@@ -5023,10 +5143,14 @@ function ChatSidebar({
     }
 
     if (!apiResponse.ok || data.error) {
-      const kind: AssistantRequestErrorKind =
-        apiResponse.status >= 500 || (apiResponse.ok && data.error)
-          ? "service"
-          : "analysis";
+      const kind: AssistantRequestErrorKind = data.error &&
+        /(?:input tokens per day exceeded|quota|rate limit|resource exhausted)/i.test(
+          data.error,
+        )
+          ? "quota"
+          : apiResponse.status >= 500 || (apiResponse.ok && data.error)
+            ? "service"
+            : "analysis";
       throw new AssistantRequestError(
         kind,
         data.error ?? "Impossible d’interroger le modèle.",
@@ -5211,6 +5335,7 @@ function ChatSidebar({
 
     const sqlEvidence: SqlExecutionEvidence[] = [];
     const sqlFailures: SqlExecutionFailure[] = [];
+    const sqlExecutions: AnalysisMemory["sqlExecutions"] = [];
     let finalModel = plan.model;
     let totalUsage = planningUsage;
     let pendingSqlToolCall =
@@ -5253,6 +5378,12 @@ function ChatSidebar({
           error instanceof Error ? error.message : "Erreur SQL inconnue.";
 
         sqlFailures.push({ sql, error: errorMessage.slice(0, 1200) });
+        sqlExecutions.push({
+          description: sqlDescription,
+          sql,
+          error: errorMessage.slice(0, 1200),
+          status: "error",
+        });
         toolTrace.push({
           tool: "execute_sql",
           description: sqlDescription,
@@ -5266,6 +5397,12 @@ function ChatSidebar({
         description: sqlDescription,
         sql,
         result: executionResult,
+      });
+      sqlExecutions.push({
+        description: sqlDescription,
+        sql,
+        result: executionResult,
+        status: "success",
       });
       toolTrace.push({
         tool: "execute_sql",
@@ -5419,15 +5556,33 @@ function ChatSidebar({
       }
     }
 
+    const answer =
+      finalAnswer.answer ??
+      "Je n’ai pas reçu de réponse exploitable pour cette question.";
+    const analysisMemory: AnalysisMemory = {
+      resourceKey: activeResource.id,
+      question,
+      answer,
+      schema,
+      datasetMetadata: datasetMetadataRef.current ?? undefined,
+      toolCalls: toolTrace ?? [],
+      sqlExecutions,
+      visualization: generatedMap
+        ? { type: "map", spec: generatedMap.spec }
+        : generatedChart?.spec
+          ? { type: "chart", spec: generatedChart.spec }
+          : undefined,
+      createdAt: new Date().toISOString(),
+    };
+
     return normalizeRemoteResponse({
-      answer:
-        finalAnswer.answer ??
-        "Je n’ai pas reçu de réponse exploitable pour cette question.",
+      answer,
       reasoning: finalAnswer.reasoning,
       sql: finalAnswer.sql ?? finalEvidence.sql,
       chart: generatedChart,
       map: generatedMap,
       queryRows: executionRowsToRecords(finalEvidence.result).slice(0, 12),
+      analysisMemory,
       toolTrace,
       proposedAction: { type: "none" },
       model: finalAnswer.model ?? finalModel,
@@ -5511,6 +5666,12 @@ function ChatSidebar({
 
       if (activeAgentRunRef.current?.id !== runId) return;
       activeAgentRunRef.current = null;
+      if (response.analysisMemory) {
+        analysisMemoryRef.current = [
+          ...analysisMemoryRef.current,
+          response.analysisMemory,
+        ].slice(-20);
+      }
       setMessages((current) => [
         ...current,
         {

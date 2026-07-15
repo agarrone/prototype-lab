@@ -10,6 +10,7 @@ Pour une carte de points :
 - labelField est facultatif et sert au libellé de l'infobulle ;
 - valueField est facultatif et contrôle la taille des points ;
 - colorField est facultatif et distingue une catégorie ;
+- utilise colorField seulement pour une colonne catégorielle comprenant 2 à 5 types ; l'interface applique la palette illustrative DSFR ;
 - active cluster sauf si le résultat contient moins de 100 points.
 
 Pour une carte choroplèthe :

@@ -2,10 +2,12 @@
 
 import "maplibre-gl/dist/maplibre-gl.css";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { RiFullscreenExitLine, RiFullscreenLine } from "@remixicon/react";
 import type { Feature, FeatureCollection, Geometry, GeoJsonProperties } from "geojson";
+import type { ExpressionSpecification } from "maplibre-gl";
 import type { MapSpec } from "@/app/api/prototypes/explorateur-sql-et-ia/agent/types";
+import { getDsfrCategoricalColors } from "@/lib/dsfr-visualization-colors";
 
 type AssistantMapProps = {
   spec: MapSpec;
@@ -161,6 +163,13 @@ export default function AssistantMap({ spec, data, source }: AssistantMapProps) 
   const fittedBoundsRef = useRef<[[number, number], [number, number]] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const categoricalColors = useMemo(
+    () =>
+      spec.type === "points" && spec.colorField
+        ? getDsfrCategoricalColors(data.map((row) => row[spec.colorField as string]))
+        : [],
+    [data, spec],
+  );
 
   useEffect(() => {
     if (!isFullscreen) return;
@@ -345,6 +354,18 @@ export default function AssistantMap({ spec, data, source }: AssistantMapProps) 
           });
 
           if (spec.type === "points") {
+            const pointColor =
+              categoricalColors.length > 0
+                ? ([
+                    "match",
+                    ["get", "category"],
+                    ...categoricalColors.flatMap(({ category, color }) => [
+                      category,
+                      color,
+                    ]),
+                    "#000091",
+                  ] as unknown as ExpressionSpecification)
+                : "#000091";
             map.addLayer({
               id: "assistant-map-clusters",
               type: "circle",
@@ -372,7 +393,7 @@ export default function AssistantMap({ spec, data, source }: AssistantMapProps) 
               source: "assistant-map-data",
               filter: ["!", ["has", "point_count"]],
               paint: {
-                "circle-color": "#000091",
+                "circle-color": pointColor,
                 "circle-opacity": 0.8,
                 "circle-radius": spec.valueField
                   ? ["interpolate", ["linear"], ["sqrt", ["max", ["get", "value"], 1]], 1, 4, 100, 16]
@@ -490,7 +511,7 @@ export default function AssistantMap({ spec, data, source }: AssistantMapProps) 
       fittedBoundsRef.current = null;
       map?.remove();
     };
-  }, [data, spec]);
+  }, [categoricalColors, data, spec]);
 
   return (
     <div
@@ -534,6 +555,25 @@ export default function AssistantMap({ spec, data, source }: AssistantMapProps) 
             role="img"
             aria-label={spec.title}
           />
+          {categoricalColors.length > 0 ? (
+            <div className="absolute bottom-2 left-2 z-10 max-w-[calc(100%_-_150px)] border border-[#DDDDDD] bg-white/95 px-2 py-1.5 text-[10px] leading-4 text-[#3A3A3A]">
+              <p className="mb-1 font-medium text-[#161616]">
+                {spec.type === "points" ? spec.colorField : "Catégories"}
+              </p>
+              <ul className="flex flex-wrap gap-x-2 gap-y-1">
+                {categoricalColors.map(({ category, color }) => (
+                  <li key={category} className="flex min-w-0 items-center gap-1">
+                    <span
+                      aria-hidden
+                      className="h-2.5 w-2.5 shrink-0 rounded-full border border-white"
+                      style={{ backgroundColor: color }}
+                    />
+                    <span className="truncate">{category}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <a
             href="https://www.openstreetmap.org/copyright"
             target="_blank"

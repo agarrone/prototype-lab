@@ -19,6 +19,30 @@ function historyFrom(body: AgentRequest) {
   }));
 }
 
+function previousAnalysisFrom(body: AgentRequest) {
+  const analysis = body.previousAnalysis;
+
+  if (!analysis) return null;
+
+  return {
+    question: analysis.question.slice(0, 800),
+    answer: analysis.answer.slice(0, 1200),
+    sqlExecutions: analysis.sqlExecutions.slice(-2).map((execution) => ({
+      description: execution.description?.slice(0, 300),
+      sql: execution.sql.slice(0, 3000),
+      status: execution.status,
+      error: execution.error?.slice(0, 600),
+      result: execution.result
+        ? {
+            ...execution.result,
+            rows: execution.result.rows.slice(0, 12),
+          }
+        : undefined,
+    })),
+    visualization: analysis.visualization,
+  };
+}
+
 function contextFrom(body: AgentRequest) {
   return {
     resourceName:
@@ -40,6 +64,7 @@ export async function runAgentPhase(
   }
 
   const { resourceName, tableName, history } = contextFrom(body);
+  const previousAnalysis = previousAnalysisFrom(body);
 
   if (phase === "plan") {
     const schemaAnswer = answerFromSchema(question, body.schema);
@@ -67,6 +92,8 @@ Référence du jeu de données disponible: ${body.datasetReference ? "oui" : "no
 ${body.datasetMetadata ? `Métadonnées courantes:\n${JSON.stringify(body.datasetMetadata, null, 2)}` : ""}
 Historique récent:
 ${JSON.stringify(history, null, 2)}
+Analyse technique précédente pertinente:
+${JSON.stringify(previousAnalysis, null, 2)}
 
 Question: ${question}`,
         },
@@ -129,6 +156,8 @@ ${JSON.stringify(body.previousSqlErrors ?? [], null, 2)}
 
 Historique récent:
 ${JSON.stringify(history, null, 2)}
+Analyse technique précédente pertinente:
+${JSON.stringify(previousAnalysis, null, 2)}
 
 Question: ${question}`,
         },

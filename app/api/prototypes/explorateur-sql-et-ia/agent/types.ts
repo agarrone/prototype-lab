@@ -53,6 +53,22 @@ export type SqlExecutionFailure = {
   error: string;
 };
 
+export type PreviousAnalysisMemory = {
+  question: string;
+  answer: string;
+  sqlExecutions: Array<{
+    description?: string;
+    sql: string;
+    result?: ExecuteSqlResult;
+    error?: string;
+    status: "success" | "error";
+  }>;
+  visualization?: {
+    type: "chart" | "map";
+    spec: VegaLiteSpec | MapSpec;
+  };
+};
+
 export type VegaLiteSpec = Record<string, unknown>;
 
 export type MapSpec =
@@ -115,6 +131,7 @@ export type AgentRequest = {
   executionResult?: ExecuteSqlResult;
   previousSqlResults?: SqlExecutionEvidence[];
   previousSqlErrors?: SqlExecutionFailure[];
+  previousAnalysis?: PreviousAnalysisMemory;
   conversationHistory?: { role: "user" | "assistant"; content: string }[];
 };
 
