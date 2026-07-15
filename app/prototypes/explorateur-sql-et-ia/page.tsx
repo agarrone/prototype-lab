@@ -3628,6 +3628,7 @@ type AgentResponse = {
     summary: string;
     description?: string;
     show?: boolean;
+    spec?: VegaLiteSpec | MapSpec;
   }[];
   proposedAction: AssistantProposedAction;
   needsClarification?: boolean;
@@ -4798,6 +4799,51 @@ function AssistantSqlBlock({ sql }: { sql: string }) {
   );
 }
 
+function AssistantSpecificationBlock({
+  spec,
+  type,
+}: {
+  spec: VegaLiteSpec | MapSpec;
+  type: "chart" | "map";
+}) {
+  const [copied, setCopied] = useState(false);
+  const json = JSON.stringify(spec, null, 2);
+  const label = type === "map" ? "Spécification de la carte" : "Spécification du graphique";
+
+  async function copySpecification() {
+    try {
+      await navigator.clipboard.writeText(json);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="mt-2 overflow-hidden rounded border border-[#dddddd] bg-[#f6f6f6]">
+      <div className="flex min-h-8 items-center justify-between border-b border-[#dddddd] px-2">
+        <span className="text-[9px] font-bold uppercase tracking-[0.05em] text-[#777777]">
+          {label}
+        </span>
+        <button
+          type="button"
+          onClick={() => void copySpecification()}
+          className="flex h-6 items-center gap-1 rounded px-1.5 text-[10px] text-[#555555] hover:bg-[#e5e5e5] hover:text-[#161616]"
+          aria-label={`Copier la ${label.toLowerCase()}`}
+          title={`Copier la ${label.toLowerCase()}`}
+        >
+          <Icon path={icons.copy} className="h-3.5 w-3.5" />
+          {copied ? <span>Copié</span> : null}
+        </button>
+      </div>
+      <pre className="max-h-44 overflow-auto whitespace-pre p-2 font-mono text-[11px] leading-5 text-[#333333]">
+        {json}
+      </pre>
+    </div>
+  );
+}
+
 function ChatSidebar({
   activeResource,
   sourceName,
@@ -5299,6 +5345,7 @@ function ChatSidebar({
           description: mapDescription,
           summary: `${mapData.length} lignes utilisées pour générer la carte.`,
           show: true,
+          spec: generatedMap.spec,
         });
       } catch (error) {
         if (isAbortError(error)) throw error;
@@ -5315,6 +5362,7 @@ function ChatSidebar({
             description: "Créer une carte à partir du résultat SQL.",
             summary: `${mapData.length} lignes cartographiées à partir des colonnes géographiques détectées.`,
             show: true,
+            spec: fallbackSpec,
           });
         } else {
           toolTrace.push({
@@ -5358,6 +5406,7 @@ function ChatSidebar({
           description: chartDescription,
           summary: `${generatedChart.data.length} lignes utilisées pour générer le graphique.`,
           show: true,
+          spec: chartPlan.toolCall.arguments.spec,
         });
       } catch (error) {
         if (isAbortError(error)) throw error;
@@ -5740,12 +5789,12 @@ function ChatSidebar({
                         <div className="space-y-1 px-[22px] py-1">
                           {message.response.toolTrace?.length ? (
                             message.response.toolTrace.map((trace, index) => (
-                                <p
+                                <div
                                   key={`${trace.tool}-${index}`}
                                   className="grid grid-cols-[16px_minmax(0,1fr)] gap-1 text-[11px] leading-5 text-[#777777]"
                                 >
                                   <span className="text-[#555555]">{index + 1}.</span>
-                                  <span className="min-w-0">
+                                  <div className="min-w-0">
                                     <strong className="font-semibold text-[#333333]">
                                       {getAssistantToolLabel(trace.tool)}
                                     </strong>
@@ -5755,8 +5804,25 @@ function ChatSidebar({
                                     <span className="block text-[#666666]">
                                       {trace.summary}
                                     </span>
-                                  </span>
-                                </p>
+                                    {trace.tool === "execute_sql" &&
+                                    trace.show &&
+                                    message.response?.sql ? (
+                                      <AssistantSqlBlock sql={message.response.sql} />
+                                    ) : null}
+                                    {trace.spec && trace.tool === "create_chart" ? (
+                                      <AssistantSpecificationBlock
+                                        spec={trace.spec}
+                                        type="chart"
+                                      />
+                                    ) : null}
+                                    {trace.spec && trace.tool === "create_map" ? (
+                                      <AssistantSpecificationBlock
+                                        spec={trace.spec}
+                                        type="map"
+                                      />
+                                    ) : null}
+                                  </div>
+                                </div>
                               ))
                           ) : (
                             <p className="text-[12px] leading-5 text-[#666666]">
@@ -5764,11 +5830,6 @@ function ChatSidebar({
                             </p>
                           )}
                         </div>
-                        {message.response.sql ? (
-                          <div className="px-[22px]">
-                            <AssistantSqlBlock sql={message.response.sql} />
-                          </div>
-                        ) : null}
                         {message.response.columnsUsed?.length ? (
                           <p className="px-[22px] pb-1 pt-2 text-[11px] leading-5 text-[#777777]">
                             Colonnes utilisées : {message.response.columnsUsed.join(", ")}
