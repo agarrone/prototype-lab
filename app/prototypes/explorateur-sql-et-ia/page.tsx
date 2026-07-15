@@ -5644,12 +5644,12 @@ function ChatSidebar({
           event.stopPropagation();
           setChatSidebarWidth(chatSidebarDefaultWidth);
         }}
-        className="absolute -left-1 top-0 z-20 h-full w-2 cursor-col-resize touch-none rounded-l transition-colors hover:bg-[#000091]/10"
+        className="chat-sidebar-resize-handle absolute -left-1 top-0 z-20 h-full w-2 cursor-col-resize touch-none rounded-l transition-colors hover:bg-[#000091]/10"
       >
         <span className="sr-only">Redimensionner</span>
       </button>
 
-      <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-[#E5E5E5] bg-[#f6f6f6] px-3">
+      <div className="chat-sidebar-header flex h-14 shrink-0 items-center justify-between gap-3 border-b border-[#E5E5E5] bg-[#f6f6f6] px-3">
         <div className="min-w-0">
           <p className="truncate text-[13px] font-medium leading-[1.4] text-[#161616]">
             Interroger ces données
@@ -5667,11 +5667,11 @@ function ChatSidebar({
 
       <div
         ref={chatScrollRef}
-        className="min-h-0 flex-1 overflow-auto bg-[#FFFFFF] px-3 py-3"
+        className="chat-sidebar-content min-h-0 flex-1 overflow-auto bg-[#FFFFFF] px-3 py-3"
       >
         {messages.length === 0 ? (
-          <div className="flex min-h-full flex-col justify-end pb-2">
-            <div className="mb-3 h-20 w-20 overflow-hidden" aria-hidden="true">
+          <div className="chat-sidebar-empty flex min-h-full flex-col justify-end pb-2">
+            <div className="chat-sidebar-signature mb-3 h-20 w-20 overflow-hidden" aria-hidden="true">
               <Image
                 src="/prototypes/animation-signature.gif"
                 alt=""
@@ -5694,7 +5694,7 @@ function ChatSidebar({
             <p className="mt-1 px-1 text-[13px] leading-5 text-[#5d5d5d]">
               Posez une question sur ces données.
             </p>
-            <div className="mt-2 flex flex-wrap gap-1.5">
+            <div className="chat-sidebar-starters mt-2 flex flex-wrap gap-1.5">
               {starterQuestions.map((question) => (
                 <button
                   key={question}
@@ -6028,7 +6028,7 @@ function ChatSidebar({
       </div>
 
       <form
-        className="shrink-0 bg-[#FFFFFF] px-3"
+        className="chat-sidebar-composer shrink-0 bg-[#FFFFFF] px-3"
         onSubmit={(event) => {
           event.preventDefault();
           submitAgentQuestion();

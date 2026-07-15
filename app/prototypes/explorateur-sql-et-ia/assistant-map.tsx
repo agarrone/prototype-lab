@@ -157,6 +157,7 @@ function getGeometryBounds(
 export default function AssistantMap({ spec, data, source }: AssistantMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<import("maplibre-gl").Map | null>(null);
+  const popupRef = useRef<import("maplibre-gl").Popup | null>(null);
   const fittedBoundsRef = useRef<[[number, number], [number, number]] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -183,6 +184,8 @@ export default function AssistantMap({ spec, data, source }: AssistantMapProps) 
     if (!map) return;
 
     const frame = window.requestAnimationFrame(() => {
+      popupRef.current?.remove();
+      popupRef.current = null;
       map.resize();
       const bounds = fittedBoundsRef.current;
       if (bounds) {
@@ -204,6 +207,7 @@ export default function AssistantMap({ spec, data, source }: AssistantMapProps) 
     let cancelled = false;
     let map: import("maplibre-gl").Map | undefined;
     let resizeObserver: ResizeObserver | undefined;
+    let resizeFrame: number | undefined;
 
     async function renderMap() {
       try {
@@ -306,11 +310,29 @@ export default function AssistantMap({ spec, data, source }: AssistantMapProps) 
         });
         mapRef.current = map;
         resizeObserver = new ResizeObserver(() => {
-          map?.resize();
+          if (resizeFrame !== undefined) {
+            window.cancelAnimationFrame(resizeFrame);
+          }
+          resizeFrame = window.requestAnimationFrame(() => {
+            if (!map || cancelled) return;
+            popupRef.current?.remove();
+            popupRef.current = null;
+            map.resize();
+            const bounds = fittedBoundsRef.current;
+            if (bounds) {
+              map.fitBounds(bounds, {
+                padding: Math.max(
+                  18,
+                  Math.min(64, Math.round(container.clientWidth * 0.06)),
+                ),
+                maxZoom: 11,
+                duration: 0,
+              });
+            }
+          });
         });
         resizeObserver.observe(container);
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-        map.addControl(new maplibregl.AttributionControl({ compact: true }));
 
         map.on("load", () => {
           if (!map || cancelled) return;
@@ -376,7 +398,11 @@ export default function AssistantMap({ spec, data, source }: AssistantMapProps) 
                 .filter(Boolean)
                 .map((item) => `<div>${escapeHtml(item)}</div>`)
                 .join("");
-              new maplibregl.Popup({ offset: 10 })
+              popupRef.current?.remove();
+              popupRef.current = new maplibregl.Popup({
+                offset: 10,
+                maxWidth: "min(260px, calc(100vw - 32px))",
+              })
                 .setLngLat(feature.geometry.coordinates as [number, number])
                 .setHTML(details)
                 .addTo(map as import("maplibre-gl").Map);
@@ -416,7 +442,10 @@ export default function AssistantMap({ spec, data, source }: AssistantMapProps) 
             map.on("click", "assistant-map-polygons", (event) => {
               const feature = event.features?.[0];
               if (!feature) return;
-              new maplibregl.Popup()
+              popupRef.current?.remove();
+              popupRef.current = new maplibregl.Popup({
+                maxWidth: "min(260px, calc(100vw - 32px))",
+              })
                 .setLngLat(event.lngLat)
                 .setHTML(`<strong>${escapeHtml(feature.properties?.mapLabel)}</strong><div>${escapeHtml(feature.properties?.mapValueLabel)}</div>`)
                 .addTo(map as import("maplibre-gl").Map);
@@ -452,6 +481,11 @@ export default function AssistantMap({ spec, data, source }: AssistantMapProps) 
     return () => {
       cancelled = true;
       resizeObserver?.disconnect();
+      if (resizeFrame !== undefined) {
+        window.cancelAnimationFrame(resizeFrame);
+      }
+      popupRef.current?.remove();
+      popupRef.current = null;
       mapRef.current = null;
       fittedBoundsRef.current = null;
       map?.remove();
@@ -493,12 +527,25 @@ export default function AssistantMap({ spec, data, source }: AssistantMapProps) 
           {error}
         </div>
       ) : (
-        <div
-          ref={containerRef}
-          className={isFullscreen ? "relative z-0 min-h-0 w-full flex-1" : "relative z-0 h-[280px] w-full"}
-          role="img"
-          aria-label={spec.title}
-        />
+        <div className={isFullscreen ? "relative z-0 min-h-0 w-full flex-1" : "relative z-0 h-[280px] w-full"}>
+          <div
+            ref={containerRef}
+            className="absolute inset-0"
+            role="img"
+            aria-label={spec.title}
+          />
+          <a
+            href="https://www.openstreetmap.org/copyright"
+            target="_blank"
+            rel="noreferrer"
+            className={`absolute bottom-1 right-1 z-10 max-w-[calc(100%_-_8px)] truncate bg-white/90 px-1.5 py-0.5 leading-3 text-[#3A3A3A] shadow-[0_1px_3px_rgba(0,0,0,0.12)] hover:text-[#000091] hover:underline ${
+              isFullscreen ? "text-[10px]" : "text-[8px]"
+            }`}
+            title="© OpenStreetMap contributors"
+          >
+            © OpenStreetMap contributors
+          </a>
+        </div>
       )}
       {source ? (
         <p className="truncate border-t border-[#E5E5E5] px-3 py-1.5 text-[10px] text-[#666666]" title={source}>
