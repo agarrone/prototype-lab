@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import {
   RiArrowRightSLine,
+  RiHistoryLine,
   RiBarChartBoxLine,
   RiFolder3Line,
   RiInformationLine,
@@ -10,6 +11,7 @@ import {
   RiMicroscopeLine,
   RiPagesLine,
   RiPaletteLine,
+  RiContactsBook2Line,
   RiSearchLine,
   RiSparklingLine,
   RiTerminalLine,
@@ -40,6 +42,8 @@ function ChevronIcon() {
 }
 
 const prototypeIcons = {
+  activites: RiHistoryLine,
+  "points-de-contact": RiContactsBook2Line,
   explorateur: RiMicroscopeLine,
   "explorateur-sql-et-ia": RiTerminalLine,
   "enrichissement-donnees": RiSparklingLine,
@@ -53,6 +57,7 @@ const prototypeIcons = {
 };
 
 const currentPrototypeSlugs = [
+  "points-de-contact",
   "explorateur",
   "explorateur-sql-et-ia",
   "enrichissement-donnees",

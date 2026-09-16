@@ -9,6 +9,24 @@ export type Prototype = {
 
 export const prototypes: Prototype[] = [
   {
+    slug: "activites",
+    title: "Activités",
+    description:
+      "Redesign de l'historique des modifications d'un jeu de données dans son espace d'administration.",
+    status: "exploration",
+    tags: ["administration", "activité", "historique"],
+    figmaUrl: "",
+  },
+  {
+    slug: "points-de-contact",
+    title: "Points de contact",
+    description:
+      "Prototype de gestion des attributions et points de contact d'un jeu de données.",
+    status: "exploration",
+    tags: ["contacts", "attributions", "formulaire"],
+    figmaUrl: "",
+  },
+  {
     slug: "test-assistant",
     title: "Assistant d’exploration",
     description:
