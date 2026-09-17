@@ -1,12 +1,8 @@
-"use client";
-
-import { useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { RiArrowDownSLine, RiRobot3Line } from "@remixicon/react";
-import styles from "./activity-timeline.module.css";
+import { RiRobot3Line, RiUserLine } from "@remixicon/react";
 
-type Activity = {
+export type Activity = {
   id: string;
   actor: string;
   initials: string;
@@ -14,18 +10,20 @@ type Activity = {
   avatar?: string;
   summary: string;
   date: string;
+  rangeStart?: string;
   details?: ActivityDetail[];
-  defaultOpen?: boolean;
   resourceDeleted?: boolean;
+  actorHref?: string;
+  resourceHref?: string;
 };
 
-type ActivityDetail = {
+export type ActivityDetail = {
   label: string;
   value: string;
   href?: string;
 };
 
-const activities: Activity[] = [
+export const prototypeActivities: Activity[] = [
   {
     id: "sequence-septembre",
     actor: "Marie Dupont",
@@ -34,7 +32,7 @@ const activities: Activity[] = [
     avatar: "/prototypes/activites/marie-dupont.png",
     summary: "a modifié le jeu de données et ses ressources",
     date: "16 septembre 2026 à 14 h 32",
-    defaultOpen: true,
+    rangeStart: "14 h 12",
     details: [
       { label: "Métadonnées modifiées", value: "Description, Licence, Mots-clés" },
       { label: "Ressource ajoutée", value: "Export CSV septembre 2026", href: "#ressource" },
@@ -86,6 +84,7 @@ const activities: Activity[] = [
     avatar: "/prototypes/activites/marie-dupont.png",
     summary: "a modifié le jeu de données et deux ressources",
     date: "29 août 2026 à 15 h 12",
+    rangeStart: "14 h 48",
     details: [
       { label: "Métadonnées modifiées", value: "Description, Fréquence de mise à jour" },
       { label: "Ressource mise à jour", value: "Données consolidées", href: "#ressource" },
@@ -131,8 +130,8 @@ const activities: Activity[] = [
   },
   {
     id: "compte-supprime",
-    actor: "Julien Moreau",
-    initials: "JM",
+    actor: "Compte supprimé",
+    initials: "",
     actorType: "deleted",
     summary: "a modifié les métadonnées",
     date: "18 juin 2024 à 11 h 05",
@@ -149,8 +148,8 @@ const activities: Activity[] = [
   },
   {
     id: "mise-a-jour-2022",
-    actor: "Julien Moreau",
-    initials: "JM",
+    actor: "Compte supprimé",
+    initials: "",
     actorType: "deleted",
     summary: "a modifié la ressource Export national 2022",
     date: "13 octobre 2022 à 11 h 37",
@@ -182,6 +181,8 @@ function Avatar({ activity }: { activity: Activity }) {
     >
       {robot ? (
         <RiRobot3Line aria-hidden="true" className="h-3 w-3 text-[#161616]" />
+      ) : deleted ? (
+        <RiUserLine aria-hidden="true" className="h-3 w-3 text-[#666666]" />
       ) : activity.avatar ? (
           <Image
             src={activity.avatar}
@@ -205,7 +206,7 @@ function StatusBadge({ children }: { children: React.ReactNode }) {
   );
 }
 
-function ActivityText({ text, deleted = false }: { text: string; deleted?: boolean }) {
+function ActivityText({ text, deleted = false, href = "#ressource" }: { text: string; deleted?: boolean; href?: string }) {
   const match = text.match(/^(.*?\bressource )(.+)$/);
   if (!match) return <>{text}</>;
 
@@ -215,7 +216,7 @@ function ActivityText({ text, deleted = false }: { text: string; deleted?: boole
       {deleted ? (
         <span className="text-[#3a3a3a]">{match[2]}</span>
       ) : (
-        <Link href="#ressource" className="pointer-events-auto text-[#161616] underline underline-offset-2 hover:decoration-2">
+        <Link href={href} className="pointer-events-auto text-[#161616] underline underline-offset-2 hover:decoration-2">
           {match[2]}
         </Link>
       )}
@@ -239,95 +240,77 @@ function DetailItem({ detail }: { detail: ActivityDetail }) {
 }
 
 function ActivityItem({ activity }: { activity: Activity }) {
-  const [open, setOpen] = useState(Boolean(activity.defaultOpen));
-  const expandable = Boolean(activity.details?.length);
+  const day = activity.date.split(" à ")[0];
+  const dayWithoutYear = day.replace(/\s\d{4}$/, "");
+  const time = activity.date.split(" à ")[1];
+  const displayedDate = activity.rangeStart
+    ? `${dayWithoutYear}, de ${activity.rangeStart} à ${time}`
+    : `${dayWithoutYear} à ${time}`;
+  const hasDetails = Boolean(activity.details?.length);
 
   return (
-    <li
-      className={`relative flex gap-2 rounded pb-6 last:pb-0 ${
-        expandable ? "-mx-2 cursor-pointer px-2 transition-colors hover:bg-[#f6f6f6] focus-within:bg-[#f6f6f6]" : ""
-      }`}
-    >
-      {expandable ? (
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={`${activity.id}-details`}
-          aria-label={`${open ? "Réduire" : "Afficher le détail de"} l’activité de ${activity.actor}`}
-          onClick={() => setOpen((value) => !value)}
-          className="absolute inset-0 z-10 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#000091] focus-visible:ring-offset-1"
-        />
-      ) : null}
+    <li className={`relative flex gap-2 ${hasDetails ? "pb-6" : "pb-4"} last:pb-0`}>
       <Avatar activity={activity} />
-      <article className={`min-w-0 flex-1 ${styles.accordion}`} data-open={open}>
+      <article className="min-w-0 flex-1">
         <div className="relative py-1 text-left">
-          <span className="pointer-events-none relative z-20 min-w-0">
+          <span className="relative z-20 min-w-0">
             <span className="flex items-start gap-2 text-[14px] leading-6 text-[#161616]">
               <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-1">
-                {activity.actorType === "deleted" ? (
-                  <span className="font-medium text-[#3a3a3a]">{activity.actor}</span>
-                ) : (
-                  <Link href="#profil" className="pointer-events-auto relative z-30 font-medium text-[#161616] underline underline-offset-2 hover:decoration-2">
+                {activity.actorType !== "deleted" ? (
+                  <Link href={activity.actorHref ?? "#profil"} className="relative z-30 font-medium text-[#161616] underline underline-offset-2 hover:decoration-2">
                     {activity.actor}
                   </Link>
-                )}
+                ) : null}
                 {activity.actorType === "deleted" ? <StatusBadge>Compte supprimé</StatusBadge> : null}
                 <span>
-                  <ActivityText text={activity.summary} deleted={activity.resourceDeleted} />
+                  <ActivityText text={activity.summary} deleted={activity.resourceDeleted} href={activity.resourceHref} />
                 </span>
                 {activity.resourceDeleted ? <StatusBadge>Ressource supprimée</StatusBadge> : null}
+                <span aria-hidden="true" className="text-[#929292]">·</span>
+                <time className="text-[13px] text-[#666666]">{displayedDate}</time>
               </span>
-              {expandable ? (
-                <span className="ml-auto inline-flex shrink-0 items-center gap-1 text-[12px] font-normal text-[#3a3a3a]">
-                  <span>{open ? "Masquer le détail" : `Voir le détail (${activity.details?.length})`}</span>
-                  <span className={`${styles.chevron} inline-flex h-6 w-5 items-center justify-center text-[#161616]`}>
-                    <RiArrowDownSLine aria-hidden="true" className="h-4 w-4" />
-                  </span>
-                </span>
-              ) : null}
             </span>
-            <time className="mt-1 block text-[13px] leading-5 text-[#666666]">{activity.date}</time>
           </span>
         </div>
 
-        {expandable ? (
-          <div id={`${activity.id}-details`} className={`${styles.panel} relative z-20 pointer-events-none`}>
-            <div className={styles.panelInner}>
-              <ul className="mt-3 space-y-2 text-[14px] leading-5">
-                {activity.details?.map((detail) => (
-                  <DetailItem key={`${detail.label}-${detail.value}`} detail={detail} />
-                ))}
-              </ul>
-            </div>
-          </div>
+        {hasDetails ? (
+          <ul className="ml-2 mt-2 space-y-2 pl-3 text-[14px] leading-5">
+            {activity.details?.map((detail) => (
+              <DetailItem key={`${detail.label}-${detail.value}`} detail={detail} />
+            ))}
+          </ul>
         ) : null}
       </article>
     </li>
   );
 }
 
-export function ActivityTimeline() {
-  const activitiesByYear = activities.reduce<Record<string, Activity[]>>((groups, activity) => {
-    const year = activity.date.match(/\b\d{4}\b/)?.[0] ?? "Date inconnue";
-    groups[year] = [...(groups[year] ?? []), activity];
+export function ActivityTimeline({ activities = prototypeActivities }: { activities?: Activity[] }) {
+  const activitiesByMonth = activities.reduce<Record<string, Activity[]>>((groups, activity) => {
+    const [, month, year] = activity.date.split(" à ")[0].split(" ");
+    const monthKey = month && year ? `${month} ${year}` : "Date inconnue";
+    groups[monthKey] = [...(groups[monthKey] ?? []), activity];
     return groups;
   }, {});
 
   return (
     <div className="space-y-7">
-      {Object.entries(activitiesByYear)
-        .sort(([yearA], [yearB]) => Number(yearB) - Number(yearA))
-        .map(([year, yearActivities]) => (
-        <section key={year} aria-labelledby={`year-${year}`}>
+      {Object.entries(activitiesByMonth).map(([month, monthActivities], index) => {
+        const headingId = `month-${index}`;
+        const displayedMonth = month.charAt(0).toUpperCase() + month.slice(1);
+
+        return (
+        <section key={month} aria-labelledby={headingId}>
           <div className="mb-4 flex items-center gap-3">
-            <h3 id={`year-${year}`} className="text-[13px] font-bold leading-5 text-[#666666]">{year}</h3>
+            <h3 id={headingId} className="text-[13px] font-medium leading-5 text-[#3a3a3a]">{displayedMonth}</h3>
             <span aria-hidden="true" className="h-px flex-1 bg-[#dddddd]" />
           </div>
           <ol>
-            {yearActivities.map((activity) => <ActivityItem key={activity.id} activity={activity} />)}
+            {monthActivities.map((activity) => <ActivityItem key={activity.id} activity={activity} />)}
           </ol>
         </section>
-        ))}
+        );
+      })}
     </div>
   );
 }

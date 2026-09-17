@@ -40,6 +40,14 @@ export default function ActivitiesPage() {
   return (
     <main className="min-h-dvh bg-[#f6f6f6] pb-16 text-[#161616]">
       <div className="mx-auto w-full max-w-[78rem] px-4 pt-5 sm:px-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-l-4 border-[#000091] bg-white px-4 py-3 text-[14px] leading-6">
+          <span>Cette page présente un scénario fictif conçu pour explorer l’interface.</span>
+          <Link href="/prototypes/activites/base-sirene" className="inline-flex items-center gap-1 font-medium text-[#000091] underline underline-offset-2 hover:decoration-2">
+            Voir l’exemple réel Base Sirene
+            <RiArrowRightSLine aria-hidden="true" className="h-4 w-4" />
+          </Link>
+        </div>
+
         <nav aria-label="Fil d’Ariane" className="mb-5 text-[12px] leading-5 text-[#666666]">
           <ol className="flex flex-wrap items-center gap-2">
             {["Administration", "Ministère de la Transition écologique", "Jeux de données"].map((item) => (
