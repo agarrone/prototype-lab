@@ -26,6 +26,7 @@ import {
   RiDownloadLine,
   RiDatabase2Line,
   RiErrorWarningLine,
+  RiEyeLine,
   RiExternalLinkLine,
   RiFileCopyLine,
   RiFileLine,
@@ -61,6 +62,23 @@ type Resource = {
   type: ResourceType;
   tabs: ExplorerTab[];
 };
+
+const explorableResourceFormats = new Set([
+  "CSV",
+  "GEOJSON",
+  "JSON",
+  "ODS",
+  "PARQUET",
+  "SHP",
+  "SHAPEFILE",
+  "TXT",
+  "XLS",
+  "XLSX",
+]);
+
+function isResourceExplorable(resource: Resource) {
+  return explorableResourceFormats.has(resource.format);
+}
 
 const resources: Resource[] = [
   {
@@ -184,7 +202,7 @@ function getExplorerResourceTabs(
   return ["Aperçu", "Métadonnées"];
 }
 
-const resourceSidebarDefaultWidth = 300;
+const resourceSidebarDefaultWidth = 340;
 const resourceSidebarMinWidth = 260;
 const resourceSidebarMaxWidth = 560;
 const collapsedResourceSidebarWidth = 48;
@@ -606,6 +624,10 @@ function getDateFilterChipValue(filter: DateFilterValue) {
   }
 
   return `${dateFilterModeLabels[filter.mode]} ${filter.value}`;
+}
+
+function escapeCsvValue(value: string) {
+  return `"${value.replaceAll('"', '""')}"`;
 }
 
 const categories = ["Transport", "Education", "Santé", "Budget", "Culture"];
@@ -1447,12 +1469,13 @@ const icons = {
   rows: RiLayoutHorizontalLine,
   sidebarFold: RiSidebarFoldLine,
   sidebarUnfold: RiSidebarUnfoldLine,
+  view: RiEyeLine,
   text: RiText,
 } satisfies Record<string, RemixIconComponent>;
 
 function FormatTag({ children }: { children: string }) {
   return (
-    <span className="rounded bg-[#eeeeee] px-2 py-0.5 text-[12px] leading-4 text-[#3a3a3a]">
+    <span className="rounded bg-[#eeeeee] px-2 py-0.5 text-[13px] leading-4 text-[#3a3a3a]">
       {children}
     </span>
   );
@@ -1465,15 +1488,27 @@ const resourceIconStyles = {
   documentation: "bg-[#fee7fc] text-[#6e445a]",
 } satisfies Record<ResourceType, string>;
 
+function ResourceTypeIcon({ resource }: { resource: Resource }) {
+  return (
+    <span
+      className={`flex shrink-0 items-center rounded-[1px] p-0.5 ${resourceIconStyles[resource.type]}`}
+    >
+      <Icon path={icons[resource.type]} className="h-4 w-4" />
+    </span>
+  );
+}
+
 function ResourceItem({
   resource,
   active,
+  expanded,
   onSelect,
   onShowTooltip,
   onHideTooltip,
 }: {
   resource: Resource;
   active: boolean;
+  expanded?: boolean;
   onSelect: () => void;
   onShowTooltip: (resource: Resource, element: HTMLButtonElement) => void;
   onHideTooltip: () => void;
@@ -1497,26 +1532,50 @@ function ResourceItem({
       onMouseLeave={onHideTooltip}
       onFocus={showTooltip}
       onBlur={onHideTooltip}
-      className={`group/resource relative grid h-7 w-full grid-cols-[auto_minmax(0,1fr)_auto_auto] items-center gap-1 rounded px-1 py-1 text-left ${
+      className={`group/resource relative grid h-8 w-full items-center gap-1 rounded px-1 py-1 text-left ${
         active ? "bg-[#eeeeee]" : "hover:bg-[#f6f6f6]"
       }`}
+      style={{
+        gridTemplateColumns: expanded
+          ? "auto minmax(0, 1fr) auto auto auto auto 20px"
+          : "auto minmax(0, 1fr) auto auto 20px",
+      }}
     >
+      <ResourceTypeIcon resource={resource} />
       <span
-        className={`flex shrink-0 items-center rounded-[1px] p-0.5 ${resourceIconStyles[resource.type]}`}
-      >
-        <Icon path={icons[resource.type]} className="h-4 w-4" />
-      </span>
-      <span
-        className={`min-w-0 truncate text-[13px] ${
+        className={`min-w-0 truncate text-[14px] ${
           active ? "font-extrabold text-[#161616]" : "font-medium text-[#3a3a3a]"
         }`}
       >
         {resource.name}
       </span>
-      <span className="shrink-0 whitespace-nowrap text-[12px] text-[#3a3a3a]">
+      {expanded ? (
+        <span className="shrink-0 whitespace-nowrap text-[13px] text-[#666666]">
+          Mis à jour le {resource.updatedAt}
+        </span>
+      ) : null}
+      <span className="shrink-0 whitespace-nowrap text-[13px] text-[#3a3a3a]">
         {resource.size}
       </span>
       <FormatTag>{resource.format}</FormatTag>
+      {expanded ? (
+        <span className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap pr-1 text-[13px] text-[#666666]">
+          <Icon path={icons.download} className="h-3 w-3" />
+          {resource.downloads.toLocaleString("fr-FR")}
+        </span>
+      ) : null}
+      <span
+        className="flex h-5 w-5 items-center justify-center"
+        title={isResourceExplorable(resource) ? "Ressource explorable" : undefined}
+        aria-hidden="true"
+      >
+        {isResourceExplorable(resource) ? (
+          <Icon
+            path={icons.view}
+            className="h-4 w-4 text-[#666666] transition-colors group-hover/resource:text-[#161616]"
+          />
+        ) : null}
+      </span>
     </button>
   );
 }
@@ -2954,6 +3013,8 @@ function ActiveFiltersBar({
   onClearDate,
   onClearSort,
   onClearAll,
+  downloadHref,
+  downloadFileName,
 }: {
   searchQuery: string;
   sortState: SortState;
@@ -2967,6 +3028,8 @@ function ActiveFiltersBar({
   onClearDate: (key: ColumnKey) => void;
   onClearSort: () => void;
   onClearAll: () => void;
+  downloadHref: string;
+  downloadFileName: string;
 }) {
   const activeCategoryEntries = tableColumns
     .map((column) => ({
@@ -2992,6 +3055,11 @@ function ActiveFiltersBar({
   const hasFilters =
     Boolean(sortState) ||
     searchQuery.trim() ||
+    activeCategoryEntries.length > 0 ||
+    activeNumberEntries.length > 0 ||
+    activeDateEntries.length > 0;
+  const hasDataFilters =
+    Boolean(searchQuery.trim()) ||
     activeCategoryEntries.length > 0 ||
     activeNumberEntries.length > 0 ||
     activeDateEntries.length > 0;
@@ -3056,15 +3124,27 @@ function ActiveFiltersBar({
         ))}
       </div>
 
-      <button
-        type="button"
-        onClick={onClearAll}
-        disabled={!hasFilters}
-        className="flex h-6 items-center gap-1 rounded px-2 text-[13px] leading-4 text-[#3a3a3a] hover:bg-[#eeeeee] disabled:opacity-40"
-      >
-        <Icon path={icons.close} className="h-4 w-4 text-[#3a3a3a]" />
-        Tout effacer
-      </button>
+      <div className="flex shrink-0 items-center gap-1">
+        {hasDataFilters ? (
+          <a
+            href={downloadHref}
+            download={downloadFileName}
+            className="flex h-6 items-center gap-1 rounded px-2 text-[13px] font-medium leading-4 text-[#161616] underline-offset-4 hover:bg-[#eeeeee] hover:underline"
+          >
+            <Icon path={icons.download} className="h-4 w-4 text-[#161616]" />
+            Télécharger les données filtrées
+          </a>
+        ) : null}
+        <button
+          type="button"
+          onClick={onClearAll}
+          disabled={!hasFilters}
+          className="flex h-6 items-center gap-1 rounded px-2 text-[13px] leading-4 text-[#3a3a3a] hover:bg-[#eeeeee] disabled:opacity-40"
+        >
+          <Icon path={icons.close} className="h-4 w-4 text-[#3a3a3a]" />
+          Tout effacer
+        </button>
+      </div>
     </div>
   );
 }
@@ -3547,6 +3627,7 @@ export function ExplorerPrototype({
   initialResourceId?: string;
 }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isResourceListExpanded, setIsResourceListExpanded] = useState(false);
   const [resourceSidebarWidth, setResourceSidebarWidth] = useState(
     resourceSidebarDefaultWidth,
   );
@@ -3879,6 +3960,16 @@ export function ExplorerPrototype({
     );
   }, [categoryFilters, dateFilters, numberRanges, searchQuery, sortState]);
 
+  const filteredRowsDownloadHref = useMemo(() => {
+    const header = tableColumns.map((column) => escapeCsvValue(column.label));
+    const dataRows = filteredRows.map((row) =>
+      tableColumns.map((column) => escapeCsvValue(getRowValue(row, column.key))),
+    );
+    const csv = [header, ...dataRows].map((values) => values.join(";")).join("\n");
+
+    return `data:text/csv;charset=utf-8,%EF%BB%BF${encodeURIComponent(csv)}`;
+  }, [filteredRows]);
+
   function updateSort(key: ColumnKey, direction: SortDirection) {
     setSortState({ key, direction });
   }
@@ -3906,6 +3997,7 @@ export function ExplorerPrototype({
     setIsMobileFiltersOpen(false);
     setIsMobileResourceMenuOpen(false);
     setIsDownloadMenuOpen(false);
+    setIsResourceListExpanded(false);
   }
 
   function openCell(cell: NonNullable<ActiveCell>) {
@@ -4118,38 +4210,56 @@ export function ExplorerPrototype({
         ) : null}
         <div className="flex min-h-0 flex-1">
           <aside
-            className="resource-sidebar desktop-resource-sidebar relative shrink-0 flex-col rounded border-r border-[#E5E5E5] bg-[#FFFFFF] transition-[width] duration-200"
+            className={`resource-sidebar desktop-resource-sidebar relative shrink-0 flex-col rounded bg-[#FFFFFF] transition-[width] duration-200 ${
+              isResourceListExpanded ? "border-r-0" : "border-r border-[#E5E5E5]"
+            }`}
             style={{
-              width: isSidebarCollapsed
-                ? collapsedResourceSidebarWidth
-                : resourceSidebarWidth,
+              width: isResourceListExpanded
+                ? "100%"
+                : isSidebarCollapsed
+                  ? collapsedResourceSidebarWidth
+                  : resourceSidebarWidth,
             }}
           >
             <div className="flex h-14 items-center justify-between border-b border-[#E5E5E5] bg-[#f6f6f6] px-3">
               {isSidebarCollapsed ? null : (
-                <span className="resource-sidebar-title text-[13px] font-medium text-[#161616]">
-                  Ressources
+                <span className="resource-sidebar-title text-[14px] font-medium text-[#161616]">
+                  Ressources <span className="font-normal text-[#666666]">({explorerResources.length})</span>
                 </span>
               )}
-              <button
-                type="button"
-                onClick={() => setIsSidebarCollapsed((current) => !current)}
-                aria-label="Afficher ou masquer la navigation des ressources"
-                title="Afficher ou masquer la navigation des ressources"
-                className="flex h-6 w-6 cursor-pointer items-center justify-center rounded transition-colors hover:bg-[#eeeeee]"
-              >
-                <Icon
-                  path={
-                    isSidebarCollapsed
-                      ? icons.sidebarUnfold
-                      : icons.sidebarFold
-                  }
-                />
-              </button>
+              <span className="flex items-center gap-1">
+                {!isSidebarCollapsed ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsResourceListExpanded((current) => !current)}
+                    className="inline-flex h-7 items-center gap-1 rounded px-2 text-[13px] font-medium text-[#161616] underline-offset-4 hover:bg-[#eeeeee] hover:underline"
+                  >
+                    {isResourceListExpanded ? (
+                      <>
+                        <RiArrowLeftLine aria-hidden className="h-3.5 w-3.5" />
+                        Revenir à l’explorateur
+                      </>
+                    ) : (
+                      "Tout afficher"
+                    )}
+                  </button>
+                ) : null}
+                {!isResourceListExpanded ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsSidebarCollapsed((current) => !current)}
+                    aria-label="Afficher ou masquer la navigation des ressources"
+                    title="Afficher ou masquer la navigation des ressources"
+                    className="flex h-6 w-6 cursor-pointer items-center justify-center rounded transition-colors hover:bg-[#eeeeee]"
+                  >
+                    <Icon path={isSidebarCollapsed ? icons.sidebarUnfold : icons.sidebarFold} />
+                  </button>
+                ) : null}
+              </span>
             </div>
 
             <div
-              className={`resource-sidebar-content flex flex-col gap-3 p-2 ${
+              className={`resource-sidebar-content min-h-0 flex-1 flex-col gap-3 overflow-auto p-2 ${
                 isSidebarCollapsed ? "hidden" : ""
               }`}
             >
@@ -4160,12 +4270,12 @@ export function ExplorerPrototype({
                   onChange={(event) => setResourceSearchQuery(event.target.value)}
                   aria-label="Rechercher une ressource"
                   placeholder="Rechercher une ressource"
-                  className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
+                  className="min-w-0 flex-1 bg-transparent text-[14px] text-[#3a3a3a] outline-none placeholder:text-[#3a3a3a]"
                 />
               </label>
 
               <section className="space-y-0.5">
-                <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
+                <p className="h-8 px-1 py-2 text-[13px] font-medium leading-4 text-[#3a3a3a]">
                   {mainResources.length} Fichiers principaux
                 </p>
                 {mainResources.map((resource) => (
@@ -4173,6 +4283,7 @@ export function ExplorerPrototype({
                     key={resource.id}
                     resource={resource}
                     active={resource.id === activeResource.id}
+                    expanded={isResourceListExpanded}
                     onSelect={() => selectResource(resource)}
                     onShowTooltip={showResourceTooltip}
                     onHideTooltip={() => setResourceTooltip(null)}
@@ -4182,14 +4293,15 @@ export function ExplorerPrototype({
 
               {documentationResources.length > 0 ? (
                 <section className="space-y-0.5">
-                  <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
+                  <p className="h-8 px-1 py-2 text-[13px] font-medium leading-4 text-[#3a3a3a]">
                     {documentationResources.length} Documentation
                   </p>
                   {documentationResources.map((resource) => (
-                    <ResourceItem
+                      <ResourceItem
                       key={resource.id}
                       resource={resource}
-                      active={resource.id === activeResource.id}
+                        active={resource.id === activeResource.id}
+                        expanded={isResourceListExpanded}
                       onSelect={() => selectResource(resource)}
                       onShowTooltip={showResourceTooltip}
                       onHideTooltip={() => setResourceTooltip(null)}
@@ -4198,7 +4310,7 @@ export function ExplorerPrototype({
                 </section>
               ) : null}
             </div>
-            {isSidebarCollapsed ? null : (
+            {isSidebarCollapsed || isResourceListExpanded ? null : (
               <button
                 type="button"
                 aria-label="Redimensionner la navigation des ressources"
@@ -4209,16 +4321,24 @@ export function ExplorerPrototype({
                   event.stopPropagation();
                   toggleResourceSidebarAutoFit();
                 }}
-                className="absolute -right-1 top-0 z-20 h-full w-2 cursor-col-resize touch-none rounded-r transition-colors hover:bg-[#000091]/10"
+                className="group/resize absolute -right-1.5 top-0 z-20 flex h-full w-3 cursor-col-resize touch-none items-start justify-center"
               >
                 <span className="sr-only">Redimensionner</span>
+                <span
+                  aria-hidden="true"
+                  className="mt-3 flex h-8 w-2 flex-col items-center justify-center gap-0.5 rounded-full border border-[#cecece] bg-white shadow-sm transition-colors group-hover/resize:border-[#000091] group-hover/resize:bg-[#ececfe]"
+                >
+                  <span className="h-0.5 w-0.5 rounded-full bg-[#666666] group-hover/resize:bg-[#000091]" />
+                  <span className="h-0.5 w-0.5 rounded-full bg-[#666666] group-hover/resize:bg-[#000091]" />
+                  <span className="h-0.5 w-0.5 rounded-full bg-[#666666] group-hover/resize:bg-[#000091]" />
+                </span>
               </button>
             )}
           </aside>
 
-          <section className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[#FFFFFF]">
+          <section className={`${isResourceListExpanded ? "hidden" : "flex"} min-w-0 flex-1 flex-col overflow-hidden bg-[#FFFFFF]`}>
             <header className="flex h-14 items-center justify-between gap-2 border-b border-[#E5E5E5] bg-[#f6f6f6] px-3">
-              <div className="flex min-w-0 flex-1 items-center gap-1 text-[13px]">
+              <div className="flex min-w-0 flex-1 items-center gap-1 text-[14px]">
                 <div className="mobile-explorer-only relative min-w-0 flex-1 items-center">
                   {isMobileResourceMenuOpen ? (
                     <button
@@ -4241,10 +4361,7 @@ export function ExplorerPrototype({
                     }}
                     className="relative z-30 flex h-9 w-full min-w-0 items-center gap-1 text-left"
                   >
-                    <Icon
-                      path={icons[activeResource.type]}
-                      className="h-4 w-4 shrink-0"
-                    />
+                    <ResourceTypeIcon resource={activeResource} />
                     <span className="min-w-0 flex-1 truncate font-medium text-[#161616]">
                       {activeResource.name}
                     </span>
@@ -4264,7 +4381,7 @@ export function ExplorerPrototype({
                   {isMobileResourceMenuOpen ? (
                     <div className="absolute left-0 right-0 top-11 z-30 max-h-[70dvh] overflow-hidden rounded border border-[#E5E5E5] bg-[#FFFFFF] shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]">
                       <div className="flex h-8 items-center gap-1 border-b border-[#E5E5E5] bg-[#f6f6f6] px-2">
-                        <p className="min-w-0 flex-1 truncate text-[12px] font-bold uppercase leading-[1.4] text-[#161616]">
+                        <p className="min-w-0 flex-1 truncate text-[13px] font-bold uppercase leading-[1.4] text-[#161616]">
                           Ressources
                         </p>
                         <button
@@ -4278,7 +4395,7 @@ export function ExplorerPrototype({
                       </div>
                       <div className="max-h-[calc(70dvh-2rem)] overflow-auto p-2">
                         <section className="space-y-0.5">
-                          <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
+                          <p className="h-8 px-1 py-2 text-[13px] font-medium leading-4 text-[#3a3a3a]">
                             {mainResources.length} Fichiers principaux
                           </p>
                           {mainResources.map((resource) => (
@@ -4297,7 +4414,7 @@ export function ExplorerPrototype({
                         </section>
                         {documentationResources.length > 0 ? (
                           <section className="mt-3 space-y-0.5">
-                            <p className="h-7 px-1 py-2 text-[12px] font-medium leading-3 text-[#3a3a3a]">
+                            <p className="h-8 px-1 py-2 text-[13px] font-medium leading-4 text-[#3a3a3a]">
                               {documentationResources.length} Documentation
                             </p>
                             {documentationResources.map((resource) => (
@@ -4319,10 +4436,9 @@ export function ExplorerPrototype({
                     </div>
                   ) : null}
                 </div>
-                <Icon
-                  path={icons[activeResource.type]}
-                  className="desktop-explorer-only h-4 w-4 shrink-0"
-                />
+                <span className="desktop-explorer-only">
+                  <ResourceTypeIcon resource={activeResource} />
+                </span>
                 <span className="desktop-explorer-only min-w-0 truncate font-medium">
                   {activeResource.name}
                 </span>
@@ -4584,6 +4700,8 @@ export function ExplorerPrototype({
               onClearDate={clearDateFilter}
               onClearSort={() => setSortState(null)}
               onClearAll={clearAllFilters}
+              downloadHref={filteredRowsDownloadHref}
+              downloadFileName={`${activeResource.name.replaceAll(/[^a-zA-Z0-9._-]+/g, "-")}-filtre.csv`}
             />
 
             <div className="relative min-h-0 flex-1">
@@ -4782,14 +4900,14 @@ export function ExplorerPrototype({
           }}
           role="tooltip"
         >
-          <p className="text-[13px] font-medium leading-5 text-[#161616]">
+          <p className="text-[14px] font-medium leading-5 text-[#161616]">
             {resourceTooltip.resource.name}
           </p>
-          <div className="mt-1 flex items-center gap-1 text-[12px] leading-4 text-[#3a3a3a]">
+          <div className="mt-1 flex items-center gap-1 text-[13px] leading-4 text-[#3a3a3a]">
             <span>{resourceTooltip.resource.size}</span>
             <FormatTag>{resourceTooltip.resource.format}</FormatTag>
           </div>
-          <dl className="mt-2 grid gap-1 border-t border-[#E5E5E5] pt-2 text-[12px] leading-4">
+          <dl className="mt-2 grid gap-1 border-t border-[#E5E5E5] pt-2 text-[13px] leading-4">
             <div className="flex items-center justify-between gap-3">
               <dt className="text-[#666666]">Mise à jour</dt>
               <dd className="whitespace-nowrap font-medium text-[#161616]">
