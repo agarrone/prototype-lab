@@ -676,7 +676,7 @@ const producers = [
   "Agence nationale de cohésion",
 ];
 
-const rows: Row[] = Array.from({ length: 30 }, (_, index) => {
+const rows: Row[] = Array.from({ length: 90 }, (_, index) => {
   const rank = index + 1;
   const commune = communes[index % communes.length];
   const category = categories[index % categories.length];
@@ -3619,12 +3619,16 @@ export function ExplorerPrototype({
   datasetReference,
   datasetResources,
   initialResourceId,
+  showResourceNavigation = true,
+  contentViewsOnly = false,
 }: {
   embedded?: boolean;
   returnTo?: string;
   datasetReference?: string;
   datasetResources?: DatagouvResourceSummary[];
   initialResourceId?: string;
+  showResourceNavigation?: boolean;
+  contentViewsOnly?: boolean;
 }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isResourceListExpanded, setIsResourceListExpanded] = useState(false);
@@ -3671,6 +3675,8 @@ export function ExplorerPrototype({
   >({});
   const [hasTableScrolled, setHasTableScrolled] = useState(false);
   const [resourceTooltip, setResourceTooltip] = useState<ResourceTooltip>(null);
+  const [visibleRowCount, setVisibleRowCount] = useState(30);
+  const [mobileVisibleRowCount, setMobileVisibleRowCount] = useState(15);
 
   useEffect(() => {
     if (embedded || datasetResources?.length) {
@@ -3848,6 +3854,14 @@ export function ExplorerPrototype({
   const activeResource =
     explorerResources.find((resource) => resource.id === activeResourceId) ??
     explorerResources[0];
+  const visibleTabs = contentViewsOnly
+    ? activeResource.tabs.filter(
+        (tab): tab is ExplorerTab => tab === "Aperçu" || tab === "Carte",
+      )
+    : activeResource.tabs;
+  const showViewNavigation = !contentViewsOnly || visibleTabs.length > 1;
+  const getVisibleTabLabel = (tab: ExplorerTab) =>
+    contentViewsOnly && tab === "Aperçu" ? "Tableau" : tab;
 
   const filteredResources = useMemo(() => {
     const normalizedQuery = resourceSearchQuery.trim().toLowerCase();
@@ -3969,6 +3983,24 @@ export function ExplorerPrototype({
 
     return `data:text/csv;charset=utf-8,%EF%BB%BF${encodeURIComponent(csv)}`;
   }, [filteredRows]);
+
+  const displayedRows = contentViewsOnly
+    ? filteredRows.slice(0, visibleRowCount)
+    : filteredRows;
+  const mobileDisplayedRows = contentViewsOnly
+    ? filteredRows.slice(0, mobileVisibleRowCount)
+    : filteredRows;
+  const hasMoreRows = contentViewsOnly && displayedRows.length < filteredRows.length;
+  const hasMoreMobileRows =
+    contentViewsOnly && mobileDisplayedRows.length < filteredRows.length;
+  const remainingRowCount = filteredRows.length - displayedRows.length;
+  const remainingMobileRowCount =
+    filteredRows.length - mobileDisplayedRows.length;
+
+  useEffect(() => {
+    setVisibleRowCount(30);
+    setMobileVisibleRowCount(15);
+  }, [activeResourceId, categoryFilters, contentViewsOnly, dateFilters, numberRanges, searchQuery, sortState]);
 
   function updateSort(key: ColumnKey, direction: SortDirection) {
     setSortState({ key, direction });
@@ -4209,7 +4241,7 @@ export function ExplorerPrototype({
           />
         ) : null}
         <div className="flex min-h-0 flex-1">
-          <aside
+          {showResourceNavigation ? <aside
             className={`resource-sidebar desktop-resource-sidebar relative shrink-0 flex-col rounded bg-[#FFFFFF] transition-[width] duration-200 ${
               isResourceListExpanded ? "border-r-0" : "border-r border-[#E5E5E5]"
             }`}
@@ -4334,7 +4366,7 @@ export function ExplorerPrototype({
                 </span>
               </button>
             )}
-          </aside>
+          </aside> : null}
 
           <section className={`${isResourceListExpanded ? "hidden" : "flex"} min-w-0 flex-1 flex-col overflow-hidden bg-[#FFFFFF]`}>
             <header className="flex h-14 items-center justify-between gap-2 border-b border-[#E5E5E5] bg-[#f6f6f6] px-3">
@@ -4350,9 +4382,13 @@ export function ExplorerPrototype({
                   ) : null}
                   <button
                     type="button"
-                    aria-expanded={isMobileResourceMenuOpen}
-                    aria-haspopup="menu"
+                    disabled={!showResourceNavigation}
+                    aria-expanded={showResourceNavigation ? isMobileResourceMenuOpen : undefined}
+                    aria-haspopup={showResourceNavigation ? "menu" : undefined}
                     onClick={() => {
+                      if (!showResourceNavigation) {
+                        return;
+                      }
                       setIsMobileResourceMenuOpen((current) => !current);
                       setIsDownloadMenuOpen(false);
                       setIsColumnSelectorOpen(false);
@@ -4371,14 +4407,16 @@ export function ExplorerPrototype({
                     </span>
                     <span className="shrink-0 text-[#3a3a3a]">·</span>
                     <FormatTag>{activeResource.format}</FormatTag>
-                    <Icon
-                      path={icons.arrowDownS}
-                      className={`h-4 w-4 shrink-0 text-[#3a3a3a] ${
-                        isMobileResourceMenuOpen ? "rotate-180" : ""
-                      }`}
-                    />
+                    {showResourceNavigation ? (
+                      <Icon
+                        path={icons.arrowDownS}
+                        className={`h-4 w-4 shrink-0 text-[#3a3a3a] ${
+                          isMobileResourceMenuOpen ? "rotate-180" : ""
+                        }`}
+                      />
+                    ) : null}
                   </button>
-                  {isMobileResourceMenuOpen ? (
+                  {showResourceNavigation && isMobileResourceMenuOpen ? (
                     <div className="absolute left-0 right-0 top-11 z-30 max-h-[70dvh] overflow-hidden rounded border border-[#E5E5E5] bg-[#FFFFFF] shadow-[0_2px_4px_rgba(0,0,0,0.04),2px_4px_16px_rgba(0,0,0,0.12)]">
                       <div className="flex h-8 items-center gap-1 border-b border-[#E5E5E5] bg-[#f6f6f6] px-2">
                         <p className="min-w-0 flex-1 truncate text-[13px] font-bold uppercase leading-[1.4] text-[#161616]">
@@ -4528,7 +4566,7 @@ export function ExplorerPrototype({
               ) : null}
             </header>
 
-            <div className="mobile-explorer-only h-12 items-center border-b border-[#E5E5E5] bg-[#FFFFFF] px-2">
+            {showViewNavigation ? <div className="mobile-explorer-only h-12 items-center border-b border-[#E5E5E5] bg-[#FFFFFF] px-2">
               <label className="flex h-9 w-full items-center gap-2 rounded border border-[#E5E5E5] bg-[#FFFFFF] px-2">
                 <select
                   value={activeTab}
@@ -4543,19 +4581,19 @@ export function ExplorerPrototype({
                   aria-label="Choisir une vue"
                   className="min-w-0 flex-1 appearance-none bg-transparent text-[13px] font-medium text-[#161616] outline-none"
                 >
-                  {activeResource.tabs.map((tab) => (
+                  {visibleTabs.map((tab) => (
                     <option key={tab} value={tab}>
-                      {tab}
+                      {getVisibleTabLabel(tab)}
                     </option>
                   ))}
                 </select>
                 <Icon path={icons.arrowDownS} className="h-4 w-4 shrink-0 text-[#3a3a3a]" />
               </label>
-            </div>
+            </div> : null}
 
-            <div className="desktop-explorer-only h-12 items-center border-b border-[#E5E5E5] bg-[#FFFFFF] px-2">
+            {showViewNavigation ? <div className="desktop-explorer-only h-12 items-center border-b border-[#E5E5E5] bg-[#FFFFFF] px-2">
               <div className="flex flex-wrap items-center rounded border border-[#E5E5E5]">
-                {activeResource.tabs.map((tab) => (
+                {visibleTabs.map((tab) => (
                   <button
                     key={tab}
                     type="button"
@@ -4573,11 +4611,11 @@ export function ExplorerPrototype({
                         : "text-[#161616]"
                     }`}
                   >
-                    {tab}
+                    {getVisibleTabLabel(tab)}
                   </button>
                 ))}
               </div>
-            </div>
+            </div> : null}
 
             {activeTab === "Description" ? (
               <DescriptionPanel />
@@ -4669,15 +4707,15 @@ export function ExplorerPrototype({
                   ) : null}
                 </span>
                 <span
-                  aria-label={`${filteredRows.length} sur ${rows.length} lignes`}
+                  aria-label={`${displayedRows.length} lignes affichées sur ${filteredRows.length} résultats`}
                   className="flex h-6 shrink-0 items-center gap-1 rounded px-1"
                 >
                   <Icon path={icons.rows} className="h-3.5 w-3.5 text-[#3a3a3a]" />
                   <span className="hidden whitespace-nowrap sm:inline">
-                    Lignes {filteredRows.length} sur {rows.length}
+                    {displayedRows.length} lignes affichées sur {filteredRows.length}
                   </span>
                   <span className="whitespace-nowrap sm:hidden">
-                    {filteredRows.length}/{rows.length}
+                    {mobileDisplayedRows.length}/{filteredRows.length}
                   </span>
                 </span>
               </div>
@@ -4758,7 +4796,11 @@ export function ExplorerPrototype({
               />
 
               <div
-                className="h-full overflow-auto"
+                className={`h-full overflow-auto ${
+                  contentViewsOnly && (hasMoreRows || hasMoreMobileRows)
+                    ? "pb-10"
+                    : ""
+                }`}
                 onScroll={(event: UIEvent<HTMLDivElement>) => {
                   const isScrolled = event.currentTarget.scrollTop > 0;
 
@@ -4769,7 +4811,7 @@ export function ExplorerPrototype({
               >
                 {visibleColumns.length > 0 && filteredRows.length > 0 ? (
                   <div className="mobile-data-cards space-y-2 p-2">
-                    {filteredRows.map((row) => (
+                    {mobileDisplayedRows.map((row) => (
                       <MobileDataCard
                         key={row.id}
                         row={row}
@@ -4831,7 +4873,7 @@ export function ExplorerPrototype({
                     </button>
                   </div>
                 ) : filteredRows.length > 0 ? (
-                  filteredRows.map((row) => (
+                  displayedRows.map((row) => (
                     <div
                       key={row.id}
                       className="desktop-data-table h-8 w-max min-w-full bg-[#FFFFFF]"
@@ -4884,6 +4926,30 @@ export function ExplorerPrototype({
                   </div>
                 )}
               </div>
+              {visibleColumns.length > 0 && hasMoreMobileRows ? (
+                <button
+                  type="button"
+                  onClick={() =>
+                    setMobileVisibleRowCount((count) => count + 15)
+                  }
+                  className="mobile-explorer-only absolute inset-x-0 bottom-0 z-20 h-10 items-center justify-center border-t border-[#E5E5E5] bg-[#FFFFFF] text-[13px] font-medium text-[#000091] shadow-[0_-4px_10px_rgba(0,0,0,0.06)] hover:bg-[#f6f6f6]"
+                >
+                  {remainingMobileRowCount <= 15
+                    ? `Voir les ${remainingMobileRowCount} dernières lignes`
+                    : "Voir 15 lignes de plus"}
+                </button>
+              ) : null}
+              {visibleColumns.length > 0 && hasMoreRows ? (
+                <button
+                  type="button"
+                  onClick={() => setVisibleRowCount((count) => count + 30)}
+                  className="desktop-explorer-only absolute inset-x-0 bottom-0 z-20 h-10 items-center justify-center border-t border-[#E5E5E5] bg-[#FFFFFF] text-[13px] font-medium text-[#000091] shadow-[0_-4px_10px_rgba(0,0,0,0.06)] hover:bg-[#f6f6f6]"
+                >
+                  {remainingRowCount <= 30
+                    ? `Voir les ${remainingRowCount} dernières lignes`
+                    : "Voir 30 lignes de plus"}
+                </button>
+              ) : null}
             </div>
               </>
             )}

@@ -53,6 +53,7 @@ const prototypeIcons = {
   "preview-dashboard": RiBarChartBoxLine,
   templates: RiLayout2Line,
   "explore-in-context": RiMicroscopeLine,
+  "explore-in-a-page": RiMicroscopeLine,
   "test-assistant": RiMessageAi3Line,
 };
 
@@ -62,6 +63,7 @@ const currentPrototypeSlugs = [
   "explorateur-sql-et-ia",
   "enrichissement-donnees",
   "explore-in-context",
+  "explore-in-a-page",
 ] as const;
 
 const currentPrototypes = currentPrototypeSlugs

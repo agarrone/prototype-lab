@@ -138,6 +138,15 @@ export const prototypes: Prototype[] = [
     figmaUrl:
       "https://www.figma.com/design/ZKqud6Wa8ue8fM0YEhH2pc/Jeu-de-donn%C3%A9es?node-id=1-2006&m=dev",
   },
+  {
+    slug: "explore-in-a-page",
+    title: "Explore in a page",
+    description:
+      "Prototype d’intégration d’un bloc explorateur au sein d’une page éditoriale de type article.",
+    status: "exploration",
+    tags: ["article", "explorateur", "intégration"],
+    figmaUrl: "",
+  },
 ];
 
 export function getPrototypeBySlug(slug: string) {
