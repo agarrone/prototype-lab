@@ -1,4 +1,57 @@
 @import "tailwindcss";
+
+:root {
+  --resize-dur: 300ms;
+  --resize-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.t-resize {
+  transition:
+    width var(--resize-dur) var(--resize-ease),
+    height var(--resize-dur) var(--resize-ease);
+  will-change: width, height;
+}
+
+.dvf-map-shell {
+  position: relative;
+}
+
+.dvf-mobile-back {
+  display: none;
+}
+
+.dvf-desktop-sidebar-toggle {
+  display: flex;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-resize {
+    transition: none !important;
+  }
+}
+
+@media (max-width: 1023px) {
+  .dvf-map-shell {
+    position: fixed !important;
+    inset: 0 !important;
+    z-index: 40 !important;
+    height: 100dvh !important;
+    min-height: 0 !important;
+  }
+
+  .dvf-desktop-sidebar-toggle {
+    display: none !important;
+  }
+
+
+  .dvf-mobile-back {
+    display: inline-flex !important;
+  }
+
+  .dvf-desktop-panel-title {
+    display: none !important;
+  }
+}
 @import "@datagouv/components-next/dist/components.css";
 
 :root {
@@ -7,6 +60,32 @@
   --font-marianne: Marianne, Arial, sans-serif;
   --font-inconsolata: Inconsolata, ui-monospace, SFMono-Regular, Menlo, Monaco,
     Consolas, monospace;
+}
+
+.dvf-map.maplibregl-map,
+.dvf-map .maplibregl-ctrl-group,
+.dvf-map .maplibregl-popup-content {
+  font-family: var(--font-marianne), Arial, sans-serif;
+}
+
+.dvf-map .maplibregl-ctrl-group,
+.dvf-map .maplibregl-popup-content {
+  border: 1px solid #E5E5E5;
+  border-radius: 0;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.dvf-map .maplibregl-popup-content {
+  padding: 10px 12px;
+  color: #161616;
+  font-family: var(--font-marianne), Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.dvf-map .maplibregl-ctrl button:focus-visible {
+  outline: 2px solid #000091;
+  outline-offset: -2px;
 }
 
 @theme inline {

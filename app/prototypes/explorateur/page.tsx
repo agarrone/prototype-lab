@@ -3621,6 +3621,9 @@ export function ExplorerPrototype({
   initialResourceId,
   showResourceNavigation = true,
   contentViewsOnly = false,
+  showEmbeddedHeader = true,
+  showEmbeddedResourceContext = true,
+  showEmbeddedFullscreen = true,
 }: {
   embedded?: boolean;
   returnTo?: string;
@@ -3629,6 +3632,9 @@ export function ExplorerPrototype({
   initialResourceId?: string;
   showResourceNavigation?: boolean;
   contentViewsOnly?: boolean;
+  showEmbeddedHeader?: boolean;
+  showEmbeddedResourceContext?: boolean;
+  showEmbeddedFullscreen?: boolean;
 }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isResourceListExpanded, setIsResourceListExpanded] = useState(false);
@@ -4369,8 +4375,8 @@ export function ExplorerPrototype({
           </aside> : null}
 
           <section className={`${isResourceListExpanded ? "hidden" : "flex"} min-w-0 flex-1 flex-col overflow-hidden bg-[#FFFFFF]`}>
-            <header className="flex h-14 items-center justify-between gap-2 border-b border-[#E5E5E5] bg-[#f6f6f6] px-3">
-              <div className="flex min-w-0 flex-1 items-center gap-1 text-[14px]">
+            {showEmbeddedHeader ? <header className={`flex h-14 items-center gap-2 border-b border-[#E5E5E5] bg-[#f6f6f6] px-3 ${showEmbeddedResourceContext ? "justify-between" : "justify-end"}`}>
+              <div className={`${showEmbeddedResourceContext ? "flex" : "hidden"} min-w-0 flex-1 items-center gap-1 text-[14px]`}>
                 <div className="mobile-explorer-only relative min-w-0 flex-1 items-center">
                   {isMobileResourceMenuOpen ? (
                     <button
@@ -4532,7 +4538,7 @@ export function ExplorerPrototype({
                       <DownloadMenu onClose={() => setIsDownloadMenuOpen(false)} />
                     ) : null}
                   </div>
-                  {embedded ? (
+                  {embedded && showEmbeddedFullscreen ? (
                     <Link
                       href={`/prototypes/explorateur?${fullscreenParams.toString()}`}
                       aria-label="Afficher l’explorateur en plein écran"
@@ -4543,7 +4549,7 @@ export function ExplorerPrototype({
                         className="h-4 w-4 text-[#3a3a3a]"
                       />
                     </Link>
-                  ) : (
+                  ) : !embedded ? (
                     <button
                       type="button"
                       aria-label="Afficher l’explorateur en plein écran"
@@ -4561,10 +4567,10 @@ export function ExplorerPrototype({
                         className="h-4 w-4 text-[#3a3a3a]"
                       />
                     </button>
-                  )}
+                  ) : null}
                 </div>
               ) : null}
-            </header>
+            </header> : null}
 
             {showViewNavigation ? <div className="mobile-explorer-only h-12 items-center border-b border-[#E5E5E5] bg-[#FFFFFF] px-2">
               <label className="flex h-9 w-full items-center gap-2 rounded border border-[#E5E5E5] bg-[#FFFFFF] px-2">
