@@ -76,9 +76,19 @@ export default function DvfMap({
   const mapRef = useRef<import("maplibre-gl").Map | null>(null);
   const contextRef = useRef<DvfMapContext>(initialDvfMapContext);
   const selectedCameraRef = useRef<{ center: [number, number]; zoom: number } | null>(null);
+  const onContextChangeRef = useRef(onContextChange);
+  const onColorsVisibilityChangeRef = useRef(onColorsVisibilityChange);
   const [canReturnToSelection, setCanReturnToSelection] = useState(false);
   const [isSatellite, setIsSatellite] = useState(false);
   const [colorsVisible, setColorsVisible] = useState(true);
+
+  useEffect(() => {
+    onContextChangeRef.current = onContextChange;
+  }, [onContextChange]);
+
+  useEffect(() => {
+    onColorsVisibilityChangeRef.current = onColorsVisibilityChange;
+  }, [onColorsVisibilityChange]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -86,9 +96,13 @@ export default function DvfMap({
     contextRef.current = navigationTarget.context;
     selectedCameraRef.current = { center: navigationTarget.center, zoom: navigationTarget.zoom };
     setCanReturnToSelection(true);
-    onContextChange?.(navigationTarget.context);
+    onContextChangeRef.current?.(navigationTarget.context);
+    if (navigationTarget.context.selectedParcel) {
+      if (map.getLayer("dvf-parcelle-selected-fill")) map.setFilter("dvf-parcelle-selected-fill", ["==", ["get", "id"], navigationTarget.context.selectedParcel]);
+      if (map.getLayer("dvf-parcelle-selected")) map.setFilter("dvf-parcelle-selected", ["==", ["get", "id"], navigationTarget.context.selectedParcel]);
+    }
     map.flyTo({ center: navigationTarget.center, zoom: navigationTarget.zoom });
-  }, [navigationTarget, onContextChange]);
+  }, [navigationTarget]);
 
   useEffect(() => {
     let disposed = false;
@@ -134,7 +148,7 @@ export default function DvfMap({
               : undefined,
         };
         contextRef.current = context;
-        onContextChange?.(context);
+        onContextChangeRef.current?.(context);
       };
 
       map.on("load", () => {
@@ -167,9 +181,10 @@ export default function DvfMap({
           { id: "dvf-section-line", type: "line", source: "dvf-cadastre", "source-layer": "sections", minzoom: 11, maxzoom: 14, paint: { "line-color": "rgba(0,0,0,.6)", "line-width": 0.7 } },
           { id: "dvf-parcelle-base", type: "fill", source: "dvf-cadastre", "source-layer": "parcelles", minzoom: 14, paint: { "fill-color": "#E5E5E5", "fill-opacity": 0.48 } },
           { id: "dvf-parcelle-fill", type: "fill", source: "dvf-cadastre", "source-layer": "parcelles", minzoom: 14, filter: ["!=", ["%", ["to-number", ["get", "numero"], 0], 4], 0], paint: { "fill-color": "#6A6AF4", "fill-opacity": 0.58 } },
+          { id: "dvf-parcelle-selected-fill", type: "fill", source: "dvf-cadastre", "source-layer": "parcelles", minzoom: 14, filter: ["==", ["get", "id"], ""], paint: { "fill-color": "#E1000F", "fill-opacity": 0.72 } },
           { id: "dvf-parcelle-line", type: "line", source: "dvf-cadastre", "source-layer": "parcelles", minzoom: 14, paint: { "line-color": "rgba(80,80,80,.52)", "line-width": 0.6 } },
           { id: "dvf-parcelle-hover", type: "line", source: "dvf-cadastre", "source-layer": "parcelles", minzoom: 14, filter: ["==", ["get", "id"], ""], paint: { "line-color": "#6A6AF4", "line-width": 2 } },
-          { id: "dvf-parcelle-selected", type: "line", source: "dvf-cadastre", "source-layer": "parcelles", minzoom: 14, filter: ["==", ["get", "id"], ""], paint: { "line-color": "#000091", "line-width": 3 } },
+          { id: "dvf-parcelle-selected", type: "line", source: "dvf-cadastre", "source-layer": "parcelles", minzoom: 14, filter: ["==", ["get", "id"], ""], paint: { "line-color": "#A1000B", "line-width": 3 } },
         ];
         layers.forEach((layer) => map.addLayer(layer, firstLabelLayer));
 
@@ -237,6 +252,7 @@ export default function DvfMap({
           const id = String(feature.properties?.id ?? "");
           selectedCameraRef.current = { center: [event.lngLat.lng, event.lngLat.lat], zoom: map.getZoom() };
           setCanReturnToSelection(true);
+          map.setFilter("dvf-parcelle-selected-fill", ["==", ["get", "id"], id]);
           map.setFilter("dvf-parcelle-selected", ["==", ["get", "id"], id]);
           publishContext({ scale: "parcelle", code: id, label: `Parcelle ${feature.properties?.section ?? ""} ${feature.properties?.numero ?? ""}`.trim(), selectedParcel: id });
         });
@@ -246,6 +262,7 @@ export default function DvfMap({
       map.on("zoomend", () => {
         const scale = scaleByZoom(map.getZoom());
         if (scale !== "parcelle" && map.getLayer("dvf-parcelle-selected")) {
+          map.setFilter("dvf-parcelle-selected-fill", ["==", ["get", "id"], ""]);
           map.setFilter("dvf-parcelle-selected", ["==", ["get", "id"], ""]);
         }
         publishContext({ scale });
@@ -258,7 +275,7 @@ export default function DvfMap({
       mapRef.current?.remove();
       mapRef.current = null;
     };
-  }, [onContextChange]);
+  }, []);
 
   return (
     <div className="relative h-full min-h-[520px] w-full">
@@ -267,7 +284,7 @@ export default function DvfMap({
         <button type="button" onClick={() => mapRef.current?.zoomIn()} className="flex h-9 w-9 items-center justify-center border-b border-[#E5E5E5] text-[#161616] hover:bg-[#eeeeee] focus-visible:relative focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091]" aria-label="Zoomer"><RiAddLine aria-hidden className="h-5 w-5" /></button>
         <button type="button" onClick={() => mapRef.current?.zoomOut()} className="flex h-9 w-9 items-center justify-center border-b border-[#E5E5E5] text-[#161616] hover:bg-[#eeeeee] focus-visible:relative focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091]" aria-label="Dézoomer"><RiSubtractLine aria-hidden className="h-5 w-5" /></button>
         {canReturnToSelection ? <button type="button" onClick={() => { const camera = selectedCameraRef.current; if (camera) mapRef.current?.flyTo(camera); }} className="flex h-9 w-9 items-center justify-center border-b border-[#E5E5E5] text-[#161616] hover:bg-[#eeeeee] focus-visible:relative focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091]" aria-label="Revenir à la zone sélectionnée" title="Revenir à la zone sélectionnée"><RiFocus3Line aria-hidden className="h-5 w-5" /></button> : null}
-        <button type="button" aria-pressed={!colorsVisible} onClick={() => { const next = !colorsVisible; setColorsVisible(next); onColorsVisibilityChange?.(next); const opacityByLayer: Record<string, number> = { "dvf-epci-fill": 0.8, "dvf-commune-fill": 0.8, "dvf-section-fill": 0.8, "dvf-parcelle-base": 0.48, "dvf-parcelle-fill": 0.58 }; Object.entries(opacityByLayer).forEach(([layerId, opacity]) => { if (mapRef.current?.getLayer(layerId)) mapRef.current.setPaintProperty(layerId, "fill-opacity", next ? opacity : 0); }); }} className={`flex h-9 w-9 items-center justify-center border-b border-[#E5E5E5] text-[#161616] hover:bg-[#eeeeee] focus-visible:relative focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091] ${!colorsVisible ? "bg-[#ececfe] text-[#000091]" : ""}`} aria-label={colorsVisible ? "Masquer les couleurs de données" : "Afficher les couleurs de données"} title={colorsVisible ? "Masquer les couleurs" : "Afficher les couleurs"}><RiPaletteLine aria-hidden className="h-5 w-5" /></button>
+        <button type="button" aria-pressed={!colorsVisible} onClick={() => { const next = !colorsVisible; setColorsVisible(next); onColorsVisibilityChangeRef.current?.(next); const opacityByLayer: Record<string, number> = { "dvf-epci-fill": 0.8, "dvf-commune-fill": 0.8, "dvf-section-fill": 0.8, "dvf-parcelle-base": 0.48, "dvf-parcelle-fill": 0.58 }; Object.entries(opacityByLayer).forEach(([layerId, opacity]) => { if (mapRef.current?.getLayer(layerId)) mapRef.current.setPaintProperty(layerId, "fill-opacity", next ? opacity : 0); }); }} className={`flex h-9 w-9 items-center justify-center border-b border-[#E5E5E5] text-[#161616] hover:bg-[#eeeeee] focus-visible:relative focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091] ${!colorsVisible ? "bg-[#ececfe] text-[#000091]" : ""}`} aria-label={colorsVisible ? "Masquer les couleurs de données" : "Afficher les couleurs de données"} title={colorsVisible ? "Masquer les couleurs" : "Afficher les couleurs"}><RiPaletteLine aria-hidden className="h-5 w-5" /></button>
         <button type="button" aria-pressed={isSatellite} onClick={() => { const next = !isSatellite; setIsSatellite(next); if (mapRef.current?.getLayer("dvf-satellite")) mapRef.current.setLayoutProperty("dvf-satellite", "visibility", next ? "visible" : "none"); }} className={`flex h-9 w-9 items-center justify-center text-[#161616] hover:bg-[#eeeeee] focus-visible:relative focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091] ${isSatellite ? "bg-[#ececfe] text-[#000091]" : ""}`} aria-label={isSatellite ? "Afficher la vue plan" : "Afficher la vue satellite"} title={isSatellite ? "Vue plan" : "Vue satellite"}>{isSatellite ? <RiMap2Line aria-hidden className="h-5 w-5" /> : <RiEarthLine aria-hidden className="h-5 w-5" />}</button>
       </div>
     </div>

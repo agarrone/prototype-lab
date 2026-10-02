@@ -101,7 +101,7 @@ function FranceMap({ context, onContextChange, navigationTarget }: { context: Dv
   return (
     <div className="relative h-full min-h-[520px] overflow-hidden bg-[#c8ddf0]">
       <DvfMap onContextChange={onContextChange} navigationTarget={navigationTarget} onColorsVisibilityChange={setColorsVisible} />
-      {legend && colorsVisible ? <div className="absolute bottom-12 right-5 w-[240px] max-w-[calc(100%-2.5rem)] border border-[#E5E5E5] bg-white p-3 shadow-[0_2px_4px_rgba(0,0,0,.08),0_4px_12px_rgba(0,0,0,.08)]">
+      {legend && colorsVisible ? <div className="absolute bottom-12 right-5 w-[240px] max-w-[calc(100%-2.5rem)] rounded border border-[#E5E5E5] bg-white p-3 shadow-[0_2px_4px_rgba(0,0,0,.08),0_4px_12px_rgba(0,0,0,.08)]">
         <div className="flex items-center justify-between gap-3"><p className="text-[12px] font-bold">Prix au m²</p><span className="text-[10px] text-[#666666]">Échelle recalculée</span></div>
         <div className="mt-1.5 h-2 bg-gradient-to-r from-[#028758] via-[#FFF64E] to-[#CC000A]" />
         <div className="mt-1 flex justify-between text-[10px] text-[#666]">
@@ -201,7 +201,7 @@ function ResultStateContent({ state, onRetry, onOpenParcel }: { state: Exclude<P
   return <div className="px-2 py-4"><p className="text-[11px] font-medium uppercase tracking-[.04em] text-[#666666]">Adresse localisée</p><h3 className="mt-1 text-[18px] font-bold">12 rue des Argentiers</h3><p className="mt-1 text-[13px] text-[#666666]">33000 Bordeaux</p><div className="mt-5 border-l-4 border-[#000091] bg-[#f6f6f6] p-4"><p className="text-[13px] font-medium">1 parcelle cadastrale correspond à cette adresse</p><p className="mt-1 text-[12px] leading-5 text-[#666666]">Sélectionnez-la pour consulter les transactions enregistrées.</p></div><button type="button" onClick={onOpenParcel} className="mt-4 inline-flex h-10 items-center bg-[#000091] px-4 text-[13px] font-medium text-white">Voir la parcelle et ses transactions</button></div>;
 }
 
-function StatPanel({ context, propertyType, onPropertyTypeChange, onBreadcrumbNavigate, resultState, onRetry, onOpenParcel, onCloseMobile }: { context: DvfMapContext; propertyType: PropertyType; onPropertyTypeChange: (value: PropertyType) => void; onBreadcrumbNavigate: (target: BreadcrumbTarget) => void; resultState: PrototypeResultState; onRetry: () => void; onOpenParcel: () => void; onCloseMobile: () => void }) {
+function StatPanel({ context, propertyType, onPropertyTypeChange, onBreadcrumbNavigate, resultState, onRetry, onOpenParcel, onCloseMobile, onCollapse }: { context: DvfMapContext; propertyType: PropertyType; onPropertyTypeChange: (value: PropertyType) => void; onBreadcrumbNavigate: (target: BreadcrumbTarget) => void; resultState: PrototypeResultState; onRetry: () => void; onOpenParcel: () => void; onCloseMobile: () => void; onCollapse: () => void }) {
   const [parcelSection, setParcelSection] = useState<ParcelSection>("transactions");
   const locationScale = context.scale === "national" ? "Vue nationale" : context.scale === "departement" ? "Département" : context.scale === "commune" ? "Commune" : "Parcelle cadastrale";
   const isParcelLevel = context.scale === "parcelle";
@@ -231,7 +231,7 @@ function StatPanel({ context, propertyType, onPropertyTypeChange, onBreadcrumbNa
       <header className="flex h-14 shrink-0 items-center justify-between border-b border-[#E5E5E5] bg-[#f6f6f6] px-3">
         <button type="button" onClick={onCloseMobile} className="dvf-mobile-back items-center gap-1 text-[13px] font-medium text-[#000091]"><RiArrowLeftLine className="h-4 w-4" />Retour à la carte</button>
         <span className="dvf-desktop-panel-title text-[14px] font-medium text-[#161616]">{isParcelLevel ? "Détail de la parcelle" : "Informations sur le territoire"}</span>
-        <span className="rounded bg-[#eeeeee] px-2 py-1 text-[12px] leading-4 text-[#3a3a3a]">{resultState === "address" ? "Adresse" : locationScale}</span>
+        <div className="flex items-center gap-2"><span className="rounded bg-[#eeeeee] px-2 py-1 text-[12px] leading-4 text-[#3a3a3a]">{resultState === "address" ? "Adresse" : locationScale}</span><button type="button" onClick={onCollapse} aria-label="Replier le panneau d’informations" className="dvf-desktop-panel-title h-8 w-8 items-center justify-center rounded text-[#161616] hover:bg-[#e5e5e5] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091]"><RiSidebarFoldLine className="h-5 w-5" /></button></div>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
       {resultState !== "ready" ? <ResultStateContent state={resultState} onRetry={onRetry} onOpenParcel={onOpenParcel} /> : <>
@@ -288,7 +288,7 @@ const searchSuggestions: SearchSuggestion[] = [
   { id: "parcelle-bordeaux", type: "Parcelle cadastrale", label: "33063 AB 0124", description: "Bordeaux", context: { scale: "parcelle", label: "Parcelle AB 0124", code: "33063AB0124", selectedParcel: "33063AB0124", zoom: 17 }, center: [-0.5705, 44.8378], zoom: 17 },
 ];
 
-function Filters({ onSearchSelect, onResultStateChange }: { onSearchSelect: (suggestion: SearchSuggestion) => void; onResultStateChange: (state: PrototypeResultState) => void }) {
+function Filters({ onSearchSelect, onResultStateChange, sidebarCollapsed }: { onSearchSelect: (suggestion: SearchSuggestion) => void; onResultStateChange: (state: PrototypeResultState) => void; sidebarCollapsed: boolean }) {
   const [parcelOpen, setParcelOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -321,7 +321,7 @@ function Filters({ onSearchSelect, onResultStateChange }: { onSearchSelect: (sug
   };
 
   return (
-    <div className="absolute left-5 top-5 z-10 w-[440px] max-w-[calc(100%-6rem)] rounded border border-[#E5E5E5] bg-white p-2 shadow-[0_2px_4px_rgba(0,0,0,.08),0_4px_12px_rgba(0,0,0,.08)]">
+    <div className={`absolute top-5 z-10 w-[440px] max-w-[calc(100%-6rem)] rounded border border-[#E5E5E5] bg-white p-2 shadow-[0_2px_4px_rgba(0,0,0,.08),0_4px_12px_rgba(0,0,0,.08)] transition-[left] duration-300 motion-reduce:transition-none ${sidebarCollapsed ? "left-16" : "left-5"}`}>
       <div className="relative"><label className="flex h-9 items-center gap-2 rounded border border-[#E5E5E5] bg-[#f6f6f6] px-3 focus-within:outline focus-within:outline-2 focus-within:outline-offset-[-2px] focus-within:outline-[#000091]"><RiSearchLine aria-hidden className="h-4 w-4 shrink-0 text-[#3a3a3a]" /><span className="sr-only">Rechercher une adresse, une ville ou une parcelle</span><input role="combobox" aria-expanded={searchOpen && normalizedQuery.length >= 2} aria-controls="dvf-search-suggestions" aria-activedescendant={filteredSuggestions[activeSuggestion] ? `dvf-suggestion-${filteredSuggestions[activeSuggestion].id}` : undefined} value={query} onFocus={() => setSearchOpen(true)} onChange={(event) => updateQuery(event.target.value)} onKeyDown={(event) => { if (event.key === "ArrowDown" && filteredSuggestions.length) { event.preventDefault(); setActiveSuggestion((current) => (current + 1) % filteredSuggestions.length); } else if (event.key === "ArrowUp" && filteredSuggestions.length) { event.preventDefault(); setActiveSuggestion((current) => (current - 1 + filteredSuggestions.length) % filteredSuggestions.length); } else if (event.key === "Enter" && filteredSuggestions[activeSuggestion]) { event.preventDefault(); selectSuggestion(filteredSuggestions[activeSuggestion]); } else if (event.key === "Escape") { setSearchOpen(false); } }} className="min-w-0 flex-1 bg-transparent text-[13px] text-[#3a3a3a] outline-none placeholder:text-[#666666]" placeholder="Rechercher une adresse, une ville, une parcelle" /></label>
       {searchOpen && normalizedQuery.length >= 2 ? <div id="dvf-search-suggestions" role="listbox" className="absolute left-0 right-0 top-full z-20 max-h-72 overflow-y-auto border border-t-0 border-[#E5E5E5] bg-white shadow-[0_4px_12px_rgba(0,0,0,.12)]">{isLoading ? <p className="p-4 text-[13px] text-[#666666]" role="status">Recherche en cours…</p> : hasError ? <div className="p-4"><p className="text-[13px] font-medium">La recherche n’a pas pu aboutir.</p><button type="button" onClick={() => setQuery("Bordeaux")} className="mt-2 text-[13px] font-medium text-[#000091] underline underline-offset-2">Réessayer</button></div> : filteredSuggestions.length ? filteredSuggestions.map((suggestion, index) => <button key={suggestion.id} id={`dvf-suggestion-${suggestion.id}`} role="option" aria-selected={index === activeSuggestion} type="button" onMouseEnter={() => setActiveSuggestion(index)} onClick={() => selectSuggestion(suggestion)} className={`flex w-full items-start justify-between gap-4 border-b border-[#E5E5E5] px-4 py-3 text-left last:border-b-0 ${index === activeSuggestion ? "bg-[#ececfe]" : "bg-white hover:bg-[#f6f6f6]"}`}><span><strong className="block text-[13px] font-medium">{suggestion.label}</strong><span className="mt-0.5 block text-[12px] text-[#666666]">{suggestion.description}</span></span><span className="shrink-0 bg-[#f6f6f6] px-1.5 py-0.5 text-[11px] text-[#3a3a3a]">{suggestion.type}</span></button>) : <div className="p-4"><p className="text-[13px] font-medium">Aucun résultat trouvé</p><p className="mt-1 text-[12px] leading-5 text-[#666666]">Vérifiez l’adresse ou utilisez la recherche avancée pour saisir une référence cadastrale.</p></div>}</div> : null}</div>
       <button type="button" aria-expanded={parcelOpen} onClick={()=>setParcelOpen(!parcelOpen)} className="mt-1 flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[12px] font-medium text-[#666666] hover:bg-[#eeeeee] hover:text-[#161616] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091]"><span>Recherche avancée</span><RiArrowDownSLine className={`h-4 w-4 shrink-0 transition-transform ${parcelOpen ? "rotate-180" : ""}`} /></button>
@@ -362,6 +362,7 @@ export default function ExplorateurDvfPage() {
     const target = { context: suggestion.context, center: suggestion.center, zoom: suggestion.zoom, requestId: Date.now() };
     setMapContext(suggestion.context);
     setNavigationTarget(target);
+    if (suggestion.context.selectedParcel) setSidebarCollapsed(false);
     setMobilePanelOpen(suggestion.type === "Adresse" || Boolean(suggestion.context.selectedParcel) || suggestion.id === "commune-strasbourg");
   };
 
@@ -375,6 +376,7 @@ export default function ExplorateurDvfPage() {
     setMapContext(context);
     setNavigationTarget({ context, center: [-0.5705, 44.8378], zoom: 17, requestId: Date.now() });
     setResultState("ready");
+    setSidebarCollapsed(false);
     setMobilePanelOpen(true);
   };
 
@@ -424,10 +426,10 @@ export default function ExplorateurDvfPage() {
 
       {view === "carte" ? <section className="dvf-map-shell flex h-[calc(100dvh-169px)] min-h-[610px]">
         <div className={`t-resize shrink-0 overflow-hidden ${sidebarCollapsed ? "w-0" : "w-[400px]"} ${mobilePanelOpen && (resultState !== "ready" || Boolean(mapContext.selectedParcel)) ? "max-lg:fixed max-lg:inset-0 max-lg:z-50 max-lg:w-full" : "max-lg:hidden"}`}>
-          <StatPanel context={mapContext} propertyType={propertyType} onPropertyTypeChange={setPropertyType} onBreadcrumbNavigate={navigateFromBreadcrumb} resultState={resultState} onRetry={resetResultState} onOpenParcel={openLocatedParcel} onCloseMobile={() => setMobilePanelOpen(false)} />
+          <StatPanel context={mapContext} propertyType={propertyType} onPropertyTypeChange={setPropertyType} onBreadcrumbNavigate={navigateFromBreadcrumb} resultState={resultState} onRetry={resetResultState} onOpenParcel={openLocatedParcel} onCloseMobile={() => setMobilePanelOpen(false)} onCollapse={() => setSidebarCollapsed(true)} />
         </div>
-        <button type="button" onClick={() => setSidebarCollapsed((current) => !current)} aria-expanded={!sidebarCollapsed} aria-label={sidebarCollapsed ? "Afficher le panneau d’informations" : "Replier le panneau d’informations"} className={`dvf-desktop-sidebar-toggle absolute top-3 z-30 h-9 w-9 items-center justify-center border border-[#E5E5E5] bg-white shadow transition-[left] duration-300 motion-reduce:transition-none ${sidebarCollapsed ? "left-3" : "left-[376px]"}`}>{sidebarCollapsed ? <RiSidebarUnfoldLine className="h-5 w-5" /> : <RiSidebarFoldLine className="h-5 w-5" />}</button>
-        <div className="relative min-w-0 flex-1"><FranceMap key={mapResetKey} context={mapContext} navigationTarget={navigationTarget} onContextChange={(context) => { setMapContext(context); if (context.selectedParcel) { setResultState("ready"); setMobilePanelOpen(true); } }} /><Filters onSearchSelect={selectSearchSuggestion} onResultStateChange={changeResultState} /></div>
+        {sidebarCollapsed ? <button type="button" onClick={() => setSidebarCollapsed(false)} aria-expanded="false" aria-label="Afficher le panneau d’informations" className="dvf-desktop-sidebar-toggle absolute left-3 top-5 z-30 h-9 w-9 items-center justify-center rounded border border-[#E5E5E5] bg-white shadow"><RiSidebarUnfoldLine className="h-5 w-5" /></button> : null}
+        <div className="relative min-w-0 flex-1"><FranceMap key={mapResetKey} context={mapContext} navigationTarget={navigationTarget} onContextChange={(context) => { setMapContext(context); if (context.selectedParcel) { setResultState("ready"); setSidebarCollapsed(false); setMobilePanelOpen(true); } }} /><Filters onSearchSelect={selectSearchSuggestion} onResultStateChange={changeResultState} sidebarCollapsed={sidebarCollapsed} /></div>
       </section> : null}
 
       {view === "tableau" ? (
