@@ -54,6 +54,7 @@ const prototypeIcons = {
   templates: RiLayout2Line,
   "explore-in-context": RiMicroscopeLine,
   "explore-in-a-page": RiMicroscopeLine,
+  "explorateur-dvf": RiMicroscopeLine,
   "test-assistant": RiMessageAi3Line,
 };
 
@@ -64,6 +65,7 @@ const currentPrototypeSlugs = [
   "enrichissement-donnees",
   "explore-in-context",
   "explore-in-a-page",
+  "explorateur-dvf",
 ] as const;
 
 const currentPrototypes = currentPrototypeSlugs

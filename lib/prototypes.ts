@@ -147,6 +147,15 @@ export const prototypes: Prototype[] = [
     tags: ["article", "explorateur", "intégration"],
     figmaUrl: "",
   },
+  {
+    slug: "explorateur-dvf",
+    title: "Explorateur DVF",
+    description:
+      "Reconstruction fidèle de l’explorateur des demandes de valeurs foncières pour tester des ajustements UI et UX.",
+    status: "exploration",
+    tags: ["immobilier", "carte", "DVF"],
+    figmaUrl: "",
+  },
 ];
 
 export function getPrototypeBySlug(slug: string) {
