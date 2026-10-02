@@ -271,7 +271,7 @@ function MobileMapBackground({ parcel = false }: { parcel?: boolean }) {
     <div className="absolute inset-0 overflow-hidden bg-[#e8eddf]" aria-hidden>
       <div className="absolute inset-0 opacity-70" style={{ backgroundImage: "linear-gradient(32deg, transparent 46%, #c9c9c9 47%, #c9c9c9 49%, transparent 50%), linear-gradient(112deg, transparent 58%, #ffffff 59%, #ffffff 62%, transparent 63%)", backgroundSize: "96px 82px, 138px 118px" }} />
       {["left-[8%] top-[26%] h-20 w-24", "right-[8%] top-[18%] h-28 w-20", "left-[34%] top-[42%] h-20 w-28", "right-[20%] top-[52%] h-24 w-24", "left-[10%] bottom-[16%] h-24 w-32"].map((position, index) => <span key={position} className={`absolute rotate-${index % 2 ? "3" : "-3"} border border-[#a8b49a] ${index % 3 === 0 ? "bg-[#d9e7bc]" : index % 3 === 1 ? "bg-[#f4d9a8]" : "bg-[#c7dfc0]"} ${position}`} />)}
-      {parcel ? <span className="absolute left-[30%] top-[35%] h-28 w-36 rotate-[-4deg] border-2 border-[#6A6AF4] bg-[#A558A0]/30" /> : null}
+      {parcel ? <span className="absolute left-[30%] top-[35%] h-28 w-36 rotate-[-4deg] border-[3px] border-[#A1000B] bg-[#E1000F]/70" /> : null}
     </div>
   );
 }
@@ -419,7 +419,7 @@ export default function ExplorateurDvfDesignPage() {
 
             <article className="border border-[#E5E5E5] bg-white p-5">
               <Label>Légende choroplèthe</Label>
-              <div className="ml-auto w-[240px]"><div className="flex items-center justify-between"><p className="text-[12px] font-bold">Prix au m²</p><span className="text-[10px] text-[#666666]">Échelle recalculée</span></div><div className="mt-1.5 h-2 bg-gradient-to-r from-[#028758] via-[#FFF64E] to-[#CC000A]" /><div className="mt-1 flex justify-between text-[10px] text-[#666666]"><span>&lt; 900 €</span><span>2 600 €</span><span>&gt; 9 000 €</span></div><p className="mt-2 text-right text-[10px] text-[#666666]">Position : bas à droite, au-dessus des crédits</p></div>
+              <div className="ml-auto w-[240px]"><div className="flex items-center justify-between"><p className="text-[12px] font-bold">Prix au m²</p><span className="text-[10px] text-[#666666]">Échelle recalculée</span></div><div className="mt-1.5 h-2 bg-gradient-to-r from-[#028758] via-[#FFF64E] to-[#CC000A]" /><div className="mt-1 flex justify-between text-[10px] text-[#666666]"><span>&lt; 900 €</span><span>2 600 €</span><span>&gt; 9 000 €</span></div><div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-[#666666]"><span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 bg-[#6A6AF4]" />Vente disponible</span><span className="inline-flex items-center gap-1"><i className="h-2.5 w-2.5 border border-[#A1000B] bg-[#E1000F]" />Parcelle sélectionnée</span></div><p className="mt-2 text-right text-[10px] text-[#666666]">Position : bas à droite, au-dessus des crédits</p></div>
             </article>
 
             <article className="border border-[#E5E5E5] bg-white p-5">
@@ -429,8 +429,8 @@ export default function ExplorateurDvfDesignPage() {
 
             <article className="border border-[#E5E5E5] bg-white p-5">
               <Label>Sidebar desktop repliable</Label>
-              <div className="relative h-28 overflow-hidden border border-[#E5E5E5] bg-[#f6f6f6]"><div className="h-full w-28 border-r border-[#E5E5E5] bg-white" /><button type="button" aria-label="Replier le panneau d’informations" className="absolute left-[94px] top-3 flex h-9 w-9 items-center justify-center border border-[#E5E5E5] bg-white shadow"><RiSidebarFoldLine className="h-5 w-5" /></button></div>
-              <p className="mt-3 text-[11px] leading-5 text-[#666666]">Sur desktop, le panneau peut être replié pour agrandir la carte. Le contrôle reste au bord du panneau et l’animation respecte la préférence de réduction des mouvements.</p>
+              <div className="h-28 overflow-hidden border border-[#E5E5E5] bg-white"><div className="flex h-11 items-center justify-between border-b border-[#E5E5E5] bg-[#f6f6f6] px-3"><span className="text-[11px] font-medium">Informations sur le territoire</span><div className="flex items-center gap-2"><span className="rounded bg-[#eeeeee] px-2 py-1 text-[10px]">Vue nationale</span><button type="button" aria-label="Replier le panneau d’informations" className="flex h-8 w-8 items-center justify-center rounded hover:bg-[#e5e5e5]"><RiSidebarFoldLine className="h-5 w-5" /></button></div></div></div>
+              <p className="mt-3 text-[11px] leading-5 text-[#666666]">Sur desktop, le bouton de repli est intégré au header de la sidebar. Une fois fermée, un bouton de réouverture apparaît en haut à gauche de la carte, aligné avec le bloc de recherche.</p>
             </article>
           </div>
         </section>

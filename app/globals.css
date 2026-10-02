@@ -3,6 +3,7 @@
 :root {
   --resize-dur: 300ms;
   --resize-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --dvf-radius: 4px;
 }
 
 .t-resize {
@@ -71,7 +72,7 @@
 .dvf-map .maplibregl-ctrl-group,
 .dvf-map .maplibregl-popup-content {
   border: 1px solid #E5E5E5;
-  border-radius: 0;
+  border-radius: var(--dvf-radius);
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.08), 0 4px 12px rgba(0, 0, 0, 0.08);
 }
 
