@@ -1,21 +1,72 @@
+/* Important overrides belong to the base layer, ahead of important utility rules. */
+@layer base {
+/* Responsive overrides must take precedence over the shared important utilities. */
 @media (max-width: 1023px) {
-  .fuel-header, .fuel-desktop-toggle { display: none; }
-  .fuel-shell { position: fixed; inset: 0; height: 100dvh; min-height: 0; z-index: 40; }
-  .fuel-sidebar { display: none; }
-  .fuel-sidebar.fuel-panel-open { display: flex; position: fixed; inset: 0; z-index: 50; width: 100%; height: 100dvh; border: 0; padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); overscroll-behavior: contain; }
-  .fuel-mobile-back { display: flex; min-height: 44px; flex-shrink: 0; }
-  .fuel-map-area { min-height: 0; height: 100%; }
-  .fuel-map-area > div:first-child { min-height: 0; }
-  .fuel-search { top: max(12px, env(safe-area-inset-top)); left: 12px; width: calc(100% - 24px); max-width: none; }
-  .fuel-search input { font-size: 16px; height: 44px; }
-  .fuel-search > div:nth-child(2) { max-height: 55dvh; overflow-y: auto; }
-  .fuel-map-controls { top: calc(max(12px, env(safe-area-inset-top)) + 76px); right: 12px; }
-  .fuel-map-controls button { width: 44px; height: 44px; }
-  .fuel-map-legend { bottom: calc(100px + env(safe-area-inset-bottom)); right: 12px; width: 240px; }
-  .fuel-mobile-filters { display: flex; position: absolute; bottom: calc(38px + env(safe-area-inset-bottom)); left: 12px; right: 12px; min-height: 44px; z-index: 10; }
-  .fuel-mobile-demo { display: block; position: absolute; bottom: calc(17px + env(safe-area-inset-bottom)); left: 12px; background: white; padding: 1px 4px; }
-  .fuel-sidebar select { min-height: 44px; font-size: 16px; }
-  .fuel-sidebar table { font-size: 11px; }
-  .fuel-sidebar th, .fuel-sidebar td { padding-left: 5px; padding-right: 5px; }
-  .fuel-sidebar footer { flex-shrink: 0; }
+  .fuel-explorer .fuel-header, .fuel-explorer .fuel-desktop-toggle { display: none !important; }
+  .fuel-explorer .fuel-shell { position: fixed !important; inset: 0 !important; height: 100dvh !important; min-height: 0 !important; z-index: 40 !important; }
+  .fuel-explorer .fuel-sidebar { display: none !important; }
+  .fuel-explorer .fuel-sidebar.fuel-panel-open { display: flex !important; position: fixed !important; inset: 0 !important; z-index: 50 !important; width: 100% !important; height: 100dvh !important; border: 0 !important; padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)) !important; overscroll-behavior: contain !important; }
+  .fuel-explorer .fuel-mobile-back { display: flex !important; min-height: 44px !important; flex-shrink: 0 !important; }
+  .fuel-explorer .fuel-map-area { min-height: 0 !important; height: 100% !important; }
+  .fuel-explorer .fuel-map-area > div:first-child { min-height: 0 !important; }
+  .fuel-explorer .fuel-search { top: max(12px, env(safe-area-inset-top)) !important; left: 12px !important; width: calc(100% - 24px) !important; max-width: none !important; }
+  .fuel-explorer .fuel-search input { font-size: 16px !important; height: 44px !important; }
+  .fuel-explorer .fuel-search > div:nth-child(2) { max-height: 55dvh !important; overflow-y: auto !important; }
+  .fuel-explorer .fuel-map-controls { top: calc(max(12px, env(safe-area-inset-top)) + 76px) !important; right: 12px !important; }
+  .fuel-explorer .fuel-map-controls button { width: 44px !important; height: 44px !important; }
+  .fuel-explorer .fuel-map-legend { bottom: calc(44px + env(safe-area-inset-bottom)) !important; right: 12px !important; width: 240px !important; }
+  .fuel-explorer .fuel-mobile-filters { display: flex !important; position: absolute !important; bottom: calc(38px + env(safe-area-inset-bottom)) !important; left: 12px !important; right: 12px !important; min-height: 44px !important; z-index: 10 !important; }
+  .fuel-explorer .fuel-mobile-demo { display: block !important; position: absolute !important; bottom: calc(17px + env(safe-area-inset-bottom)) !important; left: 12px !important; background: white !important; padding: 1px 4px !important; }
+  .fuel-explorer .fuel-sidebar select { min-height: 44px !important; font-size: 16px !important; }
+  .fuel-explorer .fuel-sidebar table { font-size: 11px !important; }
+  .fuel-explorer .fuel-sidebar th, .fuel-explorer .fuel-sidebar td { padding-left: 5px !important; padding-right: 5px !important; }
+  .fuel-explorer .fuel-sidebar footer { flex-shrink: 0 !important; }
+}
+.fuel-explorer .fuel-expand, .fuel-explorer .fuel-touch-help, .fuel-explorer .fuel-mobile-rupture { display: none !important; }
+@media (max-width: 1023px) {
+  .fuel-explorer .fuel-panel-heading { position: sticky !important; top: -16px !important; z-index: 2 !important; display: flex !important; justify-content: space-between !important; align-items: center !important; background: white !important; border-bottom: 1px solid #e5e5e5 !important; margin-bottom: 16px !important; }
+  .fuel-explorer .fuel-panel-heading .fuel-mobile-back { margin-bottom: 0 !important; }
+  .fuel-explorer .fuel-station-panel .fuel-filter-content, .fuel-explorer .fuel-station-panel footer, .fuel-explorer .fuel-station-panel .fuel-touch-help, .fuel-explorer .fuel-filter-panel .fuel-station-content, .fuel-explorer .fuel-desktop-help { display: none !important; }
+  .fuel-explorer .fuel-filter-panel .fuel-touch-help { display: block !important; margin-top: 24px !important; font-size: 13px !important; line-height: 1.6 !important; color: #666 !important; }
+  .fuel-explorer .fuel-station-content { margin-top: 0 !important; padding-bottom: 16px !important; }
+  .fuel-explorer .fuel-sidebar table { font-size: 13px !important; }
+  .fuel-explorer .fuel-sidebar th, .fuel-explorer .fuel-sidebar td { padding: 10px 6px !important; }
+  .fuel-explorer .fuel-availability, .fuel-explorer .fuel-desktop-dash { display: none !important; }
+  .fuel-explorer .fuel-mobile-rupture { display: inline !important; white-space: normal !important; }
+  .fuel-explorer .fuel-station-visible .fuel-map-legend, .fuel-explorer .fuel-station-visible .fuel-mobile-filters, .fuel-explorer .fuel-station-visible .fuel-mobile-demo { display: none !important; }
+  .fuel-explorer .fuel-station-marker::after { content: '' !important; position: absolute !important; inset: -13px !important; border-radius: 50% !important; }
+}
+
+.fuel-explorer .fuel-quick-filters { display: none !important; }
+@media (max-width: 1023px) {
+ .fuel-explorer .fuel-sidebar.fuel-station-panel.fuel-panel-open { inset: 0 !important; height: 100dvh !important; border-radius: 0 !important; }
+ .fuel-explorer .fuel-quick-filters { position: absolute !important; top: calc(max(12px, env(safe-area-inset-top)) + 72px) !important; left: 12px !important; right: 12px !important; z-index: 9 !important; display: flex !important; align-items: center !important; gap: 8px !important; }
+ .fuel-explorer .fuel-quick-filters.fuel-search-active { visibility: hidden !important; }
+ .fuel-explorer .fuel-map-controls { top: calc(max(12px, env(safe-area-inset-top)) + 132px) !important; }
+ .fuel-explorer .fuel-filter-panel .fuel-filter-content > label,
+ .fuel-explorer .fuel-filter-panel .fuel-filter-content > div:nth-of-type(2) { display: none !important; }
+ .fuel-explorer .fuel-expand { display: none !important; }
+}
+
+}
+
+@layer base {
+ .fuel-explorer .fuel-price-information { display: none !important; }
+ @media (max-width: 1023px) {
+  .fuel-explorer .fuel-filter-panel .fuel-filter-content,
+  .fuel-explorer .fuel-filter-panel .fuel-touch-help { display: none !important; }
+  .fuel-explorer .fuel-filter-panel .fuel-price-information { display: block !important; }
+  .fuel-explorer .fuel-quick-filters { gap: 6px !important; }
+  .fuel-explorer .fuel-quick-control { height: 44px !important; min-width: 0 !important; padding: 0 10px !important; border: 1px solid #ddd !important; border-radius: 4px !important; background: white !important; color: #161616 !important; font-size: 14px !important; font-weight: 500 !important; white-space: nowrap !important; box-shadow: 0 2px 4px #0001 !important; }
+  .fuel-explorer .fuel-quick-select { width: 100% !important; appearance: none !important; padding-right: 30px !important; }
+  .fuel-explorer .fuel-quick-control[aria-pressed="true"] { background: #ececfe !important; border-color: #000091 !important; color: #000091 !important; }
+  .fuel-explorer .fuel-quick-control:focus-visible { outline: 2px solid #000091 !important; outline-offset: 2px !important; }
+ }
+}
+
+@layer base {
+ @media (max-width: 1023px) {
+  .fuel-explorer .fuel-filter-panel .fuel-sources { margin-top: 0 !important; padding-top: 16px !important; }
+  .fuel-explorer .fuel-filter-panel .fuel-sources > p { border-top: 0 !important; padding-top: 0 !important; }
+ }
 }
