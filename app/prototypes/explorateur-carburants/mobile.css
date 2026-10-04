@@ -70,3 +70,9 @@
   .fuel-explorer .fuel-filter-panel .fuel-sources > p { border-top: 0 !important; padding-top: 0 !important; }
  }
 }
+
+@layer base {
+ .fuel-explorer.fuel-embedded { height: 100% !important; min-height: 0 !important; }
+ .fuel-embedded .fuel-header { display: none !important; }
+ .fuel-explorer.fuel-embedded .fuel-shell { position: relative !important; height: 100% !important; min-height: 0 !important; }
+}

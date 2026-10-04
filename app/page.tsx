@@ -57,6 +57,7 @@ const prototypeIcons = {
   "explorateur-dvf": RiMicroscopeLine,
   "explorateur-dvf-in-a-page": RiMicroscopeLine,
   "explorateur-carburants": RiMicroscopeLine,
+  "explorateur-carburants-in-a-page": RiMicroscopeLine,
   "test-assistant": RiMessageAi3Line,
 };
 
@@ -83,6 +84,7 @@ const dataExplorationSlugs = [
   "explorateur-dvf-in-a-page",
   "explorateur-dvf",
   "explorateur-carburants",
+  "explorateur-carburants-in-a-page",
 ] as const;
 
 const dataExplorationPrototypes = dataExplorationSlugs
