@@ -29,7 +29,7 @@ import type { DatagouvResourceSummary } from "@/lib/datagouv";
 type View = "carte" | "tableau" | "apropos";
 type PropertyType = "all" | "apartments" | "houses" | "commercial";
 type ParcelSection = "transactions" | "dpe" | "copropriete" | "liens";
-type BreadcrumbTarget = "national" | "departement" | "commune";
+type BreadcrumbTarget = "national" | "departement" | "commune" | "section";
 type PrototypeResultState = "ready" | "address" | "loading" | "empty" | "error" | "uncovered";
 
 const parcelSections: { id: ParcelSection; label: string }[] = [
@@ -108,6 +108,10 @@ function FranceMap({ context, onContextChange, navigationTarget }: { context: Dv
           <span>&lt; {legend[0]}</span><span>{legend[1]}</span><span>&gt; {legend[2]}</span>
         </div>
       </div> : null}
+      {context.scale === "parcelle" ? <div className="absolute bottom-12 right-5 flex max-w-[calc(100%-2.5rem)] flex-wrap gap-x-3 gap-y-1 rounded border border-[#E5E5E5] bg-white px-3 py-2 text-[10px] text-[#3a3a3a] shadow-[0_2px_4px_rgba(0,0,0,.08),0_4px_12px_rgba(0,0,0,.08)]">
+        <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 bg-[#6A6AF4]" />Vente disponible</span>
+        <span className="inline-flex items-center gap-1.5"><i className="h-2.5 w-2.5 border border-[#A1000B] bg-[#E1000F]" />Parcelle sélectionnée</span>
+      </div> : null}
     </div>
   );
 }
@@ -144,33 +148,34 @@ type ParcelLot = {
 
 function ParcelTransactionCard({ date, price, pricePerSquareMeter, address, mutationId, lots }: { date: string; price: string; pricePerSquareMeter?: string; address: string; mutationId: string; lots: ParcelLot[] }) {
   return (
-    <article className="overflow-hidden rounded border border-[#E5E5E5] bg-white">
-      <header className="flex items-center justify-between border-b border-[#E5E5E5] bg-[#f6f6f6] px-3 py-2">
-        <span className="text-[12px] font-medium uppercase">Vente</span>
-        <span className="inline-flex items-center gap-1 text-[12px] text-[#666666]"><RiCalendarLine aria-hidden className="h-3.5 w-3.5" />{date}</span>
-      </header>
+    <article className="overflow-hidden rounded border border-[#E5E5E5] bg-[#f6f6f6]">
       <div className="p-3">
-        <p className="text-[18px] font-bold">{price}</p>
-        {pricePerSquareMeter ? <p className="mt-0.5 text-[12px] font-medium text-[#000091]">{pricePerSquareMeter} par m²</p> : null}
-        <p className="mt-2 flex items-start gap-1 text-[12px] leading-4 text-[#666666]"><RiMapPin2Line aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />{address}</p>
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-[14px] font-bold leading-5">Vente</p>
+          <p className="shrink-0 text-right text-[14px] font-bold leading-5 text-[#000091]">{price}</p>
+        </div>
+        <div className="mt-1.5 space-y-0.5 text-[12px] leading-4 text-[#666666]">
+          <div className="flex items-center justify-between gap-3"><p className="flex min-w-0 items-center gap-1"><RiCalendarLine aria-hidden className="h-3.5 w-3.5 shrink-0" />{date}</p>{pricePerSquareMeter ? <p className="shrink-0 font-medium text-[#000091]">{pricePerSquareMeter} par m²</p> : null}</div>
+          <p className="flex items-start gap-1"><RiMapPin2Line aria-hidden className="h-3.5 w-3.5 shrink-0" />{address}</p>
+        </div>
         <div className="mt-3">
-          <p className="mb-1.5 text-[12px] font-bold">{`${lots.length} ${lots.length > 1 ? "lots" : "lot"}`}</p>
-          <div className="overflow-hidden border-y border-[#E5E5E5]">
-            <table className="w-full table-fixed text-left text-[12px]">
+          <p className="mb-1 text-[13px] font-bold">{`${lots.length} ${lots.length > 1 ? "lots" : "lot"}`}</p>
+          <div className="overflow-hidden">
+            <table className="w-full table-fixed text-left text-[12px] leading-4">
               <thead className="sr-only"><tr><th>Type de lot</th><th>Pièces</th><th>Surface</th></tr></thead>
               <tbody className="divide-y divide-[#E5E5E5]">
                 {lots.map((lot, index) => {
                   return <tr key={`${lot.type}-${index}`}>
-                    <th scope="row" className="w-[43%] py-2 pr-2 font-medium">{lot.type}</th>
-                    <td className="w-[29%] px-1 py-2 text-[#666666]">{lot.rooms ?? "Non renseigné"}</td>
-                    <td className="w-[28%] py-2 pl-1 text-right font-medium text-[#3a3a3a]">{lot.surface ?? "Non renseignée"}</td>
+                    <th scope="row" className="w-[43%] py-1.5 pr-2 font-normal text-[#3a3a3a]">{lot.type}</th>
+                    <td className="w-[29%] px-1 py-1.5 text-[#666666]">{lot.rooms ?? "Non renseigné"}</td>
+                    <td className="w-[28%] py-1.5 pl-1 text-right text-[#3a3a3a]">{lot.surface ?? "Non renseignée"}</td>
                   </tr>;
                 })}
               </tbody>
             </table>
           </div>
         </div>
-        <p className="mt-2 text-[11px] text-[#666666]">Référence de la transaction : {mutationId}</p>
+        <p className="mt-2 text-[10px] leading-4 text-[#666666]">Référence de la transaction : {mutationId}</p>
       </div>
     </article>
   );
@@ -182,7 +187,8 @@ function ContextBreadcrumb({ context, onNavigate }: { context: DvfMapContext; on
   const items: { label: string; target?: BreadcrumbTarget }[] = [{ label: "France", target: context.scale === "national" ? undefined : "national" }];
   if (context.scale !== "national") items.push({ label: context.scale === "departement" ? context.label : department, target: context.scale === "departement" ? undefined : "departement" });
   if (context.scale === "commune" || context.scale === "parcelle") items.push({ label: context.scale === "commune" ? context.label : commune, target: context.scale === "commune" ? undefined : "commune" });
-  if (context.scale === "parcelle") items.push({ label: context.label });
+  if (context.scale === "parcelle" && context.sectionLabel) items.push({ label: context.sectionLabel, target: context.selectedParcel ? "section" : undefined });
+  if (context.scale === "parcelle" && (context.selectedParcel || !context.sectionLabel)) items.push({ label: context.label });
 
   return (
     <nav className="fr-breadcrumb mb-3 text-[12px] leading-5" aria-label="Vous êtes ici :">
@@ -285,7 +291,7 @@ const searchSuggestions: SearchSuggestion[] = [
   { id: "commune-bordeaux", type: "Commune", label: "Bordeaux", description: "Gironde · 33063", context: { scale: "commune", label: "Bordeaux", code: "33063", zoom: 12 }, center: [-0.5792, 44.8378], zoom: 12 },
   { id: "commune-montpellier", type: "Commune", label: "Montpellier", description: "Hérault · 34172", context: { scale: "commune", label: "Montpellier", code: "34172", zoom: 12 }, center: [3.8767, 43.6108], zoom: 12 },
   { id: "commune-strasbourg", type: "Commune", label: "Strasbourg", description: "Bas-Rhin · territoire non couvert", context: { scale: "commune", label: "Strasbourg", code: "67482", zoom: 12 }, center: [7.7521, 48.5734], zoom: 12 },
-  { id: "parcelle-bordeaux", type: "Parcelle cadastrale", label: "33063 AB 0124", description: "Bordeaux", context: { scale: "parcelle", label: "Parcelle AB 0124", code: "33063AB0124", selectedParcel: "33063AB0124", zoom: 17 }, center: [-0.5705, 44.8378], zoom: 17 },
+  { id: "parcelle-bordeaux", type: "Parcelle cadastrale", label: "33063 AB 0124", description: "Bordeaux", context: { scale: "parcelle", label: "Parcelle AB 0124", code: "33063AB0124", sectionCode: "33063000AB", sectionLabel: "Section AB", selectedParcel: "33063AB0124", zoom: 17 }, center: [-0.5705, 44.8378], zoom: 17 },
 ];
 
 function Filters({ onSearchSelect, onResultStateChange, sidebarCollapsed }: { onSearchSelect: (suggestion: SearchSuggestion) => void; onResultStateChange: (state: PrototypeResultState) => void; sidebarCollapsed: boolean }) {
@@ -297,7 +303,7 @@ function Filters({ onSearchSelect, onResultStateChange, sidebarCollapsed }: { on
   const [commune, setCommune] = useState("");
   const [section, setSection] = useState("");
   const [parcel, setParcel] = useState("");
-  const parcelFieldClass = "mt-1 h-9 w-full rounded border border-[#E5E5E5] bg-white px-2 text-[12px] text-[#161616] outline-none disabled:cursor-not-allowed disabled:bg-[#eeeeee] disabled:text-[#929292] focus:border-[#000091] focus:outline focus:outline-2 focus:outline-offset-[-2px] focus:outline-[#000091]";
+  const parcelFieldClass = "dvf-select mt-1 h-9 w-full rounded border border-[#E5E5E5] bg-white pl-2 text-[12px] text-[#161616] outline-none disabled:cursor-not-allowed disabled:bg-[#eeeeee] disabled:text-[#929292] focus:border-[#000091] focus:outline focus:outline-2 focus:outline-offset-[-2px] focus:outline-[#000091]";
   const normalizedQuery = query.trim().toLocaleLowerCase("fr");
   const isLoading = normalizedQuery === "chargement";
   const hasError = normalizedQuery === "erreur";
@@ -326,12 +332,12 @@ function Filters({ onSearchSelect, onResultStateChange, sidebarCollapsed }: { on
       {searchOpen && normalizedQuery.length >= 2 ? <div id="dvf-search-suggestions" role="listbox" className="absolute left-0 right-0 top-full z-20 max-h-72 overflow-y-auto border border-t-0 border-[#E5E5E5] bg-white shadow-[0_4px_12px_rgba(0,0,0,.12)]">{isLoading ? <p className="p-4 text-[13px] text-[#666666]" role="status">Recherche en cours…</p> : hasError ? <div className="p-4"><p className="text-[13px] font-medium">La recherche n’a pas pu aboutir.</p><button type="button" onClick={() => setQuery("Bordeaux")} className="mt-2 text-[13px] font-medium text-[#000091] underline underline-offset-2">Réessayer</button></div> : filteredSuggestions.length ? filteredSuggestions.map((suggestion, index) => <button key={suggestion.id} id={`dvf-suggestion-${suggestion.id}`} role="option" aria-selected={index === activeSuggestion} type="button" onMouseEnter={() => setActiveSuggestion(index)} onClick={() => selectSuggestion(suggestion)} className={`flex w-full items-start justify-between gap-4 border-b border-[#E5E5E5] px-4 py-3 text-left last:border-b-0 ${index === activeSuggestion ? "bg-[#ececfe]" : "bg-white hover:bg-[#f6f6f6]"}`}><span><strong className="block text-[13px] font-medium">{suggestion.label}</strong><span className="mt-0.5 block text-[12px] text-[#666666]">{suggestion.description}</span></span><span className="shrink-0 bg-[#f6f6f6] px-1.5 py-0.5 text-[11px] text-[#3a3a3a]">{suggestion.type}</span></button>) : <div className="p-4"><p className="text-[13px] font-medium">Aucun résultat trouvé</p><p className="mt-1 text-[12px] leading-5 text-[#666666]">Vérifiez l’adresse ou utilisez la recherche avancée pour saisir une référence cadastrale.</p></div>}</div> : null}</div>
       <button type="button" aria-expanded={parcelOpen} onClick={()=>setParcelOpen(!parcelOpen)} className="mt-1 flex w-full items-center justify-between rounded px-2 py-1.5 text-left text-[12px] font-medium text-[#666666] hover:bg-[#eeeeee] hover:text-[#161616] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091]"><span>Recherche avancée</span><RiArrowDownSLine className={`h-4 w-4 shrink-0 transition-transform ${parcelOpen ? "rotate-180" : ""}`} /></button>
       {parcelOpen ? <div className="max-h-[calc(100dvh-240px)] space-y-3 overflow-y-auto border-t border-[#E5E5E5] bg-[#f6f6f6] p-4 text-[12px]">
-        <label className="block font-medium">Identifiant complet de la parcelle<input className={parcelFieldClass} placeholder="Ex. : 23150000A0001" /></label>
+        <label className="block font-medium">Identifiant complet de la parcelle<input className="mt-1 h-9 w-full rounded border border-[#E5E5E5] bg-white px-2 text-[12px] text-[#161616] outline-none focus:border-[#000091] focus:outline focus:outline-2 focus:outline-offset-[-2px] focus:outline-[#000091]" placeholder="Ex. : 23150000A0001" /></label>
         <p className="font-bold text-[#3a3a3a]">Ou composez-le pas à pas</p>
-        <label className="block font-medium">Département<select value={department} onChange={(event) => { setDepartment(event.target.value); setCommune(""); setSection(""); setParcel(""); }} className={parcelFieldClass}><option value="">Sélectionner un département</option>{departments.map((value) => <option value={value.slice(0, 2)} key={value}>{value}</option>)}</select></label>
-        <label className="block font-medium">Commune<select disabled={!department} value={commune} onChange={(event) => { setCommune(event.target.value); setSection(""); setParcel(""); }} className={parcelFieldClass}><option value="">Sélectionner une commune</option><option value="achery">Achery (02002)</option><option value="montpellier">Montpellier (34172)</option><option value="paris">Paris (75056)</option></select></label>
-        <label className="block font-medium">Section cadastrale<select disabled={!commune} value={section} onChange={(event) => { setSection(event.target.value); setParcel(""); }} className={parcelFieldClass}><option value="">Sélectionner une section</option><option value="000AC">000AC</option><option value="HX">HX</option><option value="AT">AT</option></select></label>
-        <label className="block font-medium">Parcelle{section ? " (307 trouvées)" : ""}<select disabled={!section} value={parcel} onChange={(event) => setParcel(event.target.value)} className={parcelFieldClass}><option value="">Sélectionner une parcelle</option><option value="02002000AC0005">02002000AC0005</option><option value="02002000AC0006">02002000AC0006</option><option value="02002000AC0007">02002000AC0007</option></select></label>
+        <label className="block font-medium">Département<span className="relative block"><select value={department} onChange={(event) => { setDepartment(event.target.value); setCommune(""); setSection(""); setParcel(""); }} className={parcelFieldClass}><option value="">Sélectionner un département</option>{departments.map((value) => <option value={value.slice(0, 2)} key={value}>{value}</option>)}</select><RiArrowDownSLine aria-hidden className="pointer-events-none absolute right-2.5 top-[calc(50%+2px)] h-5 w-5 -translate-y-1/2 text-[#161616]" /></span></label>
+        <label className="block font-medium">Commune<span className="relative block"><select disabled={!department} value={commune} onChange={(event) => { setCommune(event.target.value); setSection(""); setParcel(""); }} className={parcelFieldClass}><option value="">Sélectionner une commune</option><option value="achery">Achery (02002)</option><option value="montpellier">Montpellier (34172)</option><option value="paris">Paris (75056)</option></select><RiArrowDownSLine aria-hidden className={`pointer-events-none absolute right-2.5 top-[calc(50%+2px)] h-5 w-5 -translate-y-1/2 ${department ? "text-[#161616]" : "text-[#929292]"}`} /></span></label>
+        <label className="block font-medium">Section cadastrale<span className="relative block"><select disabled={!commune} value={section} onChange={(event) => { setSection(event.target.value); setParcel(""); }} className={parcelFieldClass}><option value="">Sélectionner une section</option><option value="000AC">000AC</option><option value="HX">HX</option><option value="AT">AT</option></select><RiArrowDownSLine aria-hidden className={`pointer-events-none absolute right-2.5 top-[calc(50%+2px)] h-5 w-5 -translate-y-1/2 ${commune ? "text-[#161616]" : "text-[#929292]"}`} /></span></label>
+        <label className="block font-medium">Parcelle{section ? " (307 trouvées)" : ""}<span className="relative block"><select disabled={!section} value={parcel} onChange={(event) => setParcel(event.target.value)} className={parcelFieldClass}><option value="">Sélectionner une parcelle</option><option value="02002000AC0005">02002000AC0005</option><option value="02002000AC0006">02002000AC0006</option><option value="02002000AC0007">02002000AC0007</option></select><RiArrowDownSLine aria-hidden className={`pointer-events-none absolute right-2.5 top-[calc(50%+2px)] h-5 w-5 -translate-y-1/2 ${section ? "text-[#161616]" : "text-[#929292]"}`} /></span></label>
         {parcel ? <p className="rounded bg-[#E3FDEB] p-2 text-[12px] leading-4 text-[#18753C]">Parcelle sélectionnée : {parcel}</p> : null}
       </div> : null}
     </div>
@@ -372,7 +378,7 @@ export default function ExplorateurDvfPage() {
   };
 
   const openLocatedParcel = () => {
-    const context: DvfMapContext = { scale: "parcelle", label: "12 rue des Argentiers, Bordeaux", code: "33063AB0124", selectedParcel: "33063AB0124", zoom: 17 };
+    const context: DvfMapContext = { scale: "parcelle", label: "Parcelle AB 0124", code: "33063AB0124", sectionCode: "33063000AB", sectionLabel: "Section AB", selectedParcel: "33063AB0124", zoom: 17 };
     setMapContext(context);
     setNavigationTarget({ context, center: [-0.5705, 44.8378], zoom: 17, requestId: Date.now() });
     setResultState("ready");
@@ -390,9 +396,11 @@ export default function ExplorateurDvfPage() {
       ? initialDvfMapContext
       : target === "departement"
         ? { scale: "departement", label: mapContext.code?.startsWith("34") ? "Hérault" : "Gironde", code: mapContext.code?.startsWith("34") ? "34" : "33", zoom: 8 }
-        : { scale: "commune", label: mapContext.code?.startsWith("34") ? "Montpellier" : "Bordeaux", code: mapContext.code?.startsWith("34") ? "34172" : "33063", zoom: 12 };
+        : target === "commune"
+          ? { scale: "commune", label: mapContext.code?.startsWith("34") ? "Montpellier" : "Bordeaux", code: mapContext.code?.startsWith("34") ? "34172" : "33063", zoom: 12 }
+          : { scale: "parcelle", label: mapContext.sectionLabel ?? "Section cadastrale", code: mapContext.sectionCode, sectionCode: mapContext.sectionCode, sectionLabel: mapContext.sectionLabel, zoom: 15 };
     const center: [number, number] = target === "national" ? [2.4, 46.6] : mapContext.code?.startsWith("34") ? [3.8767, 43.6108] : [-0.5792, 44.8378];
-    const zoom = target === "national" ? 5 : target === "departement" ? 8 : 12;
+    const zoom = target === "national" ? 5 : target === "departement" ? 8 : target === "commune" ? 12 : 15;
     setMapContext(targetContext);
     setNavigationTarget({ context: targetContext, center, zoom, requestId: Date.now() });
   };
