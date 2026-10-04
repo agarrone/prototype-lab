@@ -1,0 +1,4 @@
+@layer base {
+ .fuel-embed-frame { position: relative; height: 760px; transform: translateZ(0); overflow: hidden; }
+ @media (max-width: 1023px) { .fuel-embed-frame { height: 680px; } }
+}
