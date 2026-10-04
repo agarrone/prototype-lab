@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   RiAlertLine,
@@ -9,6 +9,7 @@ import {
   RiBuilding4Line,
   RiCalendarLine,
   RiDownloadLine,
+  RiExternalLinkLine,
   RiHome4Line,
   RiInformationLine,
   RiLightbulbLine,
@@ -80,14 +81,63 @@ const dvfResources: DatagouvResourceSummary[] = [
   },
 ];
 
-const faqs = [
-  ["Ce service estime-t-il la valeur d’un logement ?", "Non. Le service présente des ventes immobilières enregistrées par l’administration. Les montants observés ne constituent pas une estimation d’un bien ni une recommandation de prix."],
-  ["Pourquoi une vente peut-elle être absente ?", "Une vente récente peut ne pas encore avoir été publiée. Certaines transactions peuvent aussi être absentes, incomplètes ou exclues par les filtres actifs."],
-  ["À quoi correspond le prix affiché ?", "Les valeurs restituées portent uniquement sur les éléments immobiliers enregistrés lors de la mutation. Les frais d’agence ne sont pas inclus lorsqu’ils sont à la charge de l’acquéreur."],
-  ["À quoi correspond la surface affichée ?", "La surface affichée correspond à la surface réelle bâtie déclarée auprès des services fonciers et connue à la date de vente."],
-  ["Pourquoi manque-t-il l’Alsace, la Moselle et Mayotte ?", "La DGFiP ne dispose pas des mutations des départements du Bas-Rhin, du Haut-Rhin, de la Moselle et de Mayotte dans cette base."],
-  ["Quand aura lieu la prochaine mise à jour ?", "Les données brutes font l’objet d’une mise à jour semestrielle, fin avril et fin octobre."],
-  ["J’ai constaté une erreur", "Les erreurs portant sur les données peuvent être signalées directement au producteur depuis la page du jeu de données."],
+const aboutLinkClass = "font-medium text-[#000091] underline underline-offset-2 hover:decoration-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#000091]";
+
+const faqs: { question: string; answer: ReactNode }[] = [
+  {
+    question: "À quoi correspond le prix affiché ?",
+    answer: <p>Le prix porte sur les éléments immobiliers enregistrés dans la vente. Le mobilier éventuellement compris dans l’acte n’est pas comptabilisé. Les frais d’agence ne sont inclus que lorsque l’acte précise qu’ils sont à la charge du vendeur.</p>,
+  },
+  {
+    question: "À quoi correspond la surface affichée ?",
+    answer: <div className="space-y-3"><p>Il s’agit de la surface réelle bâtie déclarée auprès des services fonciers, et non de la surface Carrez. La valeur présentée est la dernière connue à la date de la vente.</p><p>Si elle n’est plus exacte, une déclaration foncière doit être adressée au service compétent. Le formulaire et les coordonnées du service sont disponibles sur <a className={aboutLinkClass} href="https://www.impots.gouv.fr/" target="_blank" rel="noreferrer">impots.gouv.fr</a>.</p></div>,
+  },
+  {
+    question: "Pourquoi manque-t-il l’Alsace, la Moselle et Mayotte ?",
+    answer: <div className="space-y-3"><p>La DGFiP ne dispose pas des mutations du Bas-Rhin, du Haut-Rhin, de la Moselle et de Mayotte dans la base DVF.</p><p>Dans l’ancienne Alsace-Moselle, ces informations relèvent du Livre foncier en application du droit local et ne sont actuellement pas ouvertes.</p></div>,
+  },
+  {
+    question: "Quand aura lieu la prochaine mise à jour ?",
+    answer: <div className="space-y-3"><p>La DGFiP publie les <a className={aboutLinkClass} href="https://www.data.gouv.fr/fr/datasets/demandes-de-valeurs-foncieres/" target="_blank" rel="noreferrer">données brutes</a> deux fois par an, à la fin des mois d’avril et d’octobre. La publication d’avril complète les données jusqu’à décembre de l’année précédente ; celle d’octobre va jusqu’à juin de l’année en cours.</p><p>Chaque mise à jour peut également enrichir les millésimes antérieurs. Pour vérifier l’enregistrement d’une vente, vous pouvez contacter le service de publicité foncière de proximité.</p></div>,
+  },
+  {
+    question: "Comment faire opposition à l’affichage d’une transaction ?",
+    answer: <div className="space-y-3"><p>La diffusion de DVF répond à une obligation légale issue de la loi du 10 août 2018 et de <a className={aboutLinkClass} href="https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000037309458" target="_blank" rel="noreferrer">l’article L. 112 A du Livre des procédures fiscales</a>. Elle poursuit un objectif d’intérêt général de transparence du marché immobilier.</p><p>Il n’est donc pas possible de s’opposer à cette diffusion ni de demander l’effacement d’une transaction. Les personnes concernées conservent toutefois leurs droits d’accès, de rectification et de limitation. Une preuve d’identité peut être demandée pour traiter la démarche.</p><p><a className={aboutLinkClass} href="https://static.data.gouv.fr/resources/demandes-de-valeurs-foncieres/20201026-172636/information-des-personnes-concernees-par-le-traitement-informatique-20201016.pdf" target="_blank" rel="noreferrer">Consulter l’information relative au traitement des données personnelles</a>.</p></div>,
+  },
+  {
+    question: "J’ai constaté une erreur",
+    answer: <p>Vous pouvez signaler une erreur aux producteurs depuis <a className={aboutLinkClass} href="https://www.data.gouv.fr/fr/datasets/demandes-de-valeurs-foncieres/" target="_blank" rel="noreferrer">la page du jeu de données</a>, ou écrire au bureau GF3B de la DGFiP à <a className={aboutLinkClass} href="mailto:bureau.gf3b-dvf@dgfip.finances.gouv.fr">bureau.gf3b-dvf@dgfip.finances.gouv.fr</a>.</p>,
+  },
+  {
+    question: "J’ai constaté un manque",
+    answer: <div className="space-y-3"><p>Une transaction peut manquer pour plusieurs raisons :</p><ul className="list-disc space-y-1 pl-5"><li>la remontée des ventes récentes peut prendre du temps, y compris pour certains millésimes antérieurs ;</li><li>le cadastre de la zone n’est pas vectorisé ;</li><li>une fusion de communes n’a pas encore été intégrée.</li></ul><p>Le service de publicité foncière de proximité peut confirmer la situation juridique et l’enregistrement d’un immeuble.</p></div>,
+  },
+  {
+    question: "Autres services utiles",
+    answer: <div className="space-y-3"><p>L’explorateur combine DVF avec d’autres données publiques, notamment les DPE et le registre des copropriétés. Pour approfondir :</p><ul className="list-disc space-y-2 pl-5"><li>couverture des réseaux sur <a className={aboutLinkClass} href="https://maconnexioninternet.arcep.fr/" target="_blank" rel="noreferrer">Ma connexion internet</a> ;</li><li>accessibilité des lieux sur <a className={aboutLinkClass} href="https://acceslibre.beta.gouv.fr/" target="_blank" rel="noreferrer">AccèsLibre</a> ;</li><li>risques naturels et technologiques sur <a className={aboutLinkClass} href="https://www.georisques.gouv.fr/" target="_blank" rel="noreferrer">Géorisques</a> ;</li><li>règles d’urbanisme sur le <a className={aboutLinkClass} href="https://www.geoportail-urbanisme.gouv.fr/" target="_blank" rel="noreferrer">Géoportail de l’urbanisme</a> ;</li><li>rénovation énergétique sur <a className={aboutLinkClass} href="https://particulier.gorenove.fr/" target="_blank" rel="noreferrer">Go-Rénove</a> ;</li><li>évolution des prix sur <a className={aboutLinkClass} href="https://datafoncier.cerema.fr/" target="_blank" rel="noreferrer">Dynmark</a>.</li></ul></div>,
+  },
+  {
+    question: "J’ai une autre question",
+    answer: <div className="space-y-3"><p>Pour une question sur les données, utilisez <a className={aboutLinkClass} href="https://www.data.gouv.fr/fr/datasets/demandes-de-valeurs-foncieres/discussions" target="_blank" rel="noreferrer">l’espace de discussion DVF</a> ou contactez la DGFiP à <a className={aboutLinkClass} href="mailto:bureau.gf3b-dvf@dgfip.finances.gouv.fr">bureau.gf3b-dvf@dgfip.finances.gouv.fr</a>. Pour une question concernant l’application, écrivez à <a className={aboutLinkClass} href="https://support.data.gouv.fr/" target="_blank" rel="noreferrer">l’équipe data.gouv.fr</a>.</p><p>Les informations DPE proviennent de la <a className={aboutLinkClass} href="https://www.data.gouv.fr/fr/datasets/base-de-donnees-nationale-des-batiments/" target="_blank" rel="noreferrer">Base de données nationale des bâtiments</a>. Les données de copropriété viennent du <a className={aboutLinkClass} href="https://www.data.gouv.fr/fr/datasets/registre-national-dimmatriculation-des-coproprietes/" target="_blank" rel="noreferrer">registre national d’immatriculation des copropriétés</a>.</p></div>,
+  },
+];
+
+const sourceDatasets = [
+  ["Demandes de valeurs foncières (DVF)", "Ministères économiques et financiers", "https://www.data.gouv.fr/fr/datasets/demandes-de-valeurs-foncieres/"],
+  ["Demandes de valeurs foncières géolocalisées", "data.gouv.fr", "https://www.data.gouv.fr/fr/datasets/demandes-de-valeurs-foncieres-geolocalisees/"],
+  ["Cadastre", "data.gouv.fr", "https://www.data.gouv.fr/fr/datasets/cadastre/"],
+  ["Base Adresse Nationale (BAN)", "Base Adresse Nationale", "https://www.data.gouv.fr/fr/datasets/base-adresse-nationale/"],
+  ["Base de données nationale des bâtiments (BDNB)", "Centre scientifique et technique du bâtiment", "https://www.data.gouv.fr/fr/datasets/base-de-donnees-nationale-des-batiments/"],
+  ["Registre national d’immatriculation des copropriétés (RNIC)", "Agence nationale de l’habitat", "https://www.data.gouv.fr/fr/datasets/registre-national-dimmatriculation-des-coproprietes/"],
+];
+
+const recommendedApplications = [
+  ["Couverture des réseaux", "ARCEP", "maconnexioninternet.arcep.fr", "https://maconnexioninternet.arcep.fr/"],
+  ["Lieux accessibles", "AccèsLibre", "acceslibre.beta.gouv.fr", "https://acceslibre.beta.gouv.fr/"],
+  ["Risques d’une zone géographique", "BRGM", "georisques.gouv.fr", "https://www.georisques.gouv.fr/"],
+  ["Données d’urbanisme", "IGN", "geoportail-urbanisme.gouv.fr", "https://www.geoportail-urbanisme.gouv.fr/"],
+  ["Performance énergétique", "CSTB", "particulier.gorenove.fr", "https://particulier.gorenove.fr/"],
+  ["Évolution des prix immobiliers", "Cerema", "datafoncier.cerema.fr", "https://datafoncier.cerema.fr/"],
 ];
 
 const legends = {
@@ -345,7 +395,35 @@ function Filters({ onSearchSelect, onResultStateChange, sidebarCollapsed }: { on
   );
 }
 
-export default function ExplorateurDvfPage() {
+export function DvfAboutContent() {
+  return (
+    <section className="mx-auto max-w-[1050px] px-5 py-10">
+      <h2 className="text-[24px] font-bold">À propos</h2>
+      <div className="mt-4 max-w-[850px] space-y-3 text-[15px] leading-7 text-[#3a3a3a]">
+        <p>Cette application de data.gouv.fr permet de consulter les demandes de valeurs foncières publiées par la Direction générale des Finances publiques.</p>
+        <p>Issues des actes notariés et des informations cadastrales, ces données décrivent les ventes immobilières des cinq dernières années en métropole et dans les territoires ultramarins, à l’exception de l’Alsace, de la Moselle et de Mayotte.</p>
+        <p>Les données brutes peuvent être téléchargées et réutilisées selon les conditions indiquées sur <a className={aboutLinkClass} href="https://www.data.gouv.fr/fr/datasets/demandes-de-valeurs-foncieres/" target="_blank" rel="noreferrer">la page du jeu de données</a>.</p>
+      </div>
+
+      <h3 className="mt-12 text-[20px] font-bold">Questions fréquentes</h3>
+      <div className="mt-4 border-t border-[#E5E5E5]">{faqs.map(({ question, answer })=><details key={question} className="group border-b border-[#E5E5E5]"><summary className="flex cursor-pointer list-none items-center justify-between gap-4 py-4 font-semibold hover:bg-[#f6f6f6] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091]">{question}<RiArrowDownSLine className="h-5 w-5 shrink-0 transition-transform group-open:rotate-180" /></summary><div className="max-w-[850px] pb-5 text-[14px] leading-6 text-[#3a3a3a]">{answer}</div></details>)}</div>
+
+      <h3 className="mt-14 text-[20px] font-bold">Jeux de données utilisés</h3>
+      <p className="mt-3 max-w-[780px] text-[15px] leading-7 text-[#3a3a3a]">Toutes les données qui alimentent l’application sont disponibles en open data sur data.gouv.fr.</p>
+      <div className="mt-5 grid gap-3 sm:grid-cols-2">{sourceDatasets.map(([title, producer, href]) => <a key={title} href={href} target="_blank" rel="noreferrer" className="group flex items-start justify-between gap-4 border border-[#E5E5E5] bg-white p-4 hover:bg-[#f6f6f6] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#000091] sm:min-h-24"><span><strong className="block text-[14px] leading-5 text-[#161616]">{title}</strong><span className="mt-2 block text-[12px] leading-5 text-[#666666]">Par {producer}</span></span><RiExternalLinkLine aria-hidden className="h-4 w-4 shrink-0 text-[#000091]" /></a>)}</div>
+
+      <h3 className="mt-12 text-[20px] font-bold">Applications recommandées</h3>
+      <p className="mt-3 max-w-[780px] text-[15px] leading-7 text-[#3a3a3a]">Pour aller plus loin, consultez ces applications du service public.</p>
+      <div className="mt-5 grid gap-x-8 gap-y-3 sm:grid-cols-2">{recommendedApplications.map(([title, producer, label, href]) => <a key={title} href={href} target="_blank" rel="noreferrer" className="group flex items-start justify-between gap-4 border-b border-[#E5E5E5] py-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#000091]"><span><strong className="block text-[14px] leading-5 text-[#161616]">{title} <span className="font-normal text-[#666666]">par {producer}</span></strong><span className="mt-1 block text-[12px] text-[#000091] underline underline-offset-2">{label}</span></span><RiExternalLinkLine aria-hidden className="h-4 w-4 shrink-0 text-[#000091]" /></a>)}</div>
+
+      <h3 className="mt-12 text-[20px] font-bold">Code source</h3>
+      <p className="mt-3 text-[15px] leading-7 text-[#3a3a3a]">Le code de l’application est publié sur GitHub.</p>
+      <a href="https://github.com/etalab/explore.data.gouv.fr" target="_blank" rel="noreferrer" className={`mt-3 inline-flex items-center gap-2 text-[14px] ${aboutLinkClass}`}>Code source d’Explore data.gouv.fr<RiExternalLinkLine aria-hidden className="h-4 w-4" /></a>
+    </section>
+  );
+}
+
+export function DvfExplorer({ embedded = false }: { embedded?: boolean }) {
   const [view, setView] = useState<View>("carte");
   const [mapContext, setMapContext] = useState<DvfMapContext>(initialDvfMapContext);
   const [propertyType, setPropertyType] = useState<PropertyType>("all");
@@ -407,8 +485,8 @@ export default function ExplorateurDvfPage() {
   };
 
   return (
-    <main className="min-h-dvh bg-white text-[#161616]">
-      <header className="flex min-h-[108px] items-center justify-between gap-8 border-b border-[#E5E5E5] px-5 py-4 shadow-[0_2px_4px_rgba(0,0,0,.06)] max-md:flex-col max-md:items-start">
+    <main className={`${embedded ? "min-h-0" : "min-h-dvh"} bg-white text-[#161616]`}>
+      {!embedded ? <header className="flex min-h-[108px] items-center justify-between gap-8 border-b border-[#E5E5E5] px-5 py-4 shadow-[0_2px_4px_rgba(0,0,0,.06)] max-md:flex-col max-md:items-start">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-[25px] font-extrabold leading-8">Explorateur de données de valeurs foncières</h1>
@@ -424,16 +502,16 @@ export default function ExplorateurDvfPage() {
           </div>
           <span className="inline-flex items-center gap-1 bg-[#f6f6f6] px-2 py-1 text-[12px] font-medium text-[#3a3a3a]">Données publiées en avril 2026 · Ventes de 2021 à 2025 <InfoTooltip align="right" id="data-coverage-help" text="Les données sont publiées par la DGFiP et mises à jour deux fois par an. Une vente récente peut apparaître avec un décalage dans le service." /></span>
         </div>
-      </header>
-      <nav className="flex border-b border-[#E5E5E5] px-5 py-3" aria-label="Vues de l’explorateur">
-        <div className="inline-flex divide-x divide-[#E5E5E5] border border-[#E5E5E5] bg-white">
-          {tabs.map(tab=>{const Icon=tab.icon;return <button type="button" aria-pressed={view===tab.id} key={tab.id} onClick={()=>setView(tab.id)} className={`flex h-9 min-w-[132px] items-center justify-center gap-2 px-4 text-[14px] font-medium focus-visible:relative focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091] ${view===tab.id ? "bg-[#000091] text-white" : "bg-white text-[#161616] hover:bg-[#eeeeee]"}`}><Icon className="h-4 w-4" />{tab.label}</button>})}
+      </header> : null}
+      <nav className={`${embedded ? "sticky top-0 z-30 bg-white" : ""} flex border-b border-[#E5E5E5] px-3 py-3 sm:px-5`} aria-label="Vues de l’explorateur">
+        <div className="inline-flex w-full divide-x divide-[#E5E5E5] border border-[#E5E5E5] bg-white sm:w-auto">
+          {tabs.map(tab=>{const Icon=tab.icon;return <button type="button" aria-pressed={view===tab.id} key={tab.id} onClick={()=>setView(tab.id)} className={`flex h-9 min-w-0 flex-1 items-center justify-center gap-2 px-4 text-[14px] font-medium sm:min-w-[132px] sm:flex-none focus-visible:relative focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091] ${view===tab.id ? "bg-[#000091] text-white" : "bg-white text-[#161616] hover:bg-[#eeeeee]"}`}><Icon className="h-4 w-4" />{tab.label}</button>})}
         </div>
       </nav>
 
       {view === "tableau" ? <section aria-label="Sélection active" className="flex min-h-12 flex-wrap items-center justify-between gap-x-6 gap-y-2 border-b border-[#E5E5E5] bg-[#f6f6f6] px-5 py-2 text-[13px]"><div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1"><strong className="text-[#161616]">Sélection : {selectionLabel}</strong><span aria-hidden="true" className="text-[#929292]">·</span><span>{resultCount.toLocaleString("fr-FR")} ventes</span><span aria-hidden="true" className="text-[#929292]">·</span><span>2021–2025</span><span aria-hidden="true" className="text-[#929292]">·</span><span>{propertyTypeLabel}</span></div><button type="button" onClick={resetSelection} disabled={mapContext.scale === "national" && propertyType === "all"} className="shrink-0 font-medium text-[#000091] underline underline-offset-2 disabled:cursor-not-allowed disabled:text-[#929292] disabled:no-underline">Réinitialiser</button></section> : null}
 
-      {view === "carte" ? <section className="dvf-map-shell flex h-[calc(100dvh-169px)] min-h-[610px]">
+      {view === "carte" ? <section className={`dvf-map-shell flex ${embedded ? "h-[70dvh] min-h-[520px] sm:h-[min(760px,calc(100dvh-7rem))] sm:min-h-[610px]" : "h-[calc(100dvh-169px)] min-h-[610px]"}`}>
         <div className={`t-resize shrink-0 overflow-hidden ${sidebarCollapsed ? "w-0" : "w-[400px]"} ${mobilePanelOpen && (resultState !== "ready" || Boolean(mapContext.selectedParcel)) ? "max-lg:fixed max-lg:inset-0 max-lg:z-50 max-lg:w-full" : "max-lg:hidden"}`}>
           <StatPanel context={mapContext} propertyType={propertyType} onPropertyTypeChange={setPropertyType} onBreadcrumbNavigate={navigateFromBreadcrumb} resultState={resultState} onRetry={resetResultState} onOpenParcel={openLocatedParcel} onCloseMobile={() => setMobilePanelOpen(false)} onCollapse={() => setSidebarCollapsed(true)} />
         </div>
@@ -453,7 +531,7 @@ export default function ExplorateurDvfPage() {
             datasetReference="demandes-de-valeurs-foncieres"
             datasetResources={dvfResources}
             initialResourceId="dvf-2025"
-            returnTo="/prototypes/explorateur-dvf"
+            returnTo={embedded ? "/prototypes/explorateur-dvf-in-a-page" : "/prototypes/explorateur-dvf"}
           />
           <div className="mt-4 flex justify-end">
             <a href="https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres" target="_blank" rel="noreferrer" className="inline-flex h-10 items-center gap-2 bg-[#000091] px-4 text-[14px] font-medium text-white hover:bg-[#1212ff] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#000091]">
@@ -464,23 +542,12 @@ export default function ExplorateurDvfPage() {
         </section>
       ) : null}
 
-      {view === "apropos" ? (
-        <section className="mx-auto min-h-[610px] max-w-[1050px] px-5 py-10">
-          <h2 className="text-[24px] font-bold">À propos</h2>
-          <p className="mt-4 max-w-[850px] text-[15px] leading-7">Cette application est proposée par l’équipe de data.gouv.fr et permet de visualiser les données de demandes de valeurs foncières publiées par la direction générale des finances publiques.</p>
-
-          <h3 className="mt-10 text-[20px] font-bold">Comprendre les données</h3>
-          <div className="mt-4 max-w-[850px] border-l-4 border-[#000091] bg-[#f6f6f6] p-5 text-[14px] leading-6 text-[#3a3a3a]"><p><strong className="text-[#161616]">Période couverte :</strong> ventes enregistrées de 2021 à 2025.</p><p className="mt-2"><strong className="text-[#161616]">Publication :</strong> avril 2026, avec une mise à jour semestrielle.</p><p className="mt-2"><strong className="text-[#161616]">Nature du service :</strong> consultation de transactions enregistrées, sans estimation automatique de la valeur d’un logement.</p><p className="mt-2"><strong className="text-[#161616]">Lecture des ventes :</strong> une transaction peut contenir plusieurs locaux, dépendances ou parcelles. Le prix n’est pas additionné lorsqu’il est répété dans les données sources.</p></div>
-
-          <h3 className="mt-12 text-[20px] font-bold">Questions fréquentes</h3>
-          <div className="mt-4 border-t border-[#E5E5E5]">{faqs.map(([question,answer])=><details key={question} className="group border-b border-[#E5E5E5]"><summary className="flex cursor-pointer list-none items-center justify-between py-4 font-semibold hover:bg-[#f6f6f6] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091]">{question}<RiArrowDownSLine className="h-5 w-5 shrink-0 transition-transform group-open:rotate-180" /></summary><p className="max-w-[850px] pb-5 text-[14px] leading-6 text-[#3a3a3a]">{answer}</p></details>)}</div>
-
-          <h3 className="mt-12 text-[20px] font-bold">Sources</h3>
-          <p className="mt-4 max-w-[780px] text-[15px] leading-7">Les données de demandes de valeurs foncières sont produites par la Direction générale des Finances publiques à partir des actes notariés et des informations cadastrales.</p>
-          <div className="mt-6 grid gap-4 sm:grid-cols-2"><article className="border border-[#E5E5E5] p-5"><h4 className="font-bold">Demandes de valeurs foncières</h4><p className="mt-2 text-[14px] leading-6 text-[#555]">Transactions immobilières intervenues au cours des cinq dernières années.</p><a className="mt-4 inline-block text-[14px] font-medium text-[#000091] underline underline-offset-2 hover:decoration-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#000091]" href="#">Consulter le jeu de données</a></article><article className="border border-[#E5E5E5] p-5"><h4 className="font-bold">Cadastre</h4><p className="mt-2 text-[14px] leading-6 text-[#555]">Contours des parcelles et référentiels géographiques utilisés pour la carte.</p><a className="mt-4 inline-block text-[14px] font-medium text-[#000091] underline underline-offset-2 hover:decoration-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#000091]" href="#">En savoir plus</a></article></div>
-        </section>
-      ) : null}
+      {view === "apropos" && !embedded ? <DvfAboutContent /> : null}
 
     </main>
   );
+}
+
+export default function ExplorateurDvfPage() {
+  return <DvfExplorer />;
 }

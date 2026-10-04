@@ -9,6 +9,15 @@ export type Prototype = {
 
 export const prototypes: Prototype[] = [
   {
+    slug: "explorateur-dvf-in-a-page",
+    title: "Explorateur DVF dans une page",
+    description:
+      "Prototype d’intégration de l’explorateur immobilier DVF dans une page data.gouv.fr.",
+    status: "exploration",
+    tags: ["immobilier", "DVF", "intégration"],
+    figmaUrl: "",
+  },
+  {
     slug: "explorateur-carburants",
     title: "Explorateur des prix des carburants",
     description: "Comparez les stations, les prix et les disponibilités dans une interface cohérente avec l’explorateur DVF.",

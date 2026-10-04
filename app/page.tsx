@@ -55,6 +55,8 @@ const prototypeIcons = {
   "explore-in-context": RiMicroscopeLine,
   "explore-in-a-page": RiMicroscopeLine,
   "explorateur-dvf": RiMicroscopeLine,
+  "explorateur-dvf-in-a-page": RiMicroscopeLine,
+  "explorateur-carburants": RiMicroscopeLine,
   "test-assistant": RiMessageAi3Line,
 };
 
@@ -65,7 +67,6 @@ const currentPrototypeSlugs = [
   "enrichissement-donnees",
   "explore-in-context",
   "explore-in-a-page",
-  "explorateur-dvf",
 ] as const;
 
 const currentPrototypes = currentPrototypeSlugs
@@ -78,6 +79,16 @@ const testPrototypes = testPrototypeSlugs
   .map((slug) => prototypes.find((prototype) => prototype.slug === slug))
   .filter((prototype): prototype is (typeof prototypes)[number] => Boolean(prototype));
 
+const dataExplorationSlugs = [
+  "explorateur-dvf-in-a-page",
+  "explorateur-dvf",
+  "explorateur-carburants",
+] as const;
+
+const dataExplorationPrototypes = dataExplorationSlugs
+  .map((slug) => prototypes.find((prototype) => prototype.slug === slug))
+  .filter((prototype): prototype is (typeof prototypes)[number] => Boolean(prototype));
+
 const explorationPrototypes = prototypes.filter(
   (prototype) =>
     !currentPrototypeSlugs.includes(
@@ -85,6 +96,9 @@ const explorationPrototypes = prototypes.filter(
     ) &&
     !testPrototypeSlugs.includes(
       prototype.slug as (typeof testPrototypeSlugs)[number],
+    ) &&
+    !dataExplorationSlugs.includes(
+      prototype.slug as (typeof dataExplorationSlugs)[number],
     ),
 );
 
@@ -208,6 +222,19 @@ export default function Home() {
                       <span>Test</span>
                     </summary>
                     <PrototypeLinks items={testPrototypes} />
+                  </details>
+                </li>
+                <li>
+                  <details
+                    className="[&[open]>summary>.tree-chevron]:rotate-90"
+                    open
+                  >
+                    <summary className="flex cursor-pointer list-none items-center gap-2 rounded px-2 py-1.5 outline-none transition-colors hover:bg-white focus-visible:ring-2 focus-visible:ring-[#000091] [&::-webkit-details-marker]:hidden">
+                      <ChevronIcon />
+                      <FolderIcon />
+                      <span>Exploration de données</span>
+                    </summary>
+                    <PrototypeLinks items={dataExplorationPrototypes} />
                   </details>
                 </li>
                 <li>
