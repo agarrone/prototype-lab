@@ -108,7 +108,7 @@ type TransactionCardProps = {
 
 function TransactionCard({ nature, price, date, address, lots, notice, muted }: TransactionCardProps) {
   return (
-    <article className={`overflow-hidden rounded border border-[#E5E5E5] ${muted ? "bg-[#f6f6f6]" : "bg-white"}`}>
+    <article className={`overflow-hidden rounded border border-[#E5E5E5] ${muted ? "bg-[#eeeeee]" : "bg-[#f6f6f6]"}`}>
       <div className="p-4">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -177,31 +177,37 @@ function StructuredTransactionConcept({ nature = "Vente", price = "428 000 €",
 
   return (
     <article className={`overflow-hidden rounded border border-[#E5E5E5] ${muted ? "bg-[#f6f6f6]" : "bg-white"}`}>
-      <header className="flex items-center justify-between border-b border-[#E5E5E5] bg-[#f6f6f6] px-3 py-2"><span className="text-[12px] font-medium uppercase">{nature}</span><span className="inline-flex items-center gap-1 text-[12px] text-[#666666]"><RiCalendarLine aria-hidden className="h-3.5 w-3.5" />{date}</span></header>
-      <div className="p-4">
-        <p className={`text-[20px] font-bold ${price ? "" : "text-[#666666]"}`}>{price || "Montant non disponible"}</p>
-        {pricePerSquareMeter ? <p className="mt-1 text-[13px] font-medium text-[#000091]">{pricePerSquareMeter} par m²</p> : null}
-        <p className="mt-3 flex items-start gap-1 text-[12px] text-[#666666]"><RiMapPin2Line className="mt-0.5 h-3.5 w-3.5 shrink-0" />{address}</p>
-        <div className="mt-4">
-          <p className="mb-2 text-[12px] font-bold">{`${lots.length} ${lots.length > 1 ? "lots" : "lot"}`}</p>
-          <div className="overflow-hidden border-y border-[#E5E5E5]">
-            <table className="w-full table-fixed text-left text-[12px]">
+      <div className="p-3">
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-[14px] font-bold leading-5">{nature}</p>
+          <div className="shrink-0 text-right">
+            <p className={`text-[14px] font-bold leading-5 ${price ? "text-[#000091]" : "text-[#666666]"}`}>{price || "Montant non disponible"}</p>
+          </div>
+        </div>
+        <div className="mt-1.5 space-y-0.5 text-[12px] leading-4 text-[#666666]">
+          <div className="flex items-center justify-between gap-3"><p className="flex min-w-0 items-center gap-1"><RiCalendarLine aria-hidden className="h-3.5 w-3.5 shrink-0" />{date}</p>{pricePerSquareMeter ? <p className="shrink-0 font-medium text-[#000091]">{pricePerSquareMeter} par m²</p> : null}</div>
+          <p className="flex items-start gap-1"><RiMapPin2Line aria-hidden className="h-3.5 w-3.5 shrink-0" />{address}</p>
+        </div>
+        <div className="mt-3">
+          <p className="mb-1 text-[13px] font-bold">{`${lots.length} ${lots.length > 1 ? "lots" : "lot"}`}</p>
+          <div className="overflow-hidden">
+            <table className="w-full table-fixed text-left text-[12px] leading-4">
               <thead className="sr-only"><tr><th>Type de lot</th><th>Pièces</th><th>Surface</th></tr></thead>
               <tbody className="divide-y divide-[#E5E5E5]">
                 {lots.map((lot) => {
                   return <tr key={lot.label}>
-                    <th scope="row" className="w-[43%] py-2 pr-2 font-medium">{lot.label}</th>
-                    <td className="w-[29%] px-1 py-2 text-[#666666]">{lot.rooms ?? "Non renseigné"}</td>
-                    <td className="w-[28%] py-2 pl-1 text-right font-medium text-[#3a3a3a]">{lot.surface ?? "Non renseignée"}</td>
+                    <th scope="row" className="w-[43%] py-1.5 pr-2 font-normal text-[#3a3a3a]">{lot.label}</th>
+                    <td className="w-[29%] px-1 py-1.5 text-[#666666]">{lot.rooms ?? "Non renseigné"}</td>
+                    <td className="w-[28%] py-1.5 pl-1 text-right text-[#3a3a3a]">{lot.surface ?? "Non renseignée"}</td>
                   </tr>;
                 })}
               </tbody>
             </table>
           </div>
         </div>
-        <p className="mt-3 text-[11px] text-[#666666]">Référence de la transaction : {mutationId}</p>
+        <p className="mt-2 text-[10px] leading-4 text-[#666666]">Référence de la transaction : {mutationId}</p>
       </div>
-      {notice ? <p className="flex gap-2 border-t border-[#E5E5E5] bg-[#f6f6f6] p-3 text-[12px] leading-5 text-[#3a3a3a]"><RiAlertLine className="mt-0.5 h-4 w-4 shrink-0 text-[#B34000]" />{notice}</p> : null}
+      {notice ? <p className="flex gap-1.5 border-t border-[#E5E5E5] bg-[#f6f6f6] p-2.5 text-[11px] leading-4 text-[#3a3a3a]"><RiAlertLine className="h-3.5 w-3.5 shrink-0 text-[#B34000]" />{notice}</p> : null}
     </article>
   );
 }
@@ -219,18 +225,18 @@ function ParcelSearchPrototype() {
   const [commune, setCommune] = useState("");
   const [section, setSection] = useState("");
   const [parcel, setParcel] = useState("");
-  const fieldClass = "mt-1 h-10 w-full rounded border border-[#E5E5E5] bg-white px-3 text-[13px] text-[#161616] outline-none disabled:cursor-not-allowed disabled:bg-[#eeeeee] disabled:text-[#929292] focus:border-[#000091] focus:outline focus:outline-2 focus:outline-offset-[-2px] focus:outline-[#000091]";
+  const fieldClass = "dvf-select mt-1 h-10 w-full rounded border border-[#E5E5E5] bg-white pl-3 text-[13px] text-[#161616] outline-none disabled:cursor-not-allowed disabled:bg-[#eeeeee] disabled:text-[#929292] focus:border-[#000091] focus:outline focus:outline-2 focus:outline-offset-[-2px] focus:outline-[#000091]";
 
   return (
     <article className="w-full max-w-[400px] overflow-hidden border border-[#E5E5E5] bg-white">
       <header className="flex h-9 items-center justify-between border-b border-[#E5E5E5] px-4 text-[#666666]"><h3 className="text-[12px] font-medium">Recherche avancée</h3><RiArrowDownSLine className="h-4 w-4 rotate-180" /></header>
       <div className="space-y-4 p-4">
-        <label className="block text-[12px] font-medium">Identifiant complet de la parcelle<input className={fieldClass} placeholder="Ex. : 23150000A0001" /></label>
+        <label className="block text-[12px] font-medium">Identifiant complet de la parcelle<input className="mt-1 h-10 w-full rounded border border-[#E5E5E5] bg-white px-3 text-[13px] text-[#161616] outline-none focus:border-[#000091] focus:outline focus:outline-2 focus:outline-offset-[-2px] focus:outline-[#000091]" placeholder="Ex. : 23150000A0001" /></label>
         <p className="text-[12px] font-bold text-[#3a3a3a]">Ou composez-le pas à pas</p>
-        <label className="block text-[12px] font-medium">Département<select value={department} onChange={(event) => { setDepartment(event.target.value); setCommune(""); setSection(""); setParcel(""); }} className={fieldClass}><option value="">Sélectionner un département</option><option value="02">02 - Aisne</option><option value="34">34 - Hérault</option><option value="75">75 - Paris</option></select></label>
-        <label className="block text-[12px] font-medium">Commune<select disabled={!department} value={commune} onChange={(event) => { setCommune(event.target.value); setSection(""); setParcel(""); }} className={fieldClass}><option value="">Sélectionner une commune</option><option value="achery">Achery (02002)</option><option value="montpellier">Montpellier (34172)</option><option value="paris">Paris (75056)</option></select></label>
-        <label className="block text-[12px] font-medium">Section cadastrale<select disabled={!commune} value={section} onChange={(event) => { setSection(event.target.value); setParcel(""); }} className={fieldClass}><option value="">Sélectionner une section</option><option value="000AC">000AC</option><option value="HX">HX</option><option value="AT">AT</option></select></label>
-        <label className="block text-[12px] font-medium">Parcelle{section ? " (307 trouvées)" : ""}<select disabled={!section} value={parcel} onChange={(event) => setParcel(event.target.value)} className={fieldClass}><option value="">Sélectionner une parcelle</option><option value="02002000AC0005">02002000AC0005</option><option value="02002000AC0006">02002000AC0006</option><option value="02002000AC0007">02002000AC0007</option></select></label>
+        <label className="block text-[12px] font-medium">Département<span className="relative block"><select value={department} onChange={(event) => { setDepartment(event.target.value); setCommune(""); setSection(""); setParcel(""); }} className={fieldClass}><option value="">Sélectionner un département</option><option value="02">02 - Aisne</option><option value="34">34 - Hérault</option><option value="75">75 - Paris</option></select><RiArrowDownSLine aria-hidden className="pointer-events-none absolute right-3 top-[calc(50%+2px)] h-5 w-5 -translate-y-1/2 text-[#161616]" /></span></label>
+        <label className="block text-[12px] font-medium">Commune<span className="relative block"><select disabled={!department} value={commune} onChange={(event) => { setCommune(event.target.value); setSection(""); setParcel(""); }} className={fieldClass}><option value="">Sélectionner une commune</option><option value="achery">Achery (02002)</option><option value="montpellier">Montpellier (34172)</option><option value="paris">Paris (75056)</option></select><RiArrowDownSLine aria-hidden className={`pointer-events-none absolute right-3 top-[calc(50%+2px)] h-5 w-5 -translate-y-1/2 ${department ? "text-[#161616]" : "text-[#929292]"}`} /></span></label>
+        <label className="block text-[12px] font-medium">Section cadastrale<span className="relative block"><select disabled={!commune} value={section} onChange={(event) => { setSection(event.target.value); setParcel(""); }} className={fieldClass}><option value="">Sélectionner une section</option><option value="000AC">000AC</option><option value="HX">HX</option><option value="AT">AT</option></select><RiArrowDownSLine aria-hidden className={`pointer-events-none absolute right-3 top-[calc(50%+2px)] h-5 w-5 -translate-y-1/2 ${commune ? "text-[#161616]" : "text-[#929292]"}`} /></span></label>
+        <label className="block text-[12px] font-medium">Parcelle{section ? " (307 trouvées)" : ""}<span className="relative block"><select disabled={!section} value={parcel} onChange={(event) => setParcel(event.target.value)} className={fieldClass}><option value="">Sélectionner une parcelle</option><option value="02002000AC0005">02002000AC0005</option><option value="02002000AC0006">02002000AC0006</option><option value="02002000AC0007">02002000AC0007</option></select><RiArrowDownSLine aria-hidden className={`pointer-events-none absolute right-3 top-[calc(50%+2px)] h-5 w-5 -translate-y-1/2 ${section ? "text-[#161616]" : "text-[#929292]"}`} /></span></label>
         {parcel ? <p className="flex items-start gap-2 rounded bg-[#E3FDEB] p-3 text-[12px] leading-5 text-[#18753C]"><RiCheckboxCircleLine className="mt-0.5 h-4 w-4 shrink-0" />La parcelle {parcel} est sélectionnée. La carte se centre sur son emprise.</p> : null}
       </div>
     </article>
@@ -414,7 +420,7 @@ export default function ExplorateurDvfDesignPage() {
 
             <article className="border border-[#E5E5E5] bg-white p-5">
               <Label>Contrôles cartographiques</Label>
-              <div className="flex items-start gap-4"><div className="flex flex-col overflow-hidden rounded border border-[#E5E5E5]"><button type="button" className="flex h-9 w-9 items-center justify-center border-b border-[#E5E5E5]" aria-label="Zoomer"><RiAddLine className="h-5 w-5" /></button><button type="button" className="flex h-9 w-9 items-center justify-center border-b border-[#E5E5E5]" aria-label="Dézoomer"><RiSubtractLine className="h-5 w-5" /></button><button type="button" className="flex h-9 w-9 items-center justify-center border-b border-[#E5E5E5]" aria-label="Masquer les couleurs de données"><RiPaletteLine className="h-5 w-5" /></button><button type="button" className="flex h-9 w-9 items-center justify-center" aria-label="Afficher la vue satellite"><RiEarthLine className="h-5 w-5" /></button></div><p className="max-w-48 text-[12px] leading-5 text-[#666666]">Groupe placé en haut à droite : zoom, retour à la sélection seulement lorsqu’il est disponible, visibilité des couleurs et choix du fond de carte.</p></div>
+              <div className="flex items-start gap-4"><div className="flex flex-col overflow-hidden rounded border border-[#E5E5E5]"><button type="button" className="flex h-9 w-9 items-center justify-center border-b border-[#E5E5E5]" aria-label="Zoomer"><RiAddLine className="h-5 w-5" /></button><button type="button" className="flex h-9 w-9 items-center justify-center border-b border-[#E5E5E5]" aria-label="Dézoomer"><RiSubtractLine className="h-5 w-5" /></button><button type="button" className="flex h-9 w-9 items-center justify-center border-b border-[#E5E5E5]" aria-label="Masquer le choroplèthe"><RiPaletteLine className="h-5 w-5" /></button><button type="button" className="flex h-9 w-9 items-center justify-center" aria-label="Afficher la vue satellite"><RiEarthLine className="h-5 w-5" /></button></div><p className="max-w-48 text-[12px] leading-5 text-[#666666]">Groupe placé en haut à droite : zoom, retour à la sélection seulement lorsqu’il est disponible, visibilité du choroplèthe et choix du fond de carte. Les parcelles avec ventes restent violettes lorsque le choroplèthe est masqué.</p></div>
             </article>
 
             <article className="border border-[#E5E5E5] bg-white p-5">
@@ -451,14 +457,14 @@ export default function ExplorateurDvfDesignPage() {
           <header>
             <p className="text-[11px] font-medium uppercase tracking-[.06em] text-[#000091]">Échelle parcelle cadastrale</p>
             <h2 id="transactions-title" className="mt-1 text-[24px] font-bold">Cartes de transaction</h2>
-            <p className="mt-2 max-w-[820px] text-[14px] leading-6 text-[#3a3a3a]">Le composant utilisé conserve la même hiérarchie dans tous les cas : nature et date de la vente, montant, adresse, puis détail des lots sous forme de tableau.</p>
+            <p className="mt-2 max-w-[820px] text-[14px] leading-6 text-[#3a3a3a]">Le composant utilisé conserve la même hiérarchie dans tous les cas : nature et montant de la transaction, contexte de la vente, nombre de lots, puis caractéristiques sous forme de tableau.</p>
           </header>
 
           <div className="mt-6 max-w-[400px]"><Label>Composant utilisé</Label><StructuredTransactionConcept /></div>
 
           <div className="mt-10 border-t border-[#E5E5E5] pt-6">
             <h3 className="text-[18px] font-bold">États du composant</h3>
-            <p className="mt-1 max-w-[720px] text-[13px] leading-5 text-[#666666]">Les variantes ci-dessous utilisent la piste C pour vérifier son comportement avec les principaux cas rencontrés dans les données.</p>
+            <p className="mt-1 max-w-[720px] text-[13px] leading-5 text-[#666666]">Les variantes ci-dessous vérifient la nouvelle hiérarchie avec les principaux cas rencontrés dans les données.</p>
           </div>
 
           <div className="mt-6 grid gap-6 md:grid-cols-2 xl:grid-cols-4">

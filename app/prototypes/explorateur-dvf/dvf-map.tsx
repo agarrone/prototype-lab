@@ -4,7 +4,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 
 import { useEffect, useRef, useState } from "react";
 import { RiAddLine, RiEarthLine, RiFocus3Line, RiMap2Line, RiPaletteLine, RiSubtractLine } from "@remixicon/react";
-import type { ExpressionSpecification } from "maplibre-gl";
+import type { ExpressionSpecification, Map as MapLibreMap } from "maplibre-gl";
 
 export type DvfMapScale = "national" | "departement" | "commune" | "parcelle";
 
@@ -12,6 +12,8 @@ export type DvfMapContext = {
   scale: DvfMapScale;
   label: string;
   code?: string;
+  sectionCode?: string;
+  sectionLabel?: string;
   zoom: number;
   selectedParcel?: string;
 };
@@ -53,6 +55,21 @@ const simulatedColor = (property: string): ExpressionSpecification => [
   ],
 ];
 
+// Cadastre section identifiers are strings (for example "AB"), so coercing
+// them to numbers made the whole section scale fall back to the same colour.
+const simulatedSectionColor: ExpressionSpecification = [
+  "match",
+  ["slice", ["to-string", ["get", "code"]], 0, 1],
+  "A", "#028758",
+  "B", "#41A858",
+  "C", "#A6C84C",
+  "D", "#FFF64E",
+  "E", "#F5B33B",
+  "F", "#E66B2E",
+  "G", "#CC000A",
+  "#D8C84B",
+];
+
 function simulatedMetrics(code: string) {
   const hash = [...code].reduce((total, character) => total + character.charCodeAt(0), 0);
   return {
@@ -61,6 +78,29 @@ function simulatedMetrics(code: string) {
     missing: hash % 13 === 0,
     unavailable: hash % 17 === 0,
   };
+}
+
+const emptyFeatureFilter: ExpressionSpecification = ["==", ["get", "id"], ""];
+const uncoveredDepartments = ["57", "67", "68"];
+const uncoveredDepartmentFilter: ExpressionSpecification = ["in", ["to-string", ["get", "code"]], ["literal", uncoveredDepartments]];
+const uncoveredCommuneFilter: ExpressionSpecification = ["in", ["slice", ["to-string", ["get", "code"]], 0, 2], ["literal", uncoveredDepartments]];
+const localLawTooltip = "Pour l’ancienne Alsace-Moselle, les données sont dans le Livre Foncier en raison de l’application du droit local, et ne sont actuellement pas ouvertes.";
+
+function setActiveTerritoryOutline(map: MapLibreMap, context: DvfMapContext) {
+  const targets = [
+    { scale: "departement", layers: ["dvf-departement-active-halo", "dvf-departement-active"], property: "code" },
+    { scale: "commune", layers: ["dvf-commune-active-halo", "dvf-commune-active"], property: "code" },
+    { scale: "parcelle", layers: ["dvf-section-active-halo", "dvf-section-active"], property: "id" },
+  ] as const;
+
+  targets.forEach((target) => {
+    const value = target.scale === "parcelle"
+      ? context.scale === "parcelle" ? context.sectionCode ?? "" : ""
+      : context.scale === target.scale ? context.code ?? "" : "";
+    target.layers.forEach((layerId) => {
+      if (map.getLayer(layerId)) map.setFilter(layerId, ["==", ["get", target.property], value]);
+    });
+  });
 }
 
 export default function DvfMap({
@@ -99,8 +139,10 @@ export default function DvfMap({
     onContextChangeRef.current?.(navigationTarget.context);
     if (navigationTarget.context.selectedParcel) {
       if (map.getLayer("dvf-parcelle-selected-fill")) map.setFilter("dvf-parcelle-selected-fill", ["==", ["get", "id"], navigationTarget.context.selectedParcel]);
+      if (map.getLayer("dvf-parcelle-selected-halo")) map.setFilter("dvf-parcelle-selected-halo", ["==", ["get", "id"], navigationTarget.context.selectedParcel]);
       if (map.getLayer("dvf-parcelle-selected")) map.setFilter("dvf-parcelle-selected", ["==", ["get", "id"], navigationTarget.context.selectedParcel]);
     }
+    setActiveTerritoryOutline(map, navigationTarget.context);
     map.flyTo({ center: navigationTarget.center, zoom: navigationTarget.zoom });
   }, [navigationTarget]);
 
@@ -142,12 +184,15 @@ export default function DvfMap({
                     ? "Commune sélectionnée"
                     : "Sélectionnez une parcelle"),
           code: next.code ?? (previous.scale === scale ? previous.code : undefined),
+          sectionCode: scale === "parcelle" ? next.sectionCode ?? previous.sectionCode : undefined,
+          sectionLabel: scale === "parcelle" ? next.sectionLabel ?? previous.sectionLabel : undefined,
           selectedParcel:
             scale === "parcelle"
               ? next.selectedParcel ?? previous.selectedParcel
               : undefined,
         };
         contextRef.current = context;
+        setActiveTerritoryOutline(map, context);
         onContextChangeRef.current?.(context);
       };
 
@@ -155,10 +200,12 @@ export default function DvfMap({
         map.addSource("dvf-admin", {
           type: "vector",
           url: "https://openmaptiles.geo.data.gouv.fr/data/decoupage-administratif.json",
+          promoteId: { epcis: "code", departements: "code", communes: "code" },
         });
         map.addSource("dvf-cadastre", {
           type: "vector",
           url: "https://openmaptiles.geo.data.gouv.fr/data/cadastre.json",
+          promoteId: { sections: "id", parcelles: "id" },
         });
         map.addSource("dvf-satellite", {
           type: "raster",
@@ -173,28 +220,60 @@ export default function DvfMap({
         map.addLayer({ id: "dvf-satellite", type: "raster", source: "dvf-satellite", layout: { visibility: "none" } }, firstLabelLayer);
         const layers: import("maplibre-gl").LayerSpecification[] = [
           { id: "dvf-epci-fill", type: "fill", source: "dvf-admin", "source-layer": "epcis", minzoom: 3, maxzoom: 8, paint: { "fill-color": simulatedColor("code"), "fill-opacity": 0.8 } },
-          { id: "dvf-epci-line", type: "line", source: "dvf-admin", "source-layer": "epcis", minzoom: 3, maxzoom: 8, paint: { "line-color": "rgba(0,0,0,.55)", "line-width": 0.6 } },
+          { id: "dvf-epci-line", type: "line", source: "dvf-admin", "source-layer": "epcis", minzoom: 3, maxzoom: 8, paint: { "line-color": "rgba(22,22,22,.72)", "line-width": 0.9 } },
           { id: "dvf-departement-hit", type: "fill", source: "dvf-admin", "source-layer": "departements", minzoom: 3, maxzoom: 8, paint: { "fill-color": "#ffffff", "fill-opacity": 0 } },
+          { id: "dvf-departement-hover-fill", type: "fill", source: "dvf-admin", "source-layer": "departements", minzoom: 3, maxzoom: 8, paint: { "fill-color": "#ffffff", "fill-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 0.28, 0], "fill-opacity-transition": { duration: 0, delay: 0 } } },
           { id: "dvf-commune-fill", type: "fill", source: "dvf-admin", "source-layer": "communes", minzoom: 8, maxzoom: 11, paint: { "fill-color": simulatedColor("code"), "fill-opacity": 0.8 } },
-          { id: "dvf-commune-line", type: "line", source: "dvf-admin", "source-layer": "communes", minzoom: 8, maxzoom: 11, paint: { "line-color": "rgba(0,0,0,.55)", "line-width": 0.55 } },
-          { id: "dvf-section-fill", type: "fill", source: "dvf-cadastre", "source-layer": "sections", minzoom: 11, maxzoom: 14, paint: { "fill-color": simulatedColor("id"), "fill-opacity": 0.8 } },
-          { id: "dvf-section-line", type: "line", source: "dvf-cadastre", "source-layer": "sections", minzoom: 11, maxzoom: 14, paint: { "line-color": "rgba(0,0,0,.6)", "line-width": 0.7 } },
+          { id: "dvf-alsace-moselle-fill", type: "fill", source: "dvf-admin", "source-layer": "departements", minzoom: 3, maxzoom: 11, filter: uncoveredDepartmentFilter, paint: { "fill-color": "#CECECE", "fill-opacity": 1 } },
+          { id: "dvf-alsace-moselle-line", type: "line", source: "dvf-admin", "source-layer": "departements", minzoom: 3, maxzoom: 11, filter: uncoveredDepartmentFilter, paint: { "line-color": "#3a3a3a", "line-width": 1.4 } },
+          { id: "dvf-commune-line", type: "line", source: "dvf-admin", "source-layer": "communes", minzoom: 8, maxzoom: 11, paint: { "line-color": "rgba(22,22,22,.68)", "line-width": 0.75 } },
+          { id: "dvf-departement-context-line", type: "line", source: "dvf-admin", "source-layer": "departements", minzoom: 8, maxzoom: 11, paint: { "line-color": "rgba(22,22,22,.9)", "line-width": 1.8 } },
+          { id: "dvf-commune-hover-fill", type: "fill", source: "dvf-admin", "source-layer": "communes", minzoom: 8, maxzoom: 11, paint: { "fill-color": "#ffffff", "fill-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 0.28, 0], "fill-opacity-transition": { duration: 0, delay: 0 } } },
+          { id: "dvf-departement-active-halo", type: "line", source: "dvf-admin", "source-layer": "departements", minzoom: 8, maxzoom: 11, filter: emptyFeatureFilter, paint: { "line-color": "rgba(255,255,255,.98)", "line-width": 7 } },
+          { id: "dvf-departement-active", type: "line", source: "dvf-admin", "source-layer": "departements", minzoom: 8, maxzoom: 11, filter: emptyFeatureFilter, paint: { "line-color": "#000091", "line-width": 2.5 } },
+          { id: "dvf-section-fill", type: "fill", source: "dvf-cadastre", "source-layer": "sections", minzoom: 11, maxzoom: 14, paint: { "fill-color": simulatedSectionColor, "fill-opacity": 0.8 } },
+          { id: "dvf-section-line", type: "line", source: "dvf-cadastre", "source-layer": "sections", minzoom: 11, maxzoom: 14, paint: { "line-color": "rgba(22,22,22,.72)", "line-width": 0.85 } },
+          { id: "dvf-commune-context-line", type: "line", source: "dvf-admin", "source-layer": "communes", minzoom: 11, maxzoom: 14, paint: { "line-color": "rgba(22,22,22,.92)", "line-width": 2 } },
+          { id: "dvf-section-hover-fill", type: "fill", source: "dvf-cadastre", "source-layer": "sections", minzoom: 11, maxzoom: 14, paint: { "fill-color": "#ffffff", "fill-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 0.28, 0], "fill-opacity-transition": { duration: 0, delay: 0 } } },
+          { id: "dvf-commune-active-halo", type: "line", source: "dvf-admin", "source-layer": "communes", minzoom: 11, maxzoom: 14, filter: emptyFeatureFilter, paint: { "line-color": "rgba(255,255,255,.98)", "line-width": 7 } },
+          { id: "dvf-commune-active", type: "line", source: "dvf-admin", "source-layer": "communes", minzoom: 11, maxzoom: 14, filter: emptyFeatureFilter, paint: { "line-color": "#000091", "line-width": 2.5 } },
           { id: "dvf-parcelle-base", type: "fill", source: "dvf-cadastre", "source-layer": "parcelles", minzoom: 14, paint: { "fill-color": "#E5E5E5", "fill-opacity": 0.48 } },
           { id: "dvf-parcelle-fill", type: "fill", source: "dvf-cadastre", "source-layer": "parcelles", minzoom: 14, filter: ["!=", ["%", ["to-number", ["get", "numero"], 0], 4], 0], paint: { "fill-color": "#6A6AF4", "fill-opacity": 0.58 } },
           { id: "dvf-parcelle-selected-fill", type: "fill", source: "dvf-cadastre", "source-layer": "parcelles", minzoom: 14, filter: ["==", ["get", "id"], ""], paint: { "fill-color": "#E1000F", "fill-opacity": 0.72 } },
+          { id: "dvf-alsace-moselle-detail-fill", type: "fill", source: "dvf-admin", "source-layer": "communes", minzoom: 11, filter: uncoveredCommuneFilter, paint: { "fill-color": "#CECECE", "fill-opacity": 1 } },
+          { id: "dvf-alsace-moselle-detail-line", type: "line", source: "dvf-admin", "source-layer": "communes", minzoom: 11, filter: uncoveredCommuneFilter, paint: { "line-color": "#3a3a3a", "line-width": 1.2 } },
           { id: "dvf-parcelle-line", type: "line", source: "dvf-cadastre", "source-layer": "parcelles", minzoom: 14, paint: { "line-color": "rgba(80,80,80,.52)", "line-width": 0.6 } },
-          { id: "dvf-parcelle-hover", type: "line", source: "dvf-cadastre", "source-layer": "parcelles", minzoom: 14, filter: ["==", ["get", "id"], ""], paint: { "line-color": "#6A6AF4", "line-width": 2 } },
+          { id: "dvf-section-context-line", type: "line", source: "dvf-cadastre", "source-layer": "sections", minzoom: 14, paint: { "line-color": "rgba(22,22,22,.88)", "line-width": 1.8 } },
+          { id: "dvf-parcelle-hover-fill", type: "fill", source: "dvf-cadastre", "source-layer": "parcelles", minzoom: 14, paint: { "fill-color": "#ffffff", "fill-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 0.32, 0], "fill-opacity-transition": { duration: 0, delay: 0 } } },
+          { id: "dvf-section-active-halo", type: "line", source: "dvf-cadastre", "source-layer": "sections", minzoom: 14, filter: emptyFeatureFilter, paint: { "line-color": "rgba(255,255,255,.98)", "line-width": 7 } },
+          { id: "dvf-section-active", type: "line", source: "dvf-cadastre", "source-layer": "sections", minzoom: 14, filter: emptyFeatureFilter, paint: { "line-color": "#A1000B", "line-width": 3 } },
+          { id: "dvf-parcelle-selected-halo", type: "line", source: "dvf-cadastre", "source-layer": "parcelles", minzoom: 14, filter: emptyFeatureFilter, paint: { "line-color": "rgba(255,255,255,.98)", "line-width": 7 } },
           { id: "dvf-parcelle-selected", type: "line", source: "dvf-cadastre", "source-layer": "parcelles", minzoom: 14, filter: ["==", ["get", "id"], ""], paint: { "line-color": "#A1000B", "line-width": 3 } },
         ];
         layers.forEach((layer) => map.addLayer(layer, firstLabelLayer));
 
         const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
-        map.on("mousemove", "dvf-parcelle-fill", (event) => {
-          const id = String(event.features?.[0]?.properties?.id ?? "");
-          map.setFilter("dvf-parcelle-hover", ["==", ["get", "id"], id]);
-        });
-        map.on("mouseleave", "dvf-parcelle-fill", () => {
-          map.setFilter("dvf-parcelle-hover", ["==", ["get", "id"], ""]);
+        const hoverTargets = [
+          { eventLayer: "dvf-departement-hit", featureSource: "dvf-admin", vectorLayer: "departements", property: "code" },
+          { eventLayer: "dvf-commune-fill", featureSource: "dvf-admin", vectorLayer: "communes", property: "code" },
+          { eventLayer: "dvf-section-fill", featureSource: "dvf-cadastre", vectorLayer: "sections", property: "id" },
+          { eventLayer: "dvf-parcelle-fill", featureSource: "dvf-cadastre", vectorLayer: "parcelles", property: "id" },
+        ];
+        const hoveredValues = new Map<string, string>();
+        hoverTargets.forEach(({ eventLayer, featureSource, vectorLayer, property }) => {
+          map.on("mousemove", eventLayer, (event) => {
+            const value = String(event.features?.[0]?.properties?.[property] ?? "");
+            const previousValue = hoveredValues.get(eventLayer);
+            if (!value || previousValue === value) return;
+            if (previousValue) map.setFeatureState({ source: featureSource, sourceLayer: vectorLayer, id: previousValue }, { hover: false });
+            hoveredValues.set(eventLayer, value);
+            map.setFeatureState({ source: featureSource, sourceLayer: vectorLayer, id: value }, { hover: true });
+          });
+          map.on("mouseleave", eventLayer, () => {
+            const previousValue = hoveredValues.get(eventLayer);
+            if (previousValue) map.setFeatureState({ source: featureSource, sourceLayer: vectorLayer, id: previousValue }, { hover: false });
+            hoveredValues.delete(eventLayer);
+          });
         });
         ["dvf-departement-hit", "dvf-commune-fill", "dvf-section-fill", "dvf-parcelle-fill"].forEach((layerId) => {
           map.on("mouseenter", layerId, () => { map.getCanvas().style.cursor = "pointer"; });
@@ -213,6 +292,13 @@ export default function DvfMap({
                   ? `<strong>${label}</strong><br><strong>${mutationLabel}</strong><br><span>Pas assez de données pour faire une visualisation</span>`
                   : `<strong>${label}</strong><br><strong>${metrics.price.toLocaleString("fr-FR")} €</strong> par m²<br><strong>${mutationLabel}</strong>`,
             ).addTo(map);
+          });
+          map.on("mouseleave", layerId, () => { map.getCanvas().style.cursor = ""; popup.remove(); });
+        });
+        ["dvf-alsace-moselle-fill", "dvf-alsace-moselle-detail-fill"].forEach((layerId) => {
+          map.on("mouseenter", layerId, () => { map.getCanvas().style.cursor = "help"; });
+          map.on("mousemove", layerId, (event) => {
+            popup.setLngLat(event.lngLat).setHTML(`<strong>Territoire non couvert</strong><br><span>${localLawTooltip}</span>`).addTo(map);
           });
           map.on("mouseleave", layerId, () => { map.getCanvas().style.cursor = ""; popup.remove(); });
         });
@@ -243,7 +329,8 @@ export default function DvfMap({
           const id = String(feature.properties?.id ?? "Section");
           selectedCameraRef.current = { center: [event.lngLat.lng, event.lngLat.lat], zoom: 15 };
           setCanReturnToSelection(true);
-          publishContext({ scale: "parcelle", code: id, label: `Section ${feature.properties?.code ?? id}` });
+          const sectionLabel = `Section ${feature.properties?.code ?? id}`;
+          publishContext({ scale: "parcelle", code: id, label: sectionLabel, sectionCode: id, sectionLabel });
           map.flyTo({ center: event.lngLat, zoom: 15 });
         });
         map.on("click", "dvf-parcelle-fill", (event) => {
@@ -253,6 +340,7 @@ export default function DvfMap({
           selectedCameraRef.current = { center: [event.lngLat.lng, event.lngLat.lat], zoom: map.getZoom() };
           setCanReturnToSelection(true);
           map.setFilter("dvf-parcelle-selected-fill", ["==", ["get", "id"], id]);
+          map.setFilter("dvf-parcelle-selected-halo", ["==", ["get", "id"], id]);
           map.setFilter("dvf-parcelle-selected", ["==", ["get", "id"], id]);
           publishContext({ scale: "parcelle", code: id, label: `Parcelle ${feature.properties?.section ?? ""} ${feature.properties?.numero ?? ""}`.trim(), selectedParcel: id });
         });
@@ -263,6 +351,7 @@ export default function DvfMap({
         const scale = scaleByZoom(map.getZoom());
         if (scale !== "parcelle" && map.getLayer("dvf-parcelle-selected")) {
           map.setFilter("dvf-parcelle-selected-fill", ["==", ["get", "id"], ""]);
+          map.setFilter("dvf-parcelle-selected-halo", ["==", ["get", "id"], ""]);
           map.setFilter("dvf-parcelle-selected", ["==", ["get", "id"], ""]);
         }
         publishContext({ scale });
@@ -284,8 +373,8 @@ export default function DvfMap({
         <button type="button" onClick={() => mapRef.current?.zoomIn()} className="flex h-9 w-9 items-center justify-center border-b border-[#E5E5E5] text-[#161616] hover:bg-[#eeeeee] focus-visible:relative focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091]" aria-label="Zoomer"><RiAddLine aria-hidden className="h-5 w-5" /></button>
         <button type="button" onClick={() => mapRef.current?.zoomOut()} className="flex h-9 w-9 items-center justify-center border-b border-[#E5E5E5] text-[#161616] hover:bg-[#eeeeee] focus-visible:relative focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091]" aria-label="Dézoomer"><RiSubtractLine aria-hidden className="h-5 w-5" /></button>
         {canReturnToSelection ? <button type="button" onClick={() => { const camera = selectedCameraRef.current; if (camera) mapRef.current?.flyTo(camera); }} className="flex h-9 w-9 items-center justify-center border-b border-[#E5E5E5] text-[#161616] hover:bg-[#eeeeee] focus-visible:relative focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091]" aria-label="Revenir à la zone sélectionnée" title="Revenir à la zone sélectionnée"><RiFocus3Line aria-hidden className="h-5 w-5" /></button> : null}
-        <button type="button" aria-pressed={!colorsVisible} onClick={() => { const next = !colorsVisible; setColorsVisible(next); onColorsVisibilityChangeRef.current?.(next); const opacityByLayer: Record<string, number> = { "dvf-epci-fill": 0.8, "dvf-commune-fill": 0.8, "dvf-section-fill": 0.8, "dvf-parcelle-base": 0.48, "dvf-parcelle-fill": 0.58 }; Object.entries(opacityByLayer).forEach(([layerId, opacity]) => { if (mapRef.current?.getLayer(layerId)) mapRef.current.setPaintProperty(layerId, "fill-opacity", next ? opacity : 0); }); }} className={`flex h-9 w-9 items-center justify-center border-b border-[#E5E5E5] text-[#161616] hover:bg-[#eeeeee] focus-visible:relative focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091] ${!colorsVisible ? "bg-[#ececfe] text-[#000091]" : ""}`} aria-label={colorsVisible ? "Masquer les couleurs de données" : "Afficher les couleurs de données"} title={colorsVisible ? "Masquer les couleurs" : "Afficher les couleurs"}><RiPaletteLine aria-hidden className="h-5 w-5" /></button>
-        <button type="button" aria-pressed={isSatellite} onClick={() => { const next = !isSatellite; setIsSatellite(next); if (mapRef.current?.getLayer("dvf-satellite")) mapRef.current.setLayoutProperty("dvf-satellite", "visibility", next ? "visible" : "none"); }} className={`flex h-9 w-9 items-center justify-center text-[#161616] hover:bg-[#eeeeee] focus-visible:relative focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091] ${isSatellite ? "bg-[#ececfe] text-[#000091]" : ""}`} aria-label={isSatellite ? "Afficher la vue plan" : "Afficher la vue satellite"} title={isSatellite ? "Vue plan" : "Vue satellite"}>{isSatellite ? <RiMap2Line aria-hidden className="h-5 w-5" /> : <RiEarthLine aria-hidden className="h-5 w-5" />}</button>
+        <button type="button" aria-pressed={!colorsVisible} onClick={() => { const next = !colorsVisible; setColorsVisible(next); onColorsVisibilityChangeRef.current?.(next); const opacityByLayer: Record<string, number> = { "dvf-epci-fill": 0.8, "dvf-commune-fill": 0.8, "dvf-section-fill": 0.8, "dvf-parcelle-base": 0.48 }; Object.entries(opacityByLayer).forEach(([layerId, opacity]) => { if (mapRef.current?.getLayer(layerId)) mapRef.current.setPaintProperty(layerId, "fill-opacity", next ? opacity : 0); }); }} className="relative flex h-9 w-9 items-center justify-center border-b border-[#E5E5E5] text-[#161616] hover:bg-[#eeeeee] focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091]" aria-label={colorsVisible ? "Masquer le choroplèthe" : "Afficher le choroplèthe"} title={colorsVisible ? "Masquer le choroplèthe" : "Afficher le choroplèthe"}><RiPaletteLine aria-hidden className="h-5 w-5" />{!colorsVisible ? <span aria-hidden className="absolute h-0.5 w-6 -rotate-45 rounded-full bg-[#161616] ring-1 ring-white" /> : null}</button>
+        <button type="button" aria-pressed={isSatellite} onClick={() => { const next = !isSatellite; setIsSatellite(next); if (mapRef.current?.getLayer("dvf-satellite")) mapRef.current.setLayoutProperty("dvf-satellite", "visibility", next ? "visible" : "none"); }} className="flex h-9 w-9 items-center justify-center text-[#161616] hover:bg-[#eeeeee] focus-visible:relative focus-visible:z-10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-[#000091]" aria-label={isSatellite ? "Afficher la vue plan" : "Afficher la vue satellite"} title={isSatellite ? "Afficher la vue plan" : "Afficher la vue satellite"}>{isSatellite ? <RiMap2Line aria-hidden className="h-5 w-5" /> : <RiEarthLine aria-hidden className="h-5 w-5" />}</button>
       </div>
     </div>
   );
