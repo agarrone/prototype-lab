@@ -23,6 +23,7 @@ import {
 } from "@remixicon/react";
 import DvfMap, { initialDvfMapContext, type DvfMapContext, type DvfMapNavigationTarget } from "./dvf-map";
 import DvfChart from "./dvf-chart";
+import { CondominiumInformationCard, DpeInformationCard, UsefulLinksCards } from "./parcel-information-cards";
 import { ExplorerPrototype } from "../explorateur/page";
 import type { DatagouvResourceSummary } from "@/lib/datagouv";
 
@@ -254,9 +255,9 @@ function StatPanel({ context, propertyType, onPropertyTypeChange, onBreadcrumbNa
           <ParcelTransactionCard date="18 novembre 2024" price="428 000 €" pricePerSquareMeter="5 214 €" address="12 rue des Argentiers, 33000 Bordeaux" mutationId="2024-1223497" lots={[{ type: "Appartement", rooms: "4 pièces", surface: "82 m²" }, { type: "Dépendance" }]} />
           <ParcelTransactionCard date="4 juin 2019" price="352 000 €" address="12 rue des Argentiers, 33000 Bordeaux" mutationId="2019-0845216" lots={[{ type: "Appartement", rooms: "4 pièces", surface: "82 m²" }]} />
         </div></> : null}
-        {parcelSection === "dpe" ? <div className="mt-5 border-l-4 border-[#000091] bg-[#f6f6f6] p-4"><h3 className="text-[14px] font-bold">Diagnostics de performance énergétique</h3><p className="mt-1 text-[12px] leading-5 text-[#3a3a3a]">Les diagnostics disponibles pour les bâtiments associés à cette parcelle apparaîtront ici.</p></div> : null}
-        {parcelSection === "copropriete" ? <div className="mt-5 border-l-4 border-[#000091] bg-[#f6f6f6] p-4"><h3 className="text-[14px] font-bold">Informations sur la copropriété</h3><p className="mt-1 text-[12px] leading-5 text-[#3a3a3a]">Les informations issues du registre national des copropriétés apparaîtront ici lorsqu’elles sont disponibles.</p></div> : null}
-        {parcelSection === "liens" ? <div className="mt-5"><h3 className="text-[15px] font-bold">Liens utiles</h3><ul className="mt-3 space-y-2 text-[13px]"><li><a href="#" className="font-medium text-[#000091] underline underline-offset-2">Consulter la parcelle sur le cadastre</a></li><li><a href="#" className="font-medium text-[#000091] underline underline-offset-2">Voir les risques associés à l’adresse</a></li></ul></div> : null}
+        {parcelSection === "dpe" ? <div className="mt-4"><DpeInformationCard /></div> : null}
+        {parcelSection === "copropriete" ? <div className="mt-4"><CondominiumInformationCard /></div> : null}
+        {parcelSection === "liens" ? <div className="mt-4"><UsefulLinksCards /></div> : null}
       </> : <div className="mt-6 border-l-4 border-[#000091] bg-[#f6f6f6] p-4 text-[13px] leading-5">Seules les parcelles simulant au moins une mutation sont colorées et sélectionnables.</div> : <>
         <div className="mt-4 overflow-hidden rounded border border-[#E5E5E5]">
           <table className="w-full border-collapse text-right text-[12px] leading-5">

@@ -105,9 +105,14 @@ body {
 /* Native select arrows are rendered differently across browsers and could be
    clipped by the compact DVF fields. Keep a stable, vertically centred arrow. */
 .dvf-select {
-  -webkit-appearance: none;
-  appearance: none;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+  background-image: none !important;
   padding-right: 2.25rem;
+}
+
+.dvf-select::-ms-expand {
+  display: none;
 }
 
 .assistant-map .maplibregl-popup {

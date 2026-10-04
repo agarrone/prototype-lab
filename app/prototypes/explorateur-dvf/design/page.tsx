@@ -29,6 +29,7 @@ import {
   RiCloseLine,
 } from "@remixicon/react";
 import DvfChart from "../dvf-chart";
+import { CondominiumInformationCard, DpeInformationCard, UsefulLinksCards } from "../parcel-information-cards";
 
 const scales = [
   {
@@ -263,7 +264,9 @@ function ScaleSidebar({ scale }: { scale: (typeof scales)[number] }) {
         {isParcel ? <p className="mt-1 text-[12px] leading-5 text-[#666666]">Identifiant : <strong className="font-medium text-[#3a3a3a]">{scale.parcelId}</strong> · Surface cadastrale : <strong className="font-medium text-[#3a3a3a]">{scale.houseSales}</strong></p> : null}
         {isParcel ? <label className="mt-4 block text-[12px] font-medium text-[#3a3a3a]">Informations affichées<span className="relative mt-1 block"><select value={parcelSection} onChange={(event) => setParcelSection(event.target.value as typeof parcelSection)} className="h-10 w-full appearance-none rounded border border-[#E5E5E5] bg-[#f6f6f6] pl-3 pr-10 text-[13px] font-normal">{sections.map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select><RiArrowDownSLine className="pointer-events-none absolute right-3 top-1/2 h-5 w-5 -translate-y-1/2" /></span></label> : <><p className="mt-2 text-[13px] leading-5 text-[#3a3a3a]">{scale.description}</p><label className="mt-4 block text-[12px] font-medium text-[#3a3a3a]">Type de bien<span className="relative mt-1 block"><select className="h-9 w-full appearance-none rounded border border-[#E5E5E5] bg-[#f6f6f6] pl-2 pr-9 text-[13px] font-normal"><option>Appartements et maisons</option></select><RiArrowDownSLine className="pointer-events-none absolute right-2 top-1/2 h-5 w-5 -translate-y-1/2" /></span></label><p className="mt-2 text-[12px] text-[#666666]">Ventes et prix médians observés au cours des 5 dernières années.</p></>}
         {isParcel && parcelSection === "transactions" ? <><p className="mt-2 text-[13px] leading-5 text-[#3a3a3a]">Consultez les ventes enregistrées sur cette parcelle au cours des cinq dernières années.</p><h4 className="mt-5 text-[18px] font-bold">2 transactions</h4><div className="mt-3 space-y-3"><StructuredTransactionConcept /><StructuredTransactionConcept price="352 000 €" pricePerSquareMeter="" date="4 juin 2019" mutationId="2019-0845216" lots={[{ label: "Appartement", rooms: "4 pièces", surface: "82 m²" }]} /></div></> : null}
-        {isParcel && parcelSection !== "transactions" ? <div className="mt-5 border-l-4 border-[#000091] bg-[#f6f6f6] p-4 text-[12px] leading-5">Le contenu associé à cette catégorie apparaît ici lorsqu’il est disponible.</div> : null}
+        {isParcel && parcelSection === "dpe" ? <div className="mt-4"><DpeInformationCard /></div> : null}
+        {isParcel && parcelSection === "copropriete" ? <div className="mt-4"><CondominiumInformationCard /></div> : null}
+        {isParcel && parcelSection === "liens" ? <div className="mt-4"><UsefulLinksCards /></div> : null}
         {!isParcel ? <><div className="mt-4 overflow-hidden rounded border border-[#E5E5E5]"><table className="w-full text-right text-[12px]"><thead className="bg-[#f6f6f6]"><tr><th className="border-b border-[#E5E5E5] px-2 py-1 text-left font-medium">Type de bien</th><th className="border-b border-[#E5E5E5] px-2 py-1 font-medium">Ventes</th><th className="border-b border-[#E5E5E5] px-2 py-1 font-medium">Prix médian au m²</th></tr></thead><tbody><tr><th className="border-b border-[#E5E5E5] px-2 py-1 text-left font-normal">Appartements</th><td className="border-b border-[#E5E5E5] px-2 py-1">{scale.apartmentSales}</td><td className="border-b border-[#E5E5E5] px-2 py-1">{scale.apartmentPrice}</td></tr><tr><th className="px-2 py-1 text-left font-normal">Maisons</th><td className="px-2 py-1">{scale.houseSales}</td><td className="px-2 py-1">{scale.housePrice}</td></tr></tbody></table></div><div className="mt-3 rounded border border-[#E5E5E5] p-3"><p className="text-[12px] font-medium">Évolution du prix de vente médian au m²</p><DvfChart variant="line" /></div><div className="mt-3 rounded border border-[#E5E5E5] p-3"><p className="text-[12px] font-medium">Distribution du prix de vente au m²</p><DvfChart variant="bar" /></div></> : null}
       </div>
     </article>
@@ -490,6 +493,19 @@ export default function ExplorateurDvfDesignPage() {
             <Label>État vide</Label>
             <p className="text-[15px] font-bold">Aucune transaction connue pour cette parcelle</p>
             <p className="mt-1 max-w-[620px] text-[13px] leading-5 text-[#666666]">La parcelle est identifiable sur le cadastre, mais aucune vente n’est disponible dans les données DVF des cinq dernières années.</p>
+          </div>
+        </section>
+
+        <section aria-labelledby="parcel-information-title">
+          <header>
+            <p className="text-[11px] font-medium uppercase tracking-[.06em] text-[#000091]">Échelle parcelle cadastrale</p>
+            <h2 id="parcel-information-title" className="mt-1 text-[24px] font-bold">Informations associées à la parcelle</h2>
+            <p className="mt-2 max-w-[820px] text-[14px] leading-6 text-[#3a3a3a]">Les informations énergétiques et de copropriété reprennent la même structure compacte que les transactions : donnée principale en tête, caractéristiques en lignes, lien et source au dernier niveau.</p>
+          </header>
+          <div className="mt-6 grid max-w-[824px] items-start gap-6 md:grid-cols-2">
+            <div><Label>Diagnostic de performance énergétique</Label><DpeInformationCard /></div>
+            <div><Label>Informations sur la copropriété</Label><CondominiumInformationCard /></div>
+            <div className="md:col-span-2"><Label>Liens utiles</Label><UsefulLinksCards /></div>
           </div>
         </section>
 
