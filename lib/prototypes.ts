@@ -17,6 +17,14 @@ export const prototypes: Prototype[] = [
     figmaUrl: "",
   },
   {
+    slug: "explorateur-deces",
+    title: "Explorateur des personnes décédées",
+    description: "Rechercher une personne dans le fichier des décès, au sein d’une page data.gouv.fr.",
+    status: "exploration",
+    tags: ["décès", "recherche", "exploration"],
+    figmaUrl: "",
+  },
+  {
     slug: "explorateur-dvf-in-a-page",
     title: "Explorateur DVF dans une page",
     description:

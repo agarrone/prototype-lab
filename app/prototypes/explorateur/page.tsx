@@ -1,5 +1,6 @@
 "use client";
 
+import { ExplorerMobileCard } from "@/components/explorer-mobile-card";
 import Image from "next/image";
 import Link from "next/link";
 import { Fragment, useEffect, useMemo, useState } from "react";
@@ -2565,84 +2566,13 @@ function MobileDataCard({
   onCopyCell: (value: string) => void;
   onFilterCell: (cell: NonNullable<ActiveCell>) => void;
 }) {
-  const [isExpanded, setIsExpanded] = useState(false);
-  const primaryColumns = isExpanded ? columns : columns.slice(0, 4);
-  const hiddenColumnCount = Math.max(columns.length - 4, 0);
-
-  return (
-    <article className="rounded border border-[#E5E5E5] bg-[#FFFFFF] p-3">
-      <dl className="space-y-3">
-        {primaryColumns.map((column) => {
-          const value = getRowValue(row, column.key);
-
-          return (
-            <div key={column.key} className="relative space-y-1">
-              <dt className="flex items-center gap-1 text-[12px] leading-4 text-[#666666]">
-                <Icon
-                  path={icons[column.icon]}
-                  className={`h-3.5 w-3.5 ${
-                    column.icon === "referenceData"
-                      ? "text-[#7b4fbf]"
-                      : "text-[#666666]"
-                  }`}
-                />
-                <span className="truncate">{column.label}</span>
-              </dt>
-              <dd className="pl-5">
-                <button
-                  type="button"
-                  onClick={() =>
-                    onOpenCell({
-                      id: `${row.id}-${column.key}`,
-                      key: column.key,
-                      value,
-                      type: column.type,
-                    })
-                  }
-                  className="block max-w-full text-left"
-                  aria-label={`Actions pour ${column.label} : ${value}`}
-                >
-                  <MobileFieldValue value={value} type={column.type} />
-                </button>
-                {activeCell?.id === `${row.id}-${column.key}` ? (
-                  <CellActionMenu
-                    value={value}
-                    type={column.type}
-                    onCopy={() => onCopyCell(value)}
-                    onFilter={() =>
-                      onFilterCell({
-                        id: `${row.id}-${column.key}`,
-                        key: column.key,
-                        value,
-                        type: column.type,
-                      })
-                    }
-                  />
-                ) : null}
-              </dd>
-            </div>
-          );
-        })}
-      </dl>
-
-      {hiddenColumnCount > 0 ? (
-        <button
-          type="button"
-          onClick={() => setIsExpanded((current) => !current)}
-          className="mt-3 flex items-center gap-1 text-[13px] font-bold leading-5 text-[#161616]"
-          aria-expanded={isExpanded}
-        >
-          <Icon
-            path={icons.arrowDownS}
-            className={`h-3.5 w-3.5 text-[#3a3a3a] ${
-              isExpanded ? "rotate-180" : ""
-            }`}
-          />
-          {isExpanded ? "Réduire" : `+ ${hiddenColumnCount} champs`}
-        </button>
-      ) : null}
-    </article>
-  );
+  return <ExplorerMobileCard fields={columns.map(column => {
+    const value = getRowValue(row, column.key);
+    return { key: column.key, label: column.label,
+      icon: <Icon path={icons[column.icon]} className={`h-3.5 w-3.5 ${column.icon === "referenceData" ? "text-[#7b4fbf]" : "text-[#666666]"}`} />,
+      content: <><button type="button" onClick={()=>onOpenCell({id:`${row.id}-${column.key}`,key:column.key,value,type:column.type})} className="block max-w-full text-left" aria-label={`Actions pour ${column.label} : ${value}`}><MobileFieldValue value={value} type={column.type} /></button>{activeCell?.id === `${row.id}-${column.key}` && <CellActionMenu value={value} type={column.type} onCopy={()=>onCopyCell(value)} onFilter={()=>onFilterCell({id:`${row.id}-${column.key}`,key:column.key,value,type:column.type})} />}</>
+    };
+  })} />;
 }
 
 function MobileFilterColumn({
