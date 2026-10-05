@@ -58,6 +58,7 @@ const prototypeIcons = {
   "explorateur-dvf-in-a-page": RiMicroscopeLine,
   "explorateur-carburants": RiMicroscopeLine,
   "explorateur-carburants-in-a-page": RiMicroscopeLine,
+  "explorateur-deces": RiMicroscopeLine,
   "test-assistant": RiMessageAi3Line,
 };
 
@@ -81,6 +82,7 @@ const testPrototypes = testPrototypeSlugs
   .filter((prototype): prototype is (typeof prototypes)[number] => Boolean(prototype));
 
 const dataExplorationSlugs = [
+  "explorateur-deces",
   "explorateur-dvf-in-a-page",
   "explorateur-dvf",
   "explorateur-carburants",
