@@ -10,7 +10,7 @@ Afficher l'explorateur sous les onglets du jeu de données permet de comprendre 
 
 ## État d'avancement
 
-Prototype en exploration. Le haut de page réutilise le gabarit dataset et l'explorateur est intégré sous la barre d'onglets.
+Prototype en exploration. Le haut de page réutilise le gabarit dataset et l'explorateur est intégré sous la barre d'onglets. Un bandeau contextuel signale désormais qu'une prévisualisation n'est pas synchronisée avec la dernière version du fichier.
 
 ## Inspirations
 

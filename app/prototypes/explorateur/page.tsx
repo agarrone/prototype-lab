@@ -160,6 +160,26 @@ function toExplorerResource(resource: DatagouvResourceSummary): Resource {
   };
 }
 
+function PreviewFreshnessNotice({ resource }: { resource: Resource }) {
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-2 border-b border-[#f3d8d4] bg-[#fff4f3] px-3 py-2.5 text-[#161616]"
+    >
+      <span className="flex h-5 w-5 shrink-0 items-center justify-center" aria-hidden>
+        <RiErrorWarningLine className="h-4 w-4 text-[#b34000]" />
+      </span>
+      <div className="min-w-0 flex-1 text-[12px] leading-5">
+        <p className="font-bold">Prévisualisation non actualisée</p>
+        <p>
+          Le fichier source a été mis à jour le {resource.updatedAt}. Les données
+          affichées ici peuvent différer de la dernière version.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function getExplorerResourceType(
   format: string,
   resourceType: string,
@@ -3554,6 +3574,7 @@ export function ExplorerPrototype({
   showEmbeddedHeader = true,
   showEmbeddedResourceContext = true,
   showEmbeddedFullscreen = true,
+  showPreviewFreshnessWarning = false,
 }: {
   embedded?: boolean;
   returnTo?: string;
@@ -3565,6 +3586,7 @@ export function ExplorerPrototype({
   showEmbeddedHeader?: boolean;
   showEmbeddedResourceContext?: boolean;
   showEmbeddedFullscreen?: boolean;
+  showPreviewFreshnessWarning?: boolean;
 }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isResourceListExpanded, setIsResourceListExpanded] = useState(false);
@@ -4552,6 +4574,12 @@ export function ExplorerPrototype({
                 ))}
               </div>
             </div> : null}
+
+            {showPreviewFreshnessWarning &&
+            activeTab === "Aperçu" &&
+            isResourceExplorable(activeResource) ? (
+              <PreviewFreshnessNotice resource={activeResource} />
+            ) : null}
 
             {activeTab === "Description" ? (
               <DescriptionPanel />

@@ -16,6 +16,7 @@ export function ResourceViewer({
     <section>
       <ExplorerPrototype
         embedded
+        showPreviewFreshnessWarning
         showResourceNavigation={showResourceNavigation}
         contentViewsOnly={contentViewsOnly}
         datasetReference={datasetReference}
