@@ -15,6 +15,7 @@ import {
   RiSearchLine,
   RiSparklingLine,
   RiTerminalLine,
+  RiMapPinAddLine,
 } from "@remixicon/react";
 import { prototypes } from "@/lib/prototypes";
 
@@ -42,6 +43,7 @@ function ChevronIcon() {
 }
 
 const prototypeIcons = {
+  "publication-donnees-geographiques": RiMapPinAddLine,
   activites: RiHistoryLine,
   "points-de-contact": RiContactsBook2Line,
   explorateur: RiMicroscopeLine,

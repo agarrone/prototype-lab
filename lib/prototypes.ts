@@ -9,6 +9,15 @@ export type Prototype = {
 
 export const prototypes: Prototype[] = [
   {
+    slug: "publication-donnees-geographiques",
+    title: "Publication de données géographiques",
+    description:
+      "Publication d’un GeoPackage, création ou référencement de services WFS et fiche publique, dans un catalogue géographique unifié.",
+    status: "exploration",
+    tags: ["publication", "géographie", "WFS"],
+    figmaUrl: "",
+  },
+  {
     slug: "explorateur-carburants-in-a-page",
     title: "Explorateur carburants dans une page",
     description: "Intégration de l’exploration des prix des carburants dans une page data.gouv.fr.",
